@@ -31,13 +31,11 @@ import seaborn as sns
 
 sns.set()
 
-PATH = os.path.join(os.getcwd(), "Codes")
-if not PATH in sys.path:
-    sys.path.append(PATH)
     
-sys.path.insert(0, os.path.abspath(os.path.join('..')))
-from MLPackage import Features as feat
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))    
 from MLPackage import config as cfg
+from MLPackage import Utilities as util
+from MLPackage import Features as feat
 
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
@@ -60,7 +58,7 @@ log_path = cfg.configs["paths"]["log_path"]
 
 
 def create_logger(level):
-    loggerName = "2DCNN_ipynb"
+    loggerName = "retraining-pretrained-CNN"
     Pathlb(log_path).mkdir(parents=True, exist_ok=True)
     grey = '\x1b[38;21m'
     blue = '\x1b[38;5;39m'
@@ -73,7 +71,7 @@ def create_logger(level):
     logger.setLevel(level)
     formatter_colored = logging.Formatter(blue + '[%(asctime)s]-' + yellow + '[%(name)s @%(lineno)d]' + reset + blue + '-[%(levelname)s]' + reset + bold_red + '\t\t%(message)s' + reset, datefmt='%m/%d/%Y %I:%M:%S %p ')
     formatter = logging.Formatter('[%(asctime)s]-[%(name)s @%(lineno)d]-[%(levelname)s]\t\t%(message)s', datefmt='%m/%d/%Y %I:%M:%S %p ')
-    file_handler = logging.FileHandler( os.path.join(log_path, loggerName + '_loger.log'), mode = 'w')
+    file_handler = logging.FileHandler( os.path.join(log_path, loggerName + f'_loger{os.getpid()}.log'), mode = 'w')
     file_handler.setLevel(level)
     file_handler.setFormatter(formatter)
     stream_handler = logging.StreamHandler()
