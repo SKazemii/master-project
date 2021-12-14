@@ -129,15 +129,17 @@ dmypy.json
 .pyre/
 
 
-# *.zip
+*.zip
 *.jpg
-*.npz
-*.npy
+# *.npz
+# *.npy
 
 file.txt
 *.h5
 *.mat
 
 
-# ./Datasets
-*.xlsx
+./Datasets
+./Archive
+./
+# *.xlsx
