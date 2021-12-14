@@ -22,21 +22,21 @@ import sklearn as sk
 import tensorflow as tf
 from tensorflow import keras
 
-from sklearn.decomposition import PCA
-from sklearn.decomposition import IncrementalPCA
-from sklearn.decomposition import KernelPCA
-from sklearn.decomposition import SparsePCA
-from sklearn.decomposition import TruncatedSVD
-from sklearn.decomposition import FastICA
-from sklearn.decomposition import MiniBatchDictionaryLearning
+# from sklearn.decomposition import PCA
+# from sklearn.decomposition import IncrementalPCA
+# from sklearn.decomposition import KernelPCA
+# from sklearn.decomposition import SparsePCA
+# from sklearn.decomposition import TruncatedSVD
+# from sklearn.decomposition import FastICA
+# from sklearn.decomposition import MiniBatchDictionaryLearning
 
 
-from sklearn.manifold import Isomap
-from sklearn.manifold import TSNE
-from sklearn.manifold import LocallyLinearEmbedding
+# from sklearn.manifold import Isomap
+# from sklearn.manifold import TSNE
+# from sklearn.manifold import LocallyLinearEmbedding
 
-from sklearn.random_projection import GaussianRandomProjection
-from sklearn.random_projection import SparseRandomProjection
+# from sklearn.random_projection import GaussianRandomProjection
+# from sklearn.random_projection import SparseRandomProjection
 
 
 
@@ -103,7 +103,8 @@ time = int(timeit.default_timer() * 1_000_000)
 
 def collect_results(result):
     global time
-    excel_path = os.path.join(cfg.configs["paths"]["results_dir"], "Result.xlsx")
+    excel_path = os.path.join(cfg.configs["paths"]["results_dir"], f"Result_all_{os.getpid()}.xlsx")
+    # excel_path = os.path.join(cfg.configs["paths"]["results_dir"], "Result.xlsx")
 
     if os.path.isfile(excel_path):
         Results_DF = pd.read_excel(excel_path, index_col = 0)
@@ -125,13 +126,15 @@ def main():
     space = list(product(p0, p1, p2))
 
 
-    ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK',default=4))
+    # ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK',default=4))
 
-    pool = multiprocessing.Pool(processes=ncpus)
-    logger.info(f"CPU count: {ncpus}")
+    # pool = multiprocessing.Pool(processes=ncpus)
+    # logger.info(f"CPU count: {ncpus}")
 
 
     for parameters in space:
+        logger.info(f"parameters: {parameters}")
+
         configs = copy.deepcopy(cfg.configs)
         configs["Pipeline"]["classifier"] = parameters[0]
         
@@ -147,11 +150,11 @@ def main():
 
         # pprint.pprint(configs)
         # breakpoint()
-        pool.apply_async(util.pipeline, args=(configs,), callback=collect_results)
-        # collect_results(util.pipeline(configs))
+        # pool.apply_async(util.pipeline, args=(configs,), callback=collect_results)
+        collect_results(util.pipeline(configs))
         
-    pool.close()
-    pool.join()
+    # pool.close()
+    # pool.join()
 
 
 

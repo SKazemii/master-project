@@ -139,7 +139,8 @@ file.txt
 *.mat
 
 
-./Datasets
-./Archive
-./
+Datasets/**
+Archive/**
+logs/**
+
 # *.xlsx
