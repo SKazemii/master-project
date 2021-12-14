@@ -1,0 +1,343 @@
+\documentclass{beamer}
+\usetheme{Boadilla}
+\usepackage{booktabs}
+\usepackage{adjustbox}
+\usefonttheme{serif}
+\subtitle{Using Beamer}
+\usepackage{pgffor}
+\usepackage{graphicx}
+\usepackage{booktabs}
+
+
+
+
+\title{ \textbf{Stepscan Project}}
+\subtitle{Results of Worksheet 1-3}
+\date{\today}
+\author{Saeed Kazemi}
+\institute{ University of New Brunswick}
+\usepackage{caption}
+
+\begin{document}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+\titlepage
+\end{frame}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+\frametitle{Outline}
+\tableofcontents
+\end{frame}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\iffalse
+
+\section{Test Size}
+    \begin{frame}
+    \frametitle{Comparing different test size over Pressure Features}
+    \tiny
+    \begin{table}
+    \centering
+    \captionsetup{labelformat=empty}
+    \caption{\footnotesize Comparing Accuracy and EER of different test size over Pressure Features. These results are average of both sides.}
+    \input{Manuscripts/src/tables/testsize}
+    \end{table}
+    
+    \begin{block}{\footnotesize Conditions}
+        \tiny These results are average over the results of below conditions:
+        \begin{itemize} 
+            \item min, mean and median criteria,
+            \item Both correlation and distance score matrix
+            \item Keeping 95\% variances
+            \item Z-score algorithm
+        \end{itemize} 
+    \end{block}
+    
+    \end{frame}
+    
+    
+    
+    \begin{frame}
+    \centering
+    \frametitle{Comparing different test size over Pressure Features}
+    \includegraphics[scale=0.3]{Manuscripts/src/figures/testsize.png}
+    \end{frame}
+
+    
+    
+
+\fi
+
+\section{Score Matrix}
+    \foreach \n in {pfeatures}{%{afeatures-simple, afeatures-otsu, pfeatures, COAs-otsu, COAs-simple, COPs}{
+    \begin{frame}
+    \frametitle{Euclidean distance vs Correlation over \n}
+    \tiny
+    \begin{table}
+    \centering
+    \captionsetup{labelformat=empty}
+    \caption{\footnotesize The accuracy of Euclidean distance and Correlation on \n.}
+    \input{Manuscripts/src/tables/\n-Mode-Acc}
+    \end{table}
+    \begin{table}
+    \centering
+    \captionsetup{labelformat=empty}
+    \caption{\footnotesize The EER of Euclidean distance and Correlation on \n}
+    \label{tab:parameters condition}
+    \input{Manuscripts/src/tables/\n-Mode-EER}
+    \end{table}
+    
+    \begin{block}{\footnotesize Conditions}
+        \tiny These results are average over the results of below conditions: min, mean and median criteria, All PCs and 95\% variances, Min-Max and z-score algorithm. also all features in \n \ were considered.
+    \end{block}
+    
+    \end{frame}
+    
+    
+    
+    \begin{frame}
+    \centering
+    \frametitle{Euclidean distance vs Correlation (ROC curve) over \n}
+    \includegraphics[scale=0.3]{Manuscripts/src/figures/\n-Mode.png}
+    \end{frame}
+    
+    }
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{PCA}
+    \foreach \n in {pfeatures}{%{afeatures-simple, afeatures-otsu, pfeatures, COAs-otsu, COAs-simple, COPs}{
+    \begin{frame}
+    \frametitle{All PCs vs 95\% variance over \n}
+    \tiny
+    \begin{table}
+    \centering
+    \captionsetup{labelformat=empty}
+    \caption{\footnotesize The accuracy of All PCs and 95\% variance over \n}
+    \input{Manuscripts/src/tables/\n-PCA-Acc}
+    \end{table}
+    \begin{table}
+    \centering
+    \captionsetup{labelformat=empty}
+    \caption{\footnotesize The EER of All PCs and 95\% variance over \n}
+    \label{tab:parameters condition}
+    \input{Manuscripts/src/tables/\n-PCA-EER}
+    \end{table}
+    
+    \begin{block}{\footnotesize Conditions}
+        \tiny These results are average over the results of below conditions: min, mean and median criteria, correlation and distant score, Min-Max and z-score algorithm. also all features in \n \ were considered.
+    \end{block}
+    
+    \end{frame}
+    
+    
+    
+    \begin{frame}
+    \centering
+    \frametitle{All PCs vs 95\% variance over \n}
+    \includegraphics[scale=0.3]{Manuscripts/src/figures/\n-PCA.png}
+    \end{frame}
+    
+    }
+\section{Normalization algorithm}
+    \foreach \n in {pfeatures}{%{afeatures-simple, afeatures-otsu, pfeatures, COAs-otsu, COAs-simple, COPs}{
+    \begin{frame}
+    \frametitle{Min-Max vs z-score over \n}
+    \tiny
+    \begin{table}
+    \centering
+    \captionsetup{labelformat=empty}
+    \caption{\footnotesize The accuracy of Min-Max and z-score algorithm over \n}
+    \input{Manuscripts/src/tables/\n-Normalizition-Acc}
+    \end{table}
+    \begin{table}
+    \centering
+    \captionsetup{labelformat=empty}
+    \caption{\footnotesize The EER of Min-Max and z-score algorithm over \n}
+    \label{tab:parameters condition}
+    \input{Manuscripts/src/tables/\n-Normalizition-EER}
+    \end{table}
+    
+    \begin{block}{\footnotesize Conditions}
+        \tiny These results are average over the results of below conditions: min, mean and median criteria, correlation and distant score, All PCs and 95\% variances. also all features in \n \ were considered.
+    \end{block}
+    
+    \end{frame}
+    
+    
+    
+    \begin{frame}
+    \centering
+    \frametitle{Min-Max vs z-score over \n}
+    \includegraphics[scale=0.3]{Manuscripts/src/figures/\n-Normalizition.png}
+    \end{frame}
+    
+    }
+\section{Criteria}
+    \foreach \n in {pfeatures}{%{afeatures-simple, afeatures-otsu, pfeatures, COAs-otsu, COAs-simple, COPs}{
+    \begin{frame}
+    \frametitle{Comparing different criteria over \n}
+    \tiny
+    \begin{table}
+    \centering
+    \captionsetup{labelformat=empty}
+    \caption{\footnotesize The accuracy of The EER of min, mean and median criteria over \n}
+    \input{Manuscripts/src/tables/\n-Model-Type-Acc}
+    \end{table}
+    \begin{table}
+    \centering
+    \captionsetup{labelformat=empty}
+    \caption{\footnotesize The EER of min, mean and median criteria over \n}
+    \label{tab:parameters condition}
+    \input{Manuscripts/src/tables/\n-Model-Type-EER}
+    \end{table}
+    
+    \begin{block}{\footnotesize Conditions}
+        \tiny These results are average over the results of below conditions: correlation and distant score, All PCs and 95\% variances and Min-max and z-score algorithm. also all features in \n \ were considered.
+    \end{block}
+    
+    \end{frame}
+    
+    
+    
+    \begin{frame}
+    \centering
+    \frametitle{Comparing different criteria over \n}
+    \includegraphics[scale=0.3]{Manuscripts/src/figures/\n-Model-Type.png}
+    \end{frame}
+    
+    }
+\section{Features}
+    \foreach \n in {pfeatures}{%{afeatures-simple, afeatures-otsu, pfeatures, COX-time-series}{
+    \begin{frame}
+    \frametitle{Comparing different extracted features over \n}
+    \tiny
+    \begin{table}
+    \centering
+    \captionsetup{labelformat=empty}
+    \caption{\footnotesize The accuracy of different extracted features over \n}
+    \input{Manuscripts/src/tables/\n-Acc}
+    \end{table}
+    
+    
+    \begin{block}{\footnotesize Conditions}
+        \tiny These results are average over the results of below conditions: min, mean and median criteria, correlation and distant score, All PCs and 95\% variances and Min-max and z-score algorithm.
+    \end{block}
+    
+    \end{frame}
+    
+    \begin{frame}
+    \frametitle{Comparing different extracted features over \n}
+    \tiny
+    \begin{table}
+    \centering
+    \captionsetup{labelformat=empty}
+    \caption{\footnotesize The EER of different extracted features over \n}
+    \label{tab:parameters condition}
+    \input{Manuscripts/src/tables/\n-EER}
+    \end{table}
+    
+    \begin{block}{\footnotesize Conditions}
+        \tiny These results are average over the results of below conditions: min, mean and median criteria, correlation and distant score, All PCs and 95\% variances and Min-max and z-score algorithm.
+    \end{block}
+    
+    \end{frame}
+    
+    \begin{frame}
+    \centering
+    \frametitle{Comparing different extracted features over \n}
+    \includegraphics[scale=0.3]{Manuscripts/src/figures/\n.png}
+    \end{frame}
+    
+    }
+\section{Features selection}
+    \foreach \n in {pfeatures}{%{afeatures-simple, afeatures-otsu, pfeatures}{
+    \begin{frame}
+    \frametitle{Comparing different extracted features over \n \ based on FS algorithm}
+    \tiny
+    \begin{table}
+    \centering
+    \captionsetup{labelformat=empty}
+    \caption{\footnotesize The top 10 features over \n}
+    \input{Manuscripts/src/tables/\n-10best-FS}
+    \end{table}
+    
+    
+  
+    
+    \end{frame}
+    
+    \begin{frame}
+    \frametitle{Comparing different extracted features over \n \ based on FS algorithm}
+    \tiny
+    \begin{table}
+    \centering
+    \captionsetup{labelformat=empty}
+    \caption{\footnotesize The top 10 features over \n}
+    \label{tab:parameters condition}
+    \input{Manuscripts/src/tables/\n-10worst-FS}
+    \end{table}
+    
+    \end{frame}
+    
+
+    
+    }
+\section{The best and worst top models}
+    \begin{frame}[shrink = 35]
+    \frametitle{The best top models}
+    \tiny
+    \begin{table}
+    \centering
+    \captionsetup{labelformat=empty}
+    \caption{\footnotesize The top 10 models on left foot.}
+    \input{Manuscripts/src/tables/top10-L}
+    \end{table}
+    
+    
+    \begin{table}
+    \centering
+    \captionsetup{labelformat=empty}
+    \caption{\footnotesize The top 10 models on right foot.}
+    \input{Manuscripts/src/tables/top10-R}
+    \end{table}
+    
+    
+    \end{frame}
+    
+
+    
+    
+    
+    \begin{frame}[shrink = 35]
+    \frametitle{The worst top models}
+    \tiny
+    \begin{table}
+    \centering
+    \captionsetup{labelformat=empty}
+    \caption{\footnotesize The worst 10 models on left foot.}
+    \input{Manuscripts/src/tables/worse10-L}
+    \end{table}
+    
+    
+    \begin{table}
+    \centering
+    \captionsetup{labelformat=empty}
+    \caption{\footnotesize The worst 10 models on right foot.}
+    \input{Manuscripts/src/tables/worse10-R}
+    \end{table}
+    
+    \end{frame}
+
+
+
+\end{document}
+

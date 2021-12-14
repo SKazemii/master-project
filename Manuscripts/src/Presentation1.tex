@@ -1,0 +1,358 @@
+\documentclass{beamer}
+\usetheme{Boadilla}
+\usepackage{booktabs}
+\usepackage{adjustbox}
+\usefonttheme{serif}
+\subtitle{Using Beamer}
+\usepackage{pgffor}
+
+\title{ \textbf{Stepscan Project}}
+\subtitle{Results of Worksheet 1-3}
+\date{\today}
+\author{Saeed Kazemi}
+\institute{ University of New Brunswick}
+\usepackage{caption}
+
+\begin{document}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+\titlepage
+\end{frame}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+\frametitle{Outline}
+\tableofcontents
+\end{frame}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Score Matrix}
+
+\begin{frame}
+\frametitle{Euclidean distance vs Correlation}
+\tiny
+\begin{table}
+\centering
+\captionsetup{labelformat=empty}
+\caption{\small The accuracy of Euclidean distance and Correlation on COP features.}
+\input{Manuscripts/src/tables/pfeatures_Mode_Acc}
+\end{table}
+\begin{block}{\small Conditions}
+    \footnotesize These results are average over different criteria, score matrix. Also, The PCA (keeping only 95\% variance) and z-score algorithm were applied on the all COP features.
+\end{block}
+
+\end{frame}
+\begin{frame}
+\frametitle{Euclidean distance vs Correlation}
+\tiny
+\begin{table}
+\centering
+\captionsetup{labelformat=empty}
+\caption{\small The  ERR of different size of the test set.}
+\label{tab:parameters condition}
+\input{Manuscripts/src/tables/pfeatures_Mode_Acc}
+\end{table}
+\end{frame}
+\begin{frame}
+\frametitle{Euclidean distance vs Correlation}
+\tiny
+\begin{table}
+\centering
+\captionsetup{labelformat=empty}
+\caption{\small The number of samples in each test set.}
+\label{tab:parameters condition}
+\input{Manuscripts/src/tables/pfeatures_Mode_Acc}
+\end{table}
+\end{frame}
+
+
+\begin{frame}
+\centering
+\frametitle{Euclidean distance vs Correlation (ROC curve)}
+\includegraphics[scale=0.3]{Manuscripts/src/figures/testsize.png}
+\end{frame}
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Score Matrix}
+
+\begin{frame}
+\frametitle{Euclidean distance vs Correlation}
+\tiny
+\begin{table}
+\centering
+\captionsetup{labelformat=empty}
+\caption{\small The accuracy of Euclidean distance and Correlation.}
+\label{tab:parameters condition}
+\input{tables/Correlation.tex}
+\end{table}
+\begin{table}
+\centering
+\captionsetup{labelformat=empty}
+\caption{\small The  ERR of Euclidean distance and Correlation.}
+\label{tab:parameters condition}
+\input{tables/Correlation1.tex}
+\end{table}
+\end{frame}
+
+
+\begin{frame}
+\centering
+\frametitle{Euclidean distance vs Correlation (ROC curve)}
+\includegraphics[scale=0.3]{Manuscripts/src/figures/Correlation.png}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Criteria}
+
+\begin{frame}
+\frametitle{Minimum vs Median vs Average}
+\tiny
+\begin{table}
+\centering
+\captionsetup{labelformat=empty}
+\caption{\small The accuracy of Minimum, Median and Average.}
+\label{tab:parameters condition}
+\input{tables/Minimum.tex}
+\end{table}
+\begin{table}
+\centering
+\captionsetup{labelformat=empty}
+\caption{\small The ERR of Minimum, Median and Average.}
+\label{tab:parameters condition}
+\input{tables/Minimum1.tex}
+\end{table}
+\end{frame}
+
+
+\begin{frame}
+\centering
+\frametitle{Minimum vs Median vs Average (ROC curve)}
+\includegraphics[scale=0.3]{Manuscripts/src/figures/Minimum.png}
+\end{frame}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{PCA}
+
+\begin{frame}
+\frametitle{All PCs vs Keeping 95 percent of variance}
+\tiny
+\begin{table}
+\centering
+\captionsetup{labelformat=empty}
+\caption{\small The accuracy of All PCs and Keeping 95 percent of variance.}
+\label{tab:parameters condition}
+\input{tables/PCA.tex}
+\end{table}
+\begin{table}
+\centering
+\captionsetup{labelformat=empty}
+\caption{\small The ERR of All PCs and Keeping 95 percent of variance.}
+\label{tab:parameters condition}
+\input{tables/PCA1.tex}
+\end{table}
+\end{frame}
+
+
+\begin{frame}
+\centering
+\frametitle{All PCs vs Keeping 95 percent of variance (ROC curve)}
+\includegraphics[scale=0.3]{Manuscripts/src/figures/PCA.png}
+\end{frame}
+
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Normalization algorithm}
+\def \variable {MinMax}%MinMax
+
+\begin{frame}
+\frametitle{Z-score algorithm vs MinMax algorithm vs None}
+\tiny
+\begin{table}
+\centering
+\captionsetup{labelformat=empty}
+\caption{\small The accuracy of different normalization algorithm.}
+\label{tab:parameters condition}
+\input{tables/MinMax.tex}
+\end{table}
+\begin{table}
+\centering
+\captionsetup{labelformat=empty}
+\caption{\small The ERR of different normalization algorithm.}
+\label{tab:parameters condition}
+\input{tables/MinMax1.tex}
+\end{table}
+\end{frame}
+
+
+\begin{frame}
+\centering
+\frametitle{Z-score algorithm vs MinMax algorithm vs None (ROC curve)}
+\includegraphics[scale=0.3]{Manuscripts/src/figures/MinMax.png}
+\end{frame}
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{COP features}
+
+
+\begin{frame}
+\frametitle{Comparing COP features}
+\tiny
+\begin{table}
+\centering
+\captionsetup{labelformat=empty}
+\caption{\small The accuracy of COP features.}
+\label{tab:parameters condition}
+\input{tables/feat.tex}
+\end{table}
+\end{frame}
+
+\begin{frame}
+\frametitle{Comparing COP features}
+\tiny
+\begin{table}
+\centering
+\captionsetup{labelformat=empty}
+\caption{\small The ERR of COP features.}
+\label{tab:parameters condition}
+\input{tables/feat1.tex}
+\end{table}
+\end{frame}
+
+
+\begin{frame}
+\centering
+\frametitle{Comparing COP features (ROC curve)}
+\includegraphics[scale=0.3]{Manuscripts/src/figures/feat.png}
+\end{frame}
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{The top-10 best and worst features}
+
+\begin{frame}[shrink=10]
+\frametitle{The top-10 best features for the left foot.}
+\tiny
+\begin{table}
+\centering
+\caption{\small The top-10 best features for the left foot.}
+\input{tables/top10_left.tex}
+\end{table}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[shrink=10]
+\frametitle{The top-10 best features for the right foot.}
+\tiny
+\begin{table}
+\centering
+\caption{\small The top-10 best features for the right foot.}
+\input{tables/top10_right.tex}
+\end{table}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[shrink=10]
+\frametitle{The top-10 worst features for the left foot.}
+\tiny
+\begin{table}
+\centering
+\caption{\small The top-10 worst features for the left foot.}
+\input{Manuscripts/src/tables/worse10_left}
+\end{table}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[shrink=10]
+\frametitle{The top-10 worst features for the right foot.}
+\tiny
+\begin{table}
+\centering
+\caption{\small The top-10 worst features for the right foot.}
+\input{Manuscripts/src/tables/worse10_right}
+\end{table}
+\end{frame}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Feature Selection Results}
+\begin{frame}[shrink=10]
+\frametitle{The top-10 best features based on feature selection algorithm.}
+\tiny
+\begin{table}
+\centering
+\caption{\small The top-10 best features based on feature selection algorithm.}
+\input{Manuscripts/src/tables/top10best_feature_selection}
+\end{table}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}[shrink=10]
+\frametitle{The top-10 worst features based on feature selection algorithm.}
+\tiny
+\begin{table}
+\centering
+\caption{\small The top-10 worst features based on feature selection algorithm.}
+\input{Manuscripts/src/tables/top10worst_feature_selection}
+\end{table}
+\end{frame}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{frame}
+\frametitle{The feature correlation plot.}
+\centering
+\includegraphics[scale=0.3]{Manuscripts/src/figures/corr_plot.png}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%\section{Summary}
+
+%\begin{frame}{Summary}
+
+%\begin{itemize}
+%    \item gg
+%\end{itemize}
+
+    
+%\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\end{document}
+
