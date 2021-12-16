@@ -111,14 +111,14 @@ if configs['CNN']["image_feature"]=="tile":
 
 
 
-# # ##################################################################
-# #                phase 2: extracting image features
-# # ##################################################################
-# metadata = np.load(cfg.configs["paths"]["stepscan_meta.npy"])
-# data = np.load(cfg.configs["paths"]["stepscan_data.npy"])
+# ##################################################################
+#                phase 2: extracting image features
+# ##################################################################
+metadata = np.load(cfg.configs["paths"]["stepscan_meta.npy"])
+data = np.load(cfg.configs["paths"]["stepscan_data.npy"])
 
-# logger.info(f"barefoots.shape: {data.shape}")
-# logger.info(f"metadata.shape: {metadata.shape}")
+logger.info(f"barefoots.shape: {data.shape}")
+logger.info(f"metadata.shape: {metadata.shape}")
 
 
 # plt.imshow(data[1,:,:,:].sum(axis=2))
@@ -127,41 +127,139 @@ if configs['CNN']["image_feature"]=="tile":
 
 
 
-# ## Extracting Image Features
-# features = list()
-# labels = list()
+## Extracting Image Features
+features = list()
+labels = list()
 
-# for label, sample in zip(metadata, data):
-#     try:
-#         B = sample.sum(axis=1).sum(axis=0)
-#         A = np.trim_zeros(B)
+for label, sample in zip(metadata, data):
+    try:
+        B = sample.sum(axis=1).sum(axis=0)
+        A = np.trim_zeros(B)
 
-#         aa = np.where(B == A[0])
-#         bb = np.where(B == A[-1])
+        aa = np.where(B == A[0])
+        bb = np.where(B == A[-1])
 
-#         if aa[0][0]<bb[0][0]:
-#             features.append(feat.prefeatures(sample[10:70, 10:50, aa[0][0]:bb[0][0]]))
-#             labels.append(label)
-#         else:
-#             print(aa[0][0],bb[0][0])
-#             k=sample
-#             l=label
+        if aa[0][0]<bb[0][0]:
+            features.append(feat.prefeatures(sample[10:70, 10:50, aa[0][0]:bb[0][0]]))
+            labels.append(label)
+        else:
+            print(aa[0][0],bb[0][0])
+            k=sample
+            l=label
     
-#     except Exception as e:
-#         print(e)
-#         continue
+    except Exception as e:
+        print(e)
+        continue
     
 
-# logger.info(f"len prefeatures: {len(features)}")
-# logger.info(f"prefeatures.shape: {features[0].shape}")
-# logger.info(f"labels.shape: {labels[0].shape}")
+logger.info(f"len prefeatures: {len(features)}")
+logger.info(f"prefeatures.shape: {features[0].shape}")
+logger.info(f"labels.shape: {labels[0].shape}")
 
-# np.save(cfg.configs["paths"]["stepscan_image_feature.npy"], features)
-# np.save(cfg.configs["paths"]["stepscan_image_label.npy"], labels)
+np.save(cfg.configs["paths"]["stepscan_image_feature.npy"], features)
+np.save(cfg.configs["paths"]["stepscan_image_label.npy"], labels)
+
+
+
+
 
 
 # # ##################################################################
-# #                phase 3: Making Base Model
+# #                phase 3: processing labels
+# # ##################################################################
+metadata = np.load(configs["paths"]["stepscan_image_label.npy"])
+logger.info("metadata shape: {}".format(metadata.shape))
+
+
+
+indices = metadata[:,0]
+le = pre.LabelEncoder()
+le.fit(indices)
+
+logger.info(f"Number of subjects: {len(np.unique(indices))}")
+
+labels = le.transform(indices)
+
+# labels = tf.keras.utils.to_categorical(labels, num_classes=len(np.unique(indices)))
+
+
+
+
+
+# # ##################################################################
+# #                phase 4: Loading Image features
+# # ##################################################################
+features = np.load(configs["paths"]["stepscan_image_feature.npy"])
+logger.info("features shape: {}".format(features.shape))
+
+
+# #CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100
+logger.info("batch_size: {}".format(configs["CNN"]["batch_size"]))
+
+maxvalues = [np.max(features[...,ind]) for ind in range(len(cfg.image_feature_name))]
+
+for i in range(len(cfg.image_feature_name)):
+    features[..., i] = features[..., i]/maxvalues[i]
+
+
+if configs['CNN']["image_feature"]=="tile":
+    images = util.tile(features)
+
+else:
+    image_feature_name = dict(zip(cfg.image_feature_name, range(len(cfg.image_feature_name))))
+    ind = image_feature_name[configs['CNN']["image_feature"]]
+    
+    images = features[...,ind]
+    images = images[...,tf.newaxis]
+    images = np.concatenate((images, images, images), axis=-1)
+
+
+#^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+# (train_images, train_labels), (test_images, test_labels) = tf.keras.datasets.cifar10.load_data()
+
+# # Normalize pixel values to be between 0 and 1
+# train_images, test_images = train_images / 255.0, test_images / 255.0
+
+# images = train_images 
+# labels = train_labels
+# # labels = tf.keras.utils.to_categorical(train_labels,10)
+
+#^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+logger.info(f"images: {images.shape}")
+logger.info(f"labels: {labels.shape}")
+
+
+# # ##################################################################
+# #                phase 5: Making tf.dataset object
+# # ##################################################################
+
+X_train, X_test, y_train, y_test = train_test_split(images, labels, test_size=0.15, random_state=42, stratify=labels)
+X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.1, random_state=42, stratify=y_train)
+
+
+
+
+AUTOTUNE = tf.data.AUTOTUNE
+
+
+train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(1000)
+train_ds = train_ds.batch(configs['CNN']["batch_size"])
+train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)).shuffle(1000)
+val_ds = val_ds.batch(configs['CNN']["batch_size"])
+val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+
+test_ds = tf.data.Dataset.from_tensor_slices((X_test, y_test))
+test_ds = test_ds.batch(configs['CNN']["batch_size"])
+test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+
+
+
+# # ##################################################################
+# #                phase 6: Making Base Model
 # # ##################################################################
 try:
     logger.info(f"Loading { cfg.configs['CNN']['base_model'] } model...")
@@ -208,103 +306,8 @@ for layer in model.layers[-2:]:
 
 
 
-
-
 # # ##################################################################
-# #                phase 4: processing labels
-# # ##################################################################
-metadata = np.load(configs["paths"]["stepscan_image_label.npy"])
-logger.info("metadata shape: {}".format(metadata.shape))
-
-features = np.load(configs["paths"]["stepscan_image_feature.npy"])
-logger.info("features shape: {}".format(features.shape))
-
-
-
-indices = metadata[:,0]
-le = pre.LabelEncoder()
-le.fit(indices)
-
-logger.info(f"Number of subjects: {len(np.unique(indices))}")
-
-labels = le.transform(indices)
-
-# labels = tf.keras.utils.to_categorical(labels, num_classes=len(np.unique(indices)))
-
-
-
-
-
-# # ##################################################################
-# #                phase 5: Loading Image features
-# # ##################################################################
-
-
-
-# #CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100
-logger.info("batch_size: {}".format(configs["CNN"]["batch_size"]))
-
-maxvalues = [np.max(features[...,ind]) for ind in range(len(cfg.image_feature_name))]
-
-for i in range(len(cfg.image_feature_name)):
-    features[..., i] = features[..., i]/maxvalues[i]
-
-
-if configs['CNN']["image_feature"]=="tile":
-    images = util.tile(features)
-
-else:
-    image_feature_name = dict(zip(cfg.image_feature_name, range(len(cfg.image_feature_name))))
-    ind = image_feature_name[configs['CNN']["image_feature"]]
-    
-    images = features[...,ind]
-    images = images[...,tf.newaxis]
-    images = np.concatenate((images, images, images), axis=-1)
-
-
-#^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-# (train_images, train_labels), (test_images, test_labels) = tf.keras.datasets.cifar10.load_data()
-
-# # Normalize pixel values to be between 0 and 1
-# train_images, test_images = train_images / 255.0, test_images / 255.0
-
-# images = train_images 
-# labels = train_labels
-# # labels = tf.keras.utils.to_categorical(train_labels,10)
-
-#^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-logger.info(f"images: {images.shape}")
-logger.info(f"labels: {labels.shape}")
-
-X_train, X_test, y_train, y_test = train_test_split(images, labels, test_size=0.15, random_state=42, stratify=labels)
-X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.1, random_state=42, stratify=y_train)
-
-
-
-
-AUTOTUNE = tf.data.AUTOTUNE
-
-
-train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(1000)
-train_ds = train_ds.batch(configs['CNN']["batch_size"])
-train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)).shuffle(1000)
-val_ds = val_ds.batch(configs['CNN']["batch_size"])
-val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-
-test_ds = tf.data.Dataset.from_tensor_slices((X_test, y_test))
-test_ds = test_ds.batch(configs['CNN']["batch_size"])
-test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-
-
-
-
-
-# # ##################################################################
-# #                phase 6: Loading Image features
+# #                phase 7: training CNN
 # # ##################################################################
 
 model.compile(
@@ -319,7 +322,7 @@ time = int(timeit.timeit()*1_000_000)
 
 checkpoint = [
         tf.keras.callbacks.ModelCheckpoint(    configs["CNN"]["saving_path"], save_best_only=True, monitor="val_loss"),
-        tf.keras.callbacks.ReduceLROnPlateau(  monitor="val_loss", factor=0.5, patience=30, min_lr=0.0001),
+        tf.keras.callbacks.ReduceLROnPlateau(  monitor="val_loss", factor=0.5, patience=30, min_lr=0.00001),
         tf.keras.callbacks.EarlyStopping(      monitor="val_loss", patience=90, verbose=1),
         tf.keras.callbacks.TensorBoard(        log_dir=TensorBoard_logs+str(time))   
     ]    
@@ -331,7 +334,7 @@ history = model.fit(
     callbacks=[checkpoint],
     epochs=configs["CNN"]["epochs"],
     validation_data=val_ds,
-    verbose=1#configs["CNN"]["verbose"],
+    verbose=configs["CNN"]["verbose"],
 )
 
 

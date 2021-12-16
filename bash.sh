@@ -1,20 +1,20 @@
 #!/bin/bash
 
-#SBATCH --job-name=deepfeatures+classifier
+#SBATCH --job-name=fine_tuning
 #SBATCH --account=def-escheme
 #SBATCH --mem-per-cpu=16384M                                         # increase as needed
-#SBATCH --ntasks-per-node=2
-#SBATCH --cpus-per-task=2
-#SBATCH --time=12:00:00                                              # walltime in d-hh:mm or hh:mm:ss format
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=1
+#SBATCH --time=4:00:00                                              # walltime in d-hh:mm or hh:mm:ss format
 #SBATCH --output=%x-%J.out
 #SBATCH --mail-user=saeed.kazemi@unb.ca
 #SBATCH --mail-type=ALL
-#no SBATCH --gres=gpu:p100:1
+#SBATCH --gres=gpu:p100:1
 
 module load python/3.8
 module load git-lfs
 
-cd /home/saeed67/projects/def-escheme/saeed67/Worksheet
+cd /home/saeed67/projects/def-escheme/saeed67/master-project
 # virtualenv ./env
 source ./env/bin/activate
 # pip install --upgrade pip
@@ -32,14 +32,14 @@ mv *.out ./logs/
 
 
 
-python ./Codes/computing_parallel.py
+python ./Codes/retraining_CNN.py
 
 
 ## $ chmod 755 bash.sh
 ## $ seff {Job_ID}                                                                                       # list resources used by a completed job 
 ## $ sacct -j jobID [--format=jobid,maxrss,elapsed]                                                      # list resources used by a completed job
 ## $ scancel <jobid>                                                                                     # Cancelling jobs
-## $ sbatch simple_job.sh                                                                                # submit jobs
+## $ sbatch bash.sh                                                                                      # submit jobs
 ## $ squeue -u saeed67
 
 

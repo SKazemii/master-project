@@ -24,10 +24,10 @@ configs = {
         "image_size": (60, 40, 3),
         "batch_size": 32, 
         "class_numbers": 80,
-        "saving_path": "./Results/deep_model/Best_Model.h5",
+        "saving_path": "./results/deep_model/Best_Model.h5",
         "epochs": 500,
         "validation_split": 0.2,
-        "verbose": 0,
+        "verbose": 1,
         "image_feature": "PTI", # CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100, tile, fusion
     },
     "Template_Matching": {
@@ -89,13 +89,14 @@ Pathlb(configs["paths"]["tbl_dir"]).mkdir(parents=True, exist_ok=True)
 Pathlb(configs["paths"]["casia_deep_feature"]).mkdir(parents=True, exist_ok=True)
 
 GRF_HC = ["GRF_HC_max_value_1", "GRF_HC_max_value_1_ind", "GRF_HC_max_value_2", "GRF_HC_max_value_2_ind", 
-                            "GRF_HC_min_value",   "GRF_HC_min_value_ind",   "GRF_HC_mean_value",  "GRF_HC_std_value", "GRF_HC_sum_value"]
+          "GRF_HC_min_value",   "GRF_HC_min_value_ind",   "GRF_HC_mean_value",  "GRF_HC_std_value", 
+          "GRF_HC_sum_value"]
 
 COA_HC = ['COA_HC_MDIST_RD', 'COA_HC_MDIST_AP', 'COA_HC_MDIST_ML', 'COA_HC_RDIST_RD', 'COA_HC_RDIST_AP', 'COA_HC_RDIST_ML', 
-                            'COA_HC_TOTEX_RD', 'COA_HC_TOTEX_AP', 'COA_HC_TOTEX_ML', 'COA_HC_MVELO_RD', 'COA_HC_MVELO_AP', 'COA_HC_MVELO_ML', 
-                            'COA_HC_RANGE_RD', 'COA_HC_RANGE_AP', 'COA_HC_RANGE_ML', 'COA_HC_AREA_CC',  'COA_HC_AREA_CE',  'COA_HC_AREA_SW', 
-                            'COA_HC_MFREQ_RD', 'COA_HC_MFREQ_AP', 'COA_HC_MFREQ_ML', 'COA_HC_FDPD_RD',  'COA_HC_FDPD_AP',  'COA_HC_FDPD_ML', 
-                            'COA_HC_FDCC',     'COA_HC_FDCE']
+        'COA_HC_TOTEX_RD', 'COA_HC_TOTEX_AP', 'COA_HC_TOTEX_ML', 'COA_HC_MVELO_RD', 'COA_HC_MVELO_AP', 'COA_HC_MVELO_ML', 
+        'COA_HC_RANGE_RD', 'COA_HC_RANGE_AP', 'COA_HC_RANGE_ML', 'COA_HC_AREA_CC',  'COA_HC_AREA_CE',  'COA_HC_AREA_SW', 
+        'COA_HC_MFREQ_RD', 'COA_HC_MFREQ_AP', 'COA_HC_MFREQ_ML', 'COA_HC_FDPD_RD',  'COA_HC_FDPD_AP',  'COA_HC_FDPD_ML', 
+        'COA_HC_FDCC',     'COA_HC_FDCE']
 
 GRF = ["GRF_" + str(i) for i in range(100)]
 COA_RD = ["COA_RD_" + str(i) for i in range(100)]
