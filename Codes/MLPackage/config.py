@@ -18,17 +18,17 @@ configs = {
         "Debug": True,
     },
     "CNN": {
-        "base_model": "vgg16.VGG16", # vgg16.VGG16, resnet50.ResNet50, efficientnet.EfficientNetB0, mobilenet.MobileNet  inception_v3.InceptionV3
+        "base_model": "resnet50.ResNet50", # vgg16.VGG16, resnet50.ResNet50, efficientnet.EfficientNetB0, mobilenet.MobileNet  inception_v3.InceptionV3
         "weights": "imagenet", 
         "include_top": False, 
         "image_size": (60, 40, 3),
         "batch_size": 32, 
         "class_numbers": 80,
-        "saving_path": "./Results/deep_model/Best_Model.hdf5",
-        "epochs": 10,
+        "saving_path": "./Results/deep_model/Best_Model.h5",
+        "epochs": 500,
         "validation_split": 0.2,
         "verbose": 0,
-        "image_feature": "CD", # CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100, tile, fusion
+        "image_feature": "PTI", # CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100, tile, fusion
     },
     "Template_Matching": {
         "mode": "dist",
@@ -59,6 +59,12 @@ configs = {
         "log_path": os.path.join(os.getcwd(), 'logs'),
 
         "stepscan_dataset.h5": os.path.join(os.getcwd(), "Datasets", "stepscan", "footpressures_align.h5"),
+        "stepscan_data.npy": os.path.join(os.getcwd(), "Datasets", "stepscan", "Data-barefoot.npy"),
+        "stepscan_meta.npy": os.path.join(os.getcwd(), "Datasets", "stepscan", "Metadata-barefoot.npy"),
+
+        "stepscan_image_feature.npy": os.path.join(os.getcwd(), "Datasets", "stepscan", "stepscan_image_feature.npy"),
+        "stepscan_image_label.npy": os.path.join(os.getcwd(), "Datasets", "stepscan", "stepscan_image_label.npy"),
+
 
         "casia_dataset.h5": os.path.join(os.getcwd(), "Datasets", "Casia-D", "footpressures_align.h5"),
         "casia_dataset-meta.npy": os.path.join(os.getcwd(), "Datasets", "Casia-D", "Metadata-barefoot.npy"),
@@ -68,6 +74,9 @@ configs = {
         "casia_image_feature.npy": os.path.join(os.getcwd(), "Datasets", "Casia-D", "casia_image_feature.npy"),
 
         "casia_deep_feature": os.path.join(os.getcwd(), "Datasets", "Casia-D", "deep_features"),
+
+        "TensorBoard_logs": os.path.join(os.getcwd(), "logs", "TensorBoard_logs"),
+
 
     }
 }
