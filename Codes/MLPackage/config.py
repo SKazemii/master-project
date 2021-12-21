@@ -24,8 +24,8 @@ configs = {
         "image_size": (60, 40, 3),
         "batch_size": 32, 
         "class_numbers": 80,
-        "saving_path": "./results/deep_model/Best_Model.h5",
-        "epochs": 500,
+        "saving_path": "./results/deep_model/FS/",
+        "epochs": 1,
         "validation_split": 0.2,
         "verbose": 1,
         "image_feature": "PTI", # CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100, tile, fusion

@@ -66,7 +66,7 @@ def create_logger(level):
     logger.setLevel(level)
     formatter_colored = logging.Formatter(blue + '[%(asctime)s]-' + yellow + '[%(name)s @%(lineno)d]' + reset + blue + '-[%(levelname)s]' + reset + bold_red + '\t\t%(message)s' + reset, datefmt='%m/%d/%Y %I:%M:%S %p ')
     formatter = logging.Formatter('[%(asctime)s]-[%(name)s @%(lineno)d]-[%(levelname)s]\t\t%(message)s', datefmt='%m/%d/%Y %I:%M:%S %p ')
-    file_handler = logging.FileHandler( os.path.join(log_path, loggerName + f'_loger{os.getpid()}.log'), mode = 'w')
+    file_handler = logging.FileHandler( os.path.join(log_path, f"{os.getpid()}_" + loggerName + '_loger.log'), mode = 'w')
     file_handler.setLevel(level)
     file_handler.setFormatter(formatter)
     stream_handler = logging.StreamHandler()
@@ -84,6 +84,8 @@ logger.info("Importing libraries....")
 
 configs = cfg.configs
 
+
+
 if configs['CNN']["image_feature"]=="tile":
     configs['CNN']["image_size"] = (120, 80, 3)
 
@@ -97,7 +99,7 @@ if configs['CNN']["image_feature"]=="tile":
 # # ##################################################################
 # #                phase 1: Reading image
 # # ##################################################################
-# logger.info("Reading stepscan dataset....")
+# logger.info("Reading dataset....")
 # with h5py.File(cfg.configs["paths"]["stepscan_dataset.h5"], "r") as hdf:
 #     barefoots = hdf.get("/barefoot/data")[:]
 #     metadata = hdf.get("/barefoot/metadata")[:]
@@ -111,53 +113,53 @@ if configs['CNN']["image_feature"]=="tile":
 
 
 
-# ##################################################################
-#                phase 2: extracting image features
-# ##################################################################
-metadata = np.load(cfg.configs["paths"]["stepscan_meta.npy"])
-data = np.load(cfg.configs["paths"]["stepscan_data.npy"])
+# # ##################################################################
+# #                phase 2: extracting image features
+# # ##################################################################
+# metadata = np.load(cfg.configs["paths"]["stepscan_meta.npy"])
+# data = np.load(cfg.configs["paths"]["stepscan_data.npy"])
 
-logger.info(f"barefoots.shape: {data.shape}")
-logger.info(f"metadata.shape: {metadata.shape}")
-
-
-# plt.imshow(data[1,:,:,:].sum(axis=2))
-# plt.show()
+# logger.info(f"barefoots.shape: {data.shape}")
+# logger.info(f"metadata.shape: {metadata.shape}")
 
 
+# # plt.imshow(data[1,:,:,:].sum(axis=2))
+# # plt.show()
 
 
-## Extracting Image Features
-features = list()
-labels = list()
 
-for label, sample in zip(metadata, data):
-    try:
-        B = sample.sum(axis=1).sum(axis=0)
-        A = np.trim_zeros(B)
 
-        aa = np.where(B == A[0])
-        bb = np.where(B == A[-1])
+# ## Extracting Image Features
+# features = list()
+# labels = list()
 
-        if aa[0][0]<bb[0][0]:
-            features.append(feat.prefeatures(sample[10:70, 10:50, aa[0][0]:bb[0][0]]))
-            labels.append(label)
-        else:
-            print(aa[0][0],bb[0][0])
-            k=sample
-            l=label
+# for label, sample in zip(metadata, data):
+#     try:
+#         B = sample.sum(axis=1).sum(axis=0)
+#         A = np.trim_zeros(B)
+
+#         aa = np.where(B == A[0])
+#         bb = np.where(B == A[-1])
+
+#         if aa[0][0]<bb[0][0]:
+#             features.append(feat.prefeatures(sample[10:70, 10:50, aa[0][0]:bb[0][0]]))
+#             labels.append(label)
+#         else:
+#             print(aa[0][0],bb[0][0])
+#             k=sample
+#             l=label
     
-    except Exception as e:
-        print(e)
-        continue
+#     except Exception as e:
+#         print(e)
+#         continue
     
 
-logger.info(f"len prefeatures: {len(features)}")
-logger.info(f"prefeatures.shape: {features[0].shape}")
-logger.info(f"labels.shape: {labels[0].shape}")
+# logger.info(f"len prefeatures: {len(features)}")
+# logger.info(f"prefeatures.shape: {features[0].shape}")
+# logger.info(f"labels.shape: {labels[0].shape}")
 
-np.save(cfg.configs["paths"]["stepscan_image_feature.npy"], features)
-np.save(cfg.configs["paths"]["stepscan_image_label.npy"], labels)
+# np.save(cfg.configs["paths"]["stepscan_image_feature.npy"], features)
+# np.save(cfg.configs["paths"]["stepscan_image_label.npy"], labels)
 
 
 
@@ -179,9 +181,6 @@ le.fit(indices)
 logger.info(f"Number of subjects: {len(np.unique(indices))}")
 
 labels = le.transform(indices)
-
-# labels = tf.keras.utils.to_categorical(labels, num_classes=len(np.unique(indices)))
-
 
 
 
@@ -214,17 +213,7 @@ else:
     images = np.concatenate((images, images, images), axis=-1)
 
 
-#^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-# (train_images, train_labels), (test_images, test_labels) = tf.keras.datasets.cifar10.load_data()
 
-# # Normalize pixel values to be between 0 and 1
-# train_images, test_images = train_images / 255.0, test_images / 255.0
-
-# images = train_images 
-# labels = train_labels
-# # labels = tf.keras.utils.to_categorical(train_labels,10)
-
-#^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 logger.info(f"images: {images.shape}")
 logger.info(f"labels: {labels.shape}")
 
@@ -261,40 +250,28 @@ test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
 # # ##################################################################
 # #                phase 6: Making Base Model
 # # ##################################################################
-try:
-    logger.info(f"Loading { cfg.configs['CNN']['base_model'] } model...")
-    base_model = eval("tf.keras.applications." + cfg.configs["CNN"]["base_model"] + "(weights=cfg.configs['CNN']['weights'], include_top=cfg.configs['CNN']['include_top'])")
-    logger.info("Successfully loaded base model and model...")
-
-except Exception as e: 
-    base_model = None
-    logger.error("The base model could NOT be loaded correctly!!!")
-    print(e)
 
 
-base_model.trainable = False
-
-CNN_name = cfg.configs["CNN"]["base_model"].split(".")[0]
+CNN_name = "from_scratch"
 
 input = tf.keras.layers.Input(shape=cfg.configs["CNN"]["image_size"], dtype = tf.float64, name="original_img")
 x = tf.cast(input, tf.float32)
 x = tf.keras.layers.RandomFlip("horizontal_and_vertical")(x)
 x = tf.keras.layers.RandomRotation(0.2)(x)
 x = tf.keras.layers.RandomZoom(0.1)(x)
-x = eval("tf.keras.applications." + CNN_name + ".preprocess_input(x)")
-x = base_model(x)
-x = tf.keras.layers.GlobalMaxPool2D()(x)
+x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3), activation='relu')(x)
 x = tf.keras.layers.BatchNormalization()(x)
+x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), activation='relu')(x)
+x = tf.keras.layers.BatchNormalization()(x)
+x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
+x = tf.keras.layers.Dropout(0.2)(x)
+x = tf.keras.layers.Flatten()(x)
 x = tf.keras.layers.Dense(128,  activation='relu', name="last_dense")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
 x = tf.keras.layers.Dropout(0.2)(x)
 output = tf.keras.layers.Dense(cfg.configs['CNN']['class_numbers'], name="prediction")(x) # activation='softmax',
 
 ## The CNN Model
-model = tf.keras.models.Model(inputs=input, outputs=output, name=cfg.configs['CNN']['base_model'])
-
-# Freeze the layers 
-for layer in model.layers[-2:]:
-    layer.trainable = True
+model = tf.keras.models.Model(inputs=input, outputs=output, name=CNN_name)
 
 
 # for i,layer in enumerate(model.layers):
@@ -317,11 +294,13 @@ model.compile(
     )
 
 
-TensorBoard_logs = configs["paths"]["TensorBoard_logs"] + "/"
 time = int(timeit.timeit()*1_000_000)
+TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], "_".join(("FS", str(os.getpid()), configs["CNN"]["image_feature"], str(time)) )  )
+path = configs["CNN"]["saving_path"] + "_".join(( "FS", str(os.getpid()), configs["CNN"]["image_feature"], "best.h5" ))
+
 
 checkpoint = [
-        tf.keras.callbacks.ModelCheckpoint(    configs["CNN"]["saving_path"], save_best_only=True, monitor="val_loss"),
+        tf.keras.callbacks.ModelCheckpoint(    path, save_best_only=True, monitor="val_loss"),
         tf.keras.callbacks.ReduceLROnPlateau(  monitor="val_loss", factor=0.5, patience=30, min_lr=0.00001),
         tf.keras.callbacks.EarlyStopping(      monitor="val_loss", patience=90, verbose=1),
         tf.keras.callbacks.TensorBoard(        log_dir=TensorBoard_logs+str(time))   
@@ -337,8 +316,10 @@ history = model.fit(
     verbose=configs["CNN"]["verbose"],
 )
 
+test_loss, test_acc = model.evaluate(test_ds, verbose=2)
 
-model.save(configs["CNN"]["saving_path"])
+path = configs["CNN"]["saving_path"] + "_".join(( "FS", str(os.getpid()), configs["CNN"]["image_feature"], str(int(np.round(test_acc*100)))+"%" + ".h5" ))
+model.save(configs["CNN"]["saving_path"]+CNN_name+".h5")
 # plt.plot(history.history['accuracy'], label='accuracy')
 # # plt.plot(history.history['val_accuracy'], label = 'val_accuracy')
 
@@ -346,9 +327,8 @@ model.save(configs["CNN"]["saving_path"])
 # plt.ylabel('Accuracy')
 # plt.show()
 
-test_loss, test_acc = model.evaluate(test_ds, verbose=2)
 
-print(" test_loss ", test_loss, " test_acc ", test_acc)
+logger.info(f"test_loss: {np.round(test_loss)}, test_acc: {int(np.round(test_acc*100))}%")
 logger.info("Done!!")
 sys.exit()
 

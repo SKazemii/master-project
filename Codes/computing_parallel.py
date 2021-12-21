@@ -82,7 +82,7 @@ def create_logger(level):
     logger.setLevel(level)
     formatter_colored = logging.Formatter(blue + '[%(asctime)s]-' + yellow + '[%(name)s @%(lineno)d]' + reset + blue + '-[%(levelname)s]' + reset + bold_red + '\t\t%(message)s' + reset, datefmt='%m/%d/%Y %I:%M:%S %p ')
     formatter = logging.Formatter('[%(asctime)s]-[%(name)s @%(lineno)d]-[%(levelname)s]\t\t%(message)s', datefmt='%m/%d/%Y %I:%M:%S %p ')
-    file_handler = logging.FileHandler( os.path.join(log_path, loggerName + '_loger.log'), mode = 'w')
+    file_handler = logging.FileHandler( os.path.join(log_path, f"{os.getpid()}_" + loggerName + '_loger.log'), mode = 'w')
     file_handler.setLevel(level)
     file_handler.setFormatter(formatter)
     stream_handler = logging.StreamHandler()
@@ -121,9 +121,9 @@ def collect_results(result):
 
 def main():
     p0 = ["knn_classifier", "svm_classifier", "Template_Matching_classifier"]
-    p1 = ["vgg16.VGG16", "resnet50.ResNet50", "efficientnet.EfficientNetB0", "mobilenet.MobileNet", "image"]
+    p1 = ["resnet50.ResNet50"]#, "efficientnet.EfficientNetB0", "mobilenet.MobileNet", "image"]
     p2 = ["CD", "PTI", "Tmax", "Tmin", "P50", "P60", "P70", "P80", "P90", "P100"]
-    space = list(product(p0, p1, p2))
+    space = list(product(p1, p2))
 
 
     # ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK',default=4))
@@ -136,22 +136,24 @@ def main():
         logger.info(f"parameters: {parameters}")
 
         configs = copy.deepcopy(cfg.configs)
-        configs["Pipeline"]["classifier"] = parameters[0]
+        # configs["Pipeline"]["classifier"] = parameters[0]
         
         if parameters[1] != "image":
-            configs["CNN"]["base_model"] = parameters[1]
+            configs["CNN"]["base_model"] = parameters[0]
             configs["Pipeline"]["category"] = "deep"
 
-        elif parameters[1] == "image":
-            configs["Pipeline"]["category"] = "image"
+        # elif parameters[1] == "image":
+        #     configs["Pipeline"]["category"] = "image"
 
-        configs["CNN"]["image_feature"] = parameters[2]
+        configs["CNN"]["image_feature"] = parameters[1]
         
 
         # pprint.pprint(configs)
         # breakpoint()
         # pool.apply_async(util.pipeline, args=(configs,), callback=collect_results)
-        collect_results(util.pipeline(configs))
+        # collect_results(util.pipeline(configs))
+        util.from_scratch(configs)
+
         
     # pool.close()
     # pool.join()
