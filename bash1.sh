@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=from_scratch
+#SBATCH --job-name=fine_tuning
 #SBATCH --account=def-escheme
 #SBATCH --mem-per-cpu=16384M                                         # increase as needed
 #SBATCH --ntasks-per-node=2
@@ -9,7 +9,6 @@
 #SBATCH --mail-user=saeed.kazemi@unb.ca
 #SBATCH --mail-type=ALL
 #SBATCH --gres=gpu:p100:1
-
 
 
 module load python/3.8
@@ -33,7 +32,7 @@ source ./env/bin/activate
 
 
 
-python ./Codes/computing_parallel.py
+python ./Codes/computing_parallel1.py
 
 
 ## $ chmod 755 bash.sh

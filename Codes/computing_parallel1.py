@@ -154,8 +154,8 @@ def main():
         # breakpoint()
         # pool.apply_async(util.pipeline, args=(configs,), callback=collect_results)
         # collect_results(util.pipeline(configs))
-        util.from_scratch(configs)
-        # util.fine_tuning(configs)
+        # util.from_scratch(configs)
+        util.fine_tuning(configs)
 
 
         

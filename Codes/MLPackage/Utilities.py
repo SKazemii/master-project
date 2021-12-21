@@ -45,6 +45,7 @@ time = int(timeit.default_timer() * 1_000_000)
 
 
 
+SLURM_JOBID = str(os.environ.get('SLURM_JOBID',default=os.getpid()))
 
 
 
@@ -65,7 +66,7 @@ def create_logger(level):
     formatter_colored = logging.Formatter(blue + '[%(asctime)s]-' + yellow + '[%(name)s @%(lineno)d]' + reset + blue + '-[%(levelname)s]' + reset + bold_red + '\t\t%(message)s' + reset, datefmt='%m/%d/%Y %I:%M:%S %p ')
     formatter = logging.Formatter('[%(asctime)s]-[%(name)s @%(lineno)d]-[%(levelname)s]\t\t%(message)s', datefmt='%m/%d/%Y %I:%M:%S %p ')
     # file_handler = logging.FileHandler( os.path.join(log_path, loggerName + '_loger.log'), mode = 'w')
-    file_handler = logging.FileHandler( os.path.join(log_path, f"{os.getpid()}_" + loggerName + '_loger.log'), mode = 'w')
+    file_handler = logging.FileHandler( os.path.join(log_path, f"{SLURM_JOBID}_" + loggerName + '_loger.log'), mode = 'w')
 
     file_handler.setLevel(level)
     file_handler.setFormatter(formatter)
@@ -752,6 +753,7 @@ def template_selection(DF_positive_samples_train,  method, k_cluster, verbose=1)
     return DF_positive_samples_train_clustered
 
 
+
 def tile(samples):
     '''return a tile of different images'''
     sample_size = samples.shape
@@ -777,7 +779,10 @@ def tile(samples):
     return np.array(tile_image)
 
 
+
 def fine_tuning(configs):
+    logger.info("func: fine_tuning")
+
 
     if configs['CNN']["image_feature"]=="tile":
         configs['CNN']["image_size"] = (120, 80, 3)
@@ -809,50 +814,50 @@ def fine_tuning(configs):
     # ##################################################################
     #                phase 2: extracting image features
     # ##################################################################
-    metadata = np.load(cfg.configs["paths"]["stepscan_meta.npy"])
-    data = np.load(cfg.configs["paths"]["stepscan_data.npy"])
+    # metadata = np.load(cfg.configs["paths"]["stepscan_meta.npy"])
+    # data = np.load(cfg.configs["paths"]["stepscan_data.npy"])
 
-    logger.info(f"barefoots.shape: {data.shape}")
-    logger.info(f"metadata.shape: {metadata.shape}")
-
-
-    # plt.imshow(data[1,:,:,:].sum(axis=2))
-    # plt.show()
+    # logger.info(f"barefoots.shape: {data.shape}")
+    # logger.info(f"metadata.shape: {metadata.shape}")
 
 
+    # # plt.imshow(data[1,:,:,:].sum(axis=2))
+    # # plt.show()
 
 
-    ## Extracting Image Features
-    features = list()
-    labels = list()
 
-    for label, sample in zip(metadata, data):
-        try:
-            B = sample.sum(axis=1).sum(axis=0)
-            A = np.trim_zeros(B)
 
-            aa = np.where(B == A[0])
-            bb = np.where(B == A[-1])
+    # ## Extracting Image Features
+    # features = list()
+    # labels = list()
 
-            if aa[0][0]<bb[0][0]:
-                features.append(feat.prefeatures(sample[10:70, 10:50, aa[0][0]:bb[0][0]]))
-                labels.append(label)
-            else:
-                # print(aa[0][0],bb[0][0])
-                k=sample
-                l=label
+    # for label, sample in zip(metadata, data):
+    #     try:
+    #         B = sample.sum(axis=1).sum(axis=0)
+    #         A = np.trim_zeros(B)
+
+    #         aa = np.where(B == A[0])
+    #         bb = np.where(B == A[-1])
+
+    #         if aa[0][0]<bb[0][0]:
+    #             features.append(feat.prefeatures(sample[10:70, 10:50, aa[0][0]:bb[0][0]]))
+    #             labels.append(label)
+    #         else:
+    #             # print(aa[0][0],bb[0][0])
+    #             k=sample
+    #             l=label
         
-        except Exception as e:
-            logger.error(e)
-            continue
+    #     except Exception as e:
+    #         logger.error(e)
+    #         continue
         
 
-    logger.info(f"len prefeatures: {len(features)}")
-    logger.info(f"prefeatures.shape: {features[0].shape}")
-    logger.info(f"labels.shape: {labels[0].shape}")
+    # logger.info(f"len prefeatures: {len(features)}")
+    # logger.info(f"prefeatures.shape: {features[0].shape}")
+    # logger.info(f"labels.shape: {labels[0].shape}")
 
-    np.save(cfg.configs["paths"]["stepscan_image_feature.npy"], features)
-    np.save(cfg.configs["paths"]["stepscan_image_label.npy"], labels)
+    # np.save(cfg.configs["paths"]["stepscan_image_feature.npy"], features)
+    # np.save(cfg.configs["paths"]["stepscan_image_label.npy"], labels)
 
 
 
@@ -1012,8 +1017,8 @@ def fine_tuning(configs):
         )
 
     time = int(timeit.timeit()*1_000_000)
-    TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], "_".join(("FT", str(os.getpid()), CNN_name, configs["CNN"]["image_feature"], str(time)) )  )
-    path = configs["CNN"]["saving_path"] + "_".join(( "FT", str(os.getpid()), CNN_name, configs["CNN"]["image_feature"], "best.h5" ))
+    TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], "_".join(("FT", SLURM_JOBID, CNN_name, configs["CNN"]["image_feature"], str(time)) )  )
+    path = configs["CNN"]["saving_path"] + "_".join(( "FT", SLURM_JOBID, CNN_name, configs["CNN"]["image_feature"], "best.h5" ))
 
     checkpoint = [
             tf.keras.callbacks.ModelCheckpoint(    path, save_best_only=True, monitor="val_loss"),
@@ -1033,7 +1038,7 @@ def fine_tuning(configs):
     )
     test_loss, test_acc = model.evaluate(test_ds, verbose=2)
 
-    path = configs["CNN"]["saving_path"] + "_".join(( "FT", str(os.getpid()), CNN_name, configs["CNN"]["image_feature"], str(int(np.round(test_acc*100)))+"%" + ".h5" ))
+    path = configs["CNN"]["saving_path"] + "_".join(( "FT", SLURM_JOBID, CNN_name, configs["CNN"]["image_feature"], str(int(np.round(test_acc*100)))+"%" + ".h5" ))
     model.save(path)
     # plt.plot(history.history['accuracy'], label='accuracy')
     # # plt.plot(history.history['val_accuracy'], label = 'val_accuracy')
@@ -1046,7 +1051,9 @@ def fine_tuning(configs):
     return history
 
 
+
 def from_scratch(configs):
+    logger.info("func: from_scratch")
     
     if configs['CNN']["image_feature"]=="tile":
         configs['CNN']["image_size"] = (120, 80, 3)
@@ -1257,15 +1264,17 @@ def from_scratch(configs):
 
 
     time = int(timeit.timeit()*1_000_000)
-    TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], "_".join(("FS", str(os.getpid()), configs["CNN"]["image_feature"], str(time)) )  )
-    path = configs["CNN"]["saving_path"] + "_".join(( "FS", str(os.getpid()), configs["CNN"]["image_feature"], "best.h5" ))
+    TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], "_".join(("FS", SLURM_JOBID, configs["CNN"]["image_feature"], str(time)) )  )
+    path = configs["CNN"]["saving_path"] + "_".join(( "FS", SLURM_JOBID, configs["CNN"]["image_feature"], "best.h5" ))
+    logger.info(f"TensorBoard_logs: {TensorBoard_logs}")
+    logger.info(f"path: {path}")
 
 
     checkpoint = [
             tf.keras.callbacks.ModelCheckpoint(    path, save_best_only=True, monitor="val_loss"),
             tf.keras.callbacks.ReduceLROnPlateau(  monitor="val_loss", factor=0.5, patience=30, min_lr=0.00001),
             tf.keras.callbacks.EarlyStopping(      monitor="val_loss", patience=90, verbose=1),
-            tf.keras.callbacks.TensorBoard(        log_dir=TensorBoard_logs+str(time))   
+            tf.keras.callbacks.TensorBoard(        log_dir=TensorBoard_logs)   
         ]    
 
 
@@ -1280,7 +1289,7 @@ def from_scratch(configs):
 
     test_loss, test_acc = model.evaluate(test_ds, verbose=2)
 
-    path = configs["CNN"]["saving_path"] + "_".join(( "FS", str(os.getpid()), configs["CNN"]["image_feature"], str(int(np.round(test_acc*100)))+"%" + ".h5" ))
+    path = configs["CNN"]["saving_path"] + "_".join(( "FS", SLURM_JOBID, configs["CNN"]["image_feature"], str(int(np.round(test_acc*100)))+"%" + ".h5" ))
     model.save(path)
     # plt.plot(history.history['accuracy'], label='accuracy')
     # # plt.plot(history.history['val_accuracy'], label = 'val_accuracy')
