@@ -122,45 +122,44 @@ def collect_results(result):
 
 def main():
     p0 = ["knn_classifier", "svm_classifier", "Template_Matching_classifier"]
-    p1 = ["resnet50.ResNet50"]#, "efficientnet.EfficientNetB0", "mobilenet.MobileNet", "image"]
+    p1 = ["FT", "FS"]#, "efficientnet.EfficientNetB0", "mobilenet.MobileNet", "image"]
     p2 = ["CD", "PTI", "Tmax", "Tmin", "P50", "P60", "P70", "P80", "P90", "P100"]
-    space = list(product(p1, p2))
+    space = list(product(p0, p1, p2))
 
 
-    # ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK',default=4))
+    ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK',default=4))
 
-    # pool = multiprocessing.Pool(processes=ncpus)
-    # logger.info(f"CPU count: {ncpus}")
+    pool = multiprocessing.Pool(processes=ncpus)
+    logger.info(f"CPU count: {ncpus}")
 
-    logger.info("func: FT")
 
     for parameters in space:
         logger.info(f"parameters: {parameters}")
 
         configs = copy.deepcopy(cfg.configs)
-        # configs["Pipeline"]["classifier"] = parameters[0]
+        configs["Pipeline"]["classifier"] = parameters[0]
         
-        if parameters[1] != "image":
-            configs["CNN"]["base_model"] = parameters[0]
-            configs["Pipeline"]["category"] = "deep"
+        configs["CNN"]["type"] = parameters[1]
+        configs["Pipeline"]["category"] = "deep"
 
         # elif parameters[1] == "image":
         #     configs["Pipeline"]["category"] = "image"
 
-        configs["CNN"]["image_feature"] = parameters[1]
+        configs["CNN"]["image_feature"] = parameters[2]
         
 
         # pprint.pprint(configs)
         # breakpoint()
-        # pool.apply_async(util.pipeline, args=(configs,), callback=collect_results)
+        pool.apply_async(util.pipeline, args=(configs,), callback=collect_results)
         # collect_results(util.pipeline(configs))
-        util.from_scratch(configs)
+        # util.pipeline(configs)
         # util.fine_tuning(configs)
 
 
+
         
-    # pool.close()
-    # pool.join()
+    pool.close()
+    pool.join()
 
 
 

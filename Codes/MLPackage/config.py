@@ -7,7 +7,8 @@ configs = {
     "Pipeline": {
         "classifier": "Template_Matching_classifier", # knn_classifier   svm_classifier   Template_Matching_classifier
         "persentage": 0.95,
-        "category": "image", # deep, image, hand_crafted
+        "category": "deep", # deep, image, hand_crafted
+        "type": "FT", # FT, FS, PT
         "normilizing": "z-score",
         "feature_type": "COA", # "all", "GRF_HC", "COA_HC", "GRF", "COA", "wt_COA",  ## todo: "wt_GRF"
         "test_ratio": 0.30,
@@ -15,7 +16,7 @@ configs = {
         "template_selection_method": "None",# "DEND" or MDIST
         "template_selection_k_cluster": 4,
         "verbose": 1,
-        "Debug": True,
+        "Debug": False,
     },
     "CNN": {
         "base_model": "resnet50.ResNet50", # vgg16.VGG16, resnet50.ResNet50, efficientnet.EfficientNetB0, mobilenet.MobileNet  inception_v3.InceptionV3
@@ -38,7 +39,7 @@ configs = {
         "verbose": 1,
     },
     "SVM": {
-        "kernel": "linear",
+            "kernel": "linear",
         "random_runs": 50,
         "verbose": 1,
     },

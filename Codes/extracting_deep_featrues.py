@@ -18,7 +18,7 @@ import timeit
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-import os, sys, logging, pprint, itertools, multiprocessing, copy
+import os, sys, logging, pprint, itertools, multiprocessing, copy, glob
 from PIL import Image
 from pathlib import Path as Pathlb
 
@@ -213,11 +213,210 @@ def deep_features(configs):
         pd.DataFrame(Deep_features, columns=columnsName).to_excel(os.path.join(temp_dir, file_name+str(time)+'.xlsx'))
 
 
+
+def FT_deep_features(configs):
+    a = configs["CNN"]["image_feature"]
+    g = glob.glob(configs["CNN"]["saving_path"]+f"FT*{a}*%.h5", recursive=True)
+    logger.info(g)
+
+    try:
+        logger.info(f"Loading model...")
+        model = tf.keras.models.load_model(g[0])
+        logger.info("Successfully loaded base model and model...")
+
+    except Exception as e: 
+        model = None
+        logger.error("The base model could NOT be loaded correctly!!!")
+        print(e)
+
+    # tf.keras.utils.plot_model(model, to_file=CNN_name + ".png", show_shapes=True)
+
+    if configs['CNN']["verbose"]==True:
+        model.summary() 
+
+
+
+
+    prefeatures = np.load(configs['paths']["casia_image_feature.npy"])
+    logger.info("prefeature shape: {}".format(prefeatures.shape))
+
+
+    maxvalues = [np.max(prefeatures[...,ind]) for ind in range(len(cfg.image_feature_name))]
+
+    for i in range(len(cfg.image_feature_name)):
+        prefeatures[..., i] = prefeatures[..., i]/maxvalues[i]
+
+
+    metadata = np.load(configs['paths']["casia_dataset-meta.npy"])
+    logger.info("metadata shape: {}".format(metadata.shape))
+
+
+    # #CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100
+    logger.info("batch_size: {}".format(configs['CNN']["batch_size"]))
+
+
+    # # Extracting features
+    Deep_features = np.zeros((1, model.layers[-1].output_shape[1]))
+
+    
+
+    AUTOTUNE = tf.data.AUTOTUNE
+
+    train_ds = tf.data.Dataset.from_tensor_slices((prefeatures, metadata[:,0]))
+    train_ds = train_ds.batch(configs['CNN']["batch_size"])
+    train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+
+
+    for image_batch, labels_batch in train_ds:
+
+        if configs['CNN']["image_feature"]=="tile":
+            tile_images = util.tile(image_batch)
+            feature = model(tile_images)
+            Deep_features = np.append(Deep_features, feature, axis=0)
+            if (Deep_features.shape[0]-1) % 256 == 0:
+                logger.info(f" ->>> ({os.getpid()}) completed images: " + str(Deep_features.shape[0]))
+        
+        
+        else:
+            image_feature_name = dict(zip(cfg.image_feature_name, range(len(cfg.image_feature_name))))
+            ind = image_feature_name[configs['CNN']["image_feature"]]
+            
+            images = image_batch[...,ind]
+            images = images[...,tf.newaxis]
+            images = np.concatenate((images, images, images), axis=-1)
+
+            feature = model(images)
+            Deep_features = np.append(Deep_features, feature, axis=0)
+            # print(Deep_features.shape[0]-1)
+            if (Deep_features.shape[0]-1) % 256 == 0:
+                logger.info(f" ->>> ({os.getpid()}) completed images: " + str(Deep_features.shape[0]))
+
+
+    Deep_features = Deep_features[1:, :]
+    logger.info(f"Deep features shape: {Deep_features.shape}")
+
+
+
+    
+    # # Saving Featurs
+
+
+    time = int(timeit.default_timer() * 1_000_000)
+
+    file_name =  f'FT_resnet50_{configs["CNN"]["image_feature"]}_features.xlsx'
+    saving_path = os.path.join(configs['paths']["casia_deep_feature"], file_name)
+    columnsName = ["feat_"+str(i) for i in range(Deep_features.shape[1])]  + cfg.label
+    Deep_features = np.concatenate((Deep_features, metadata[:Deep_features.shape[0], 0:2]), axis=1)
+
+    try:
+        pd.DataFrame(Deep_features, columns=columnsName).to_excel(saving_path)
+    except Exception as e:
+        print(e)
+        pd.DataFrame(Deep_features, columns=columnsName).to_excel(os.path.join(temp_dir, file_name+str(time)+'.xlsx'))
+
+
+
+def FS_deep_features(configs):
+    a = configs["CNN"]["image_feature"]
+    g = glob.glob(configs["CNN"]["saving_path"]+f"FS*{a}*%.h5", recursive=True)
+    logger.info(g)
+
+    try:
+        logger.info(f"Loading model...")
+        model = tf.keras.models.load_model(g[0])
+        logger.info("Successfully loaded base model and model...")
+
+    except Exception as e: 
+        model = None
+        logger.error("The base model could NOT be loaded correctly!!!")
+        print(e)
+
+    # tf.keras.utils.plot_model(model, to_file=CNN_name + ".png", show_shapes=True)
+
+    if configs['CNN']["verbose"]==True:
+        model.summary() 
+
+
+
+
+    prefeatures = np.load(configs['paths']["casia_image_feature.npy"])
+    logger.info("prefeature shape: {}".format(prefeatures.shape))
+
+
+    maxvalues = [np.max(prefeatures[...,ind]) for ind in range(len(cfg.image_feature_name))]
+
+    for i in range(len(cfg.image_feature_name)):
+        prefeatures[..., i] = prefeatures[..., i]/maxvalues[i]
+
+
+    metadata = np.load(configs['paths']["casia_dataset-meta.npy"])
+    logger.info("metadata shape: {}".format(metadata.shape))
+
+
+    # #CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100
+    logger.info("batch_size: {}".format(configs['CNN']["batch_size"]))
+
+
+    # # Extracting features
+    Deep_features = np.zeros((1, model.layers[-1].output_shape[1]))
+
+    
+
+    AUTOTUNE = tf.data.AUTOTUNE
+
+    train_ds = tf.data.Dataset.from_tensor_slices((prefeatures, metadata[:,0]))
+    train_ds = train_ds.batch(configs['CNN']["batch_size"])
+    train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+
+
+    for image_batch, labels_batch in train_ds:
+
+        if configs['CNN']["image_feature"]!="tile":
+            
+            image_feature_name = dict(zip(cfg.image_feature_name, range(len(cfg.image_feature_name))))
+            ind = image_feature_name[configs['CNN']["image_feature"]]
+            
+            images = image_batch[...,ind]
+            images = images[...,tf.newaxis]
+            images = np.concatenate((images, images, images), axis=-1)
+
+            feature = model(images)
+            Deep_features = np.append(Deep_features, feature, axis=0)
+            # print(Deep_features.shape[0]-1)
+            if (Deep_features.shape[0]-1) % 256 == 0:
+                logger.info(f" ->>> ({os.getpid()}) completed images: " + str(Deep_features.shape[0]))
+
+
+    Deep_features = Deep_features[1:, :]
+    logger.info(f"Deep features shape: {Deep_features.shape}")
+
+
+
+    
+    # # Saving Featurs
+
+
+    time = int(timeit.default_timer() * 1_000_000)
+
+    file_name =  f'FS_{configs["CNN"]["image_feature"]}_features.xlsx'
+    saving_path = os.path.join(configs['paths']["casia_deep_feature"], file_name)
+    columnsName = ["feat_"+str(i) for i in range(Deep_features.shape[1])]  + cfg.label
+    Deep_features = np.concatenate((Deep_features, metadata[:Deep_features.shape[0], 0:2]), axis=1)
+
+    try:
+        pd.DataFrame(Deep_features, columns=columnsName).to_excel(saving_path)
+    except Exception as e:
+        print(e)
+        pd.DataFrame(Deep_features, columns=columnsName).to_excel(os.path.join(temp_dir, file_name+str(time)+'.xlsx'))
+
+
 def main():
 
 
     p  = ["vgg16.VGG16"]#, "efficientnet.EfficientNetB0", "mobilenet.MobileNet"]#
-    p1 = ["CD", "PTI", "Tmax", "Tmin", "P50", "P60", "P70", "P80", "P90", "P100", "tile"]
+    p1 = ["CD", "PTI", "Tmax", "Tmin", "P50", "P60", "P70", "P80", "P90", "P100"]
     space = list(itertools.product(p,p1))
     ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK',default=1))
     ncpus = 4
@@ -228,14 +427,11 @@ def main():
         configs = copy.deepcopy(cfg.configs)
         configs["CNN"]["base_model"] = parameters[0]
         configs["CNN"]["image_feature"] = parameters[1]
-        if parameters[1]=="tile":
-            configs["CNN"]["image_size"] =  (120, 200, 3)
-        else:
-            configs["CNN"]["image_size"] =  (60, 40, 3)
+        configs["CNN"]["image_size"] =  (60, 40, 3)
         # pprint.pprint(configs)
         # breakpoint()
         # pool.apply_async(deep_features, args=(configs,))
-        deep_features(configs)
+        FS_deep_features(configs)
         
     # pool.close()
     # pool.join()

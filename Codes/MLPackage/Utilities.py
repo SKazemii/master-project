@@ -301,8 +301,15 @@ def pipeline(configs):
     classifier = configs["Pipeline"]["classifier"]
 
     if configs["Pipeline"]["category"]=="deep":
-        feature_path = os.path.join(configs["paths"]["casia_deep_feature"], configs["CNN"]["base_model"].split(".")[0]+'_'+configs["CNN"]["image_feature"]+'_features.xlsx')
-        DF_features_all = pd.read_excel(feature_path, index_col = 0)
+        if configs["Pipeline"]["type"]=="PT":
+            feature_path = os.path.join(configs["paths"]["casia_deep_feature"], configs["CNN"]["base_model"].split(".")[0]+'_'+configs["CNN"]["image_feature"]+'_features.xlsx')
+            DF_features_all = pd.read_excel(feature_path, index_col = 0)
+        elif configs["Pipeline"]["type"]=="FS":
+            feature_path = os.path.join(configs["paths"]["casia_deep_feature"], 'FS_'+configs["CNN"]["image_feature"]+'_features.xlsx')
+            DF_features_all = pd.read_excel(feature_path, index_col = 0)
+        elif configs["Pipeline"]["type"]=="FT":
+            feature_path = os.path.join(configs["paths"]["casia_deep_feature"], 'FT_resnet50_'+configs["CNN"]["image_feature"]+'_features.xlsx')
+            DF_features_all = pd.read_excel(feature_path, index_col = 0)
     elif configs["Pipeline"]["category"]=="hand_crafted":
         feature_path = configs["paths"]["casia_all_feature.xlsx"]
         DF_features_all = pd.read_excel(feature_path, index_col = 0)
@@ -320,7 +327,8 @@ def pipeline(configs):
 
 
 
-
+ 
+     
 
 
 
@@ -414,7 +422,7 @@ def pipeline(configs):
             #                                                k_cluster=200, 
             #                                                verbose=Pipeline["verbose"])
             if configs["Pipeline"]["category"]=="deep" or configs["Pipeline"]["category"]=="image" :
-                temp1=feature_type+'-'+configs["CNN"]["image_feature"]
+                temp1="_".join((feature_type, configs["CNN"]["image_feature"], configs["Pipeline"]["type"]))
             result = eval(classifier)(pos_train=DF_positive_samples_train, 
                                 neg_train=DF_negative_samples_train, 
                                 pos_test=DF_positive_samples_test, 
@@ -962,8 +970,8 @@ def fine_tuning(configs):
     # #                phase 6: Making Base Model
     # # ##################################################################
     try:
-        logger.info(f"Loading { cfg.configs['CNN']['base_model'] } model...")
-        base_model = eval("tf.keras.applications." + cfg.configs["CNN"]["base_model"] + "(weights=cfg.configs['CNN']['weights'], include_top=cfg.configs['CNN']['include_top'])")
+        logger.info(f"Loading { configs['CNN']['base_model'] } model...")
+        base_model = eval("tf.keras.applications." + configs["CNN"]["base_model"] + "(weights=cfg.configs['CNN']['weights'], include_top=cfg.configs['CNN']['include_top'])")
         logger.info("Successfully loaded base model and model...")
 
     except Exception as e: 
@@ -974,7 +982,7 @@ def fine_tuning(configs):
 
     base_model.trainable = False
 
-    CNN_name = cfg.configs["CNN"]["base_model"].split(".")[0]
+    CNN_name = configs["CNN"]["base_model"].split(".")[0]
 
     input = tf.keras.layers.Input(shape=cfg.configs["CNN"]["image_size"], dtype = tf.float64, name="original_img")
     x = tf.cast(input, tf.float32)
@@ -987,10 +995,10 @@ def fine_tuning(configs):
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.Dense(128,  activation='relu', name="last_dense")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
     x = tf.keras.layers.Dropout(0.2)(x)
-    output = tf.keras.layers.Dense(cfg.configs['CNN']['class_numbers'], name="prediction")(x) # activation='softmax',
+    output = tf.keras.layers.Dense(configs['CNN']['class_numbers'], name="prediction")(x) # activation='softmax',
 
     ## The CNN Model
-    model = tf.keras.models.Model(inputs=input, outputs=output, name=cfg.configs['CNN']['base_model'])
+    model = tf.keras.models.Model(inputs=input, outputs=output, name=configs['CNN']['base_model'])
 
     # Freeze the layers 
     for layer in model.layers[-2:]:
@@ -1223,7 +1231,7 @@ def from_scratch(configs):
 
     CNN_name = "from_scratch"
 
-    input = tf.keras.layers.Input(shape=cfg.configs["CNN"]["image_size"], dtype = tf.float64, name="original_img")
+    input = tf.keras.layers.Input(shape=configs["CNN"]["image_size"], dtype = tf.float64, name="original_img")
     x = tf.cast(input, tf.float32)
     x = tf.keras.layers.RandomFlip("horizontal_and_vertical")(x)
     x = tf.keras.layers.RandomRotation(0.2)(x)
@@ -1237,7 +1245,7 @@ def from_scratch(configs):
     x = tf.keras.layers.Flatten()(x)
     x = tf.keras.layers.Dense(128,  activation='relu', name="last_dense")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
     x = tf.keras.layers.Dropout(0.2)(x)
-    output = tf.keras.layers.Dense(cfg.configs['CNN']['class_numbers'], name="prediction")(x) # activation='softmax',
+    output = tf.keras.layers.Dense(configs['CNN']['class_numbers'], name="prediction")(x) # activation='softmax',
 
     ## The CNN Model
     model = tf.keras.models.Model(inputs=input, outputs=output, name=CNN_name)
