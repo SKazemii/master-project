@@ -431,7 +431,7 @@ def main():
         # pprint.pprint(configs)
         # breakpoint()
         # pool.apply_async(deep_features, args=(configs,))
-        FS_deep_features(configs)
+        FT_deep_features(configs)
         
     # pool.close()
     # pool.join()

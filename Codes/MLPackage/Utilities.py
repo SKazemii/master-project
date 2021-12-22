@@ -1227,7 +1227,22 @@ def from_scratch(configs):
     # # ##################################################################
     # #                phase 6: Making Base Model
     # # ##################################################################
-
+    def convolutional_block(x, filter):
+        # copy tensor to variable called x_skip
+        x_skip = x
+        # Layer 1
+        x = tf.keras.layers.Conv2D(filter, (3,3), padding = 'same', strides = (2,2))(x)
+        x = tf.keras.layers.BatchNormalization(axis=3)(x)
+        x = tf.keras.layers.Activation('relu')(x)
+        # Layer 2
+        x = tf.keras.layers.Conv2D(filter, (3,3), padding = 'same')(x)
+        x = tf.keras.layers.BatchNormalization(axis=3)(x)
+        # Processing Residue with conv(1,1)
+        x_skip = tf.keras.layers.Conv2D(filter, (1,1), strides = (2,2))(x_skip)
+        # Add Residue
+        x = tf.keras.layers.Add()([x, x_skip])     
+        x = tf.keras.layers.Activation('relu')(x)
+        return x
 
     CNN_name = "from_scratch"
 
@@ -1236,15 +1251,21 @@ def from_scratch(configs):
     x = tf.keras.layers.RandomFlip("horizontal_and_vertical")(x)
     x = tf.keras.layers.RandomRotation(0.2)(x)
     x = tf.keras.layers.RandomZoom(0.1)(x)
-    x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3), activation='relu')(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), activation='relu')(x)
-    x = tf.keras.layers.BatchNormalization()(x)
+    x = convolutional_block(x, 8)
+    x = convolutional_block(x, 32)
+    # x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
+    x = convolutional_block(x, 64)
+    # x = tf.keras.layers.Conv2D(16, kernel_size=(3, 3), activation='relu')(x)
+    # x = tf.keras.layers.BatchNormalization()(x)
+    # x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3), activation='relu')(x)
+    # x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
-    x = tf.keras.layers.Dropout(0.2)(x)
+    x = tf.keras.layers.Dropout(0.3)(x)
     x = tf.keras.layers.Flatten()(x)
-    x = tf.keras.layers.Dense(128,  activation='relu', name="last_dense")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
-    x = tf.keras.layers.Dropout(0.2)(x)
+    x = tf.keras.layers.Dense(256,  activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.0001), name="last_dense-1")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
+    x = tf.keras.layers.Dropout(0.3)(x)
+    x = tf.keras.layers.Dense(128,  activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.0001), name="last_dense")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
+    x = tf.keras.layers.Dropout(0.3)(x)
     output = tf.keras.layers.Dense(configs['CNN']['class_numbers'], name="prediction")(x) # activation='softmax',
 
     ## The CNN Model
@@ -1266,7 +1287,7 @@ def from_scratch(configs):
 
     model.compile(
         optimizer=tf.keras.optimizers.Adam(), #learning_rate=0.001
-        loss=tf.keras.losses.SparseCategoricalCrossentropy (from_logits=True), 
+        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), 
         metrics=["Accuracy"]
         )
 
@@ -1279,9 +1300,9 @@ def from_scratch(configs):
 
 
     checkpoint = [
-            tf.keras.callbacks.ModelCheckpoint(    path, save_best_only=True, monitor="val_loss"),
-            tf.keras.callbacks.ReduceLROnPlateau(  monitor="val_loss", factor=0.5, patience=30, min_lr=0.00001),
-            tf.keras.callbacks.EarlyStopping(      monitor="val_loss", patience=90, verbose=1),
+            tf.keras.callbacks.ModelCheckpoint(    path, save_best_only=True, monitor="val_Accuracy"),
+            tf.keras.callbacks.ReduceLROnPlateau(  monitor="val_Accuracy", factor=0.5, patience=30, min_lr=0.00001),
+            # tf.keras.callbacks.EarlyStopping(      monitor="val_Accuracy", patience=90, verbose=1),
             tf.keras.callbacks.TensorBoard(        log_dir=TensorBoard_logs)   
         ]    
 

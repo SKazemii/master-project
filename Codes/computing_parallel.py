@@ -133,6 +133,9 @@ def main():
     logger.info(f"CPU count: {ncpus}")
 
 
+    util.from_scratch(cfg.configs)
+    logger.info("Done!!")
+    sys.exit()
     for parameters in space:
         logger.info(f"parameters: {parameters}")
 
@@ -150,10 +153,11 @@ def main():
 
         # pprint.pprint(configs)
         # breakpoint()
-        pool.apply_async(util.pipeline, args=(configs,), callback=collect_results)
+        # pool.apply_async(util.pipeline, args=(configs,), callback=collect_results)
         # collect_results(util.pipeline(configs))
         # util.pipeline(configs)
         # util.fine_tuning(configs)
+        util.from_scratch(configs)
 
 
 
