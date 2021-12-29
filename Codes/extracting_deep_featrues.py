@@ -415,7 +415,7 @@ def FS_deep_features(configs):
 def main():
 
 
-    p  = ["vgg16.VGG16"]#, "efficientnet.EfficientNetB0", "mobilenet.MobileNet"]#
+    p  = ["resnet50.ResNet50"]#, "efficientnet.EfficientNetB0", "mobilenet.MobileNet", "resnet50.ResNet50"]#
     p1 = ["CD", "PTI", "Tmax", "Tmin", "P50", "P60", "P70", "P80", "P90", "P100"]
     space = list(itertools.product(p,p1))
     ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK',default=1))
@@ -431,7 +431,8 @@ def main():
         # pprint.pprint(configs)
         # breakpoint()
         # pool.apply_async(deep_features, args=(configs,))
-        FT_deep_features(configs)
+        # FT_deep_features(configs)
+        FS_deep_features(configs)
         
     # pool.close()
     # pool.join()

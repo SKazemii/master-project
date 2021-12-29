@@ -122,9 +122,10 @@ def collect_results(result):
 
 def main():
     p0 = ["knn_classifier", "svm_classifier", "Template_Matching_classifier"]
-    p1 = ["FT", "FS"]#, "efficientnet.EfficientNetB0", "mobilenet.MobileNet", "image"]
+    p1 = ["FS"]#, "efficientnet.EfficientNetB0", "mobilenet.MobileNet", "image"]
     p2 = ["CD", "PTI", "Tmax", "Tmin", "P50", "P60", "P70", "P80", "P90", "P100"]
     space = list(product(p0, p1, p2))
+    # space = list(product(p2))
 
 
     ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK',default=4))
@@ -133,31 +134,31 @@ def main():
     logger.info(f"CPU count: {ncpus}")
 
 
-    util.from_scratch(cfg.configs)
-    logger.info("Done!!")
-    sys.exit()
     for parameters in space:
         logger.info(f"parameters: {parameters}")
 
         configs = copy.deepcopy(cfg.configs)
         configs["Pipeline"]["classifier"] = parameters[0]
         
-        configs["CNN"]["type"] = parameters[1]
+        configs["Pipeline"]["type"] = parameters[1]
         configs["Pipeline"]["category"] = "deep"
-
-        # elif parameters[1] == "image":
-        #     configs["Pipeline"]["category"] = "image"
-
         configs["CNN"]["image_feature"] = parameters[2]
+        
+        
+        # configs["CNN"]["image_feature"] = parameters[0]
         
 
         # pprint.pprint(configs)
         # breakpoint()
+
         # pool.apply_async(util.pipeline, args=(configs,), callback=collect_results)
         # collect_results(util.pipeline(configs))
-        # util.pipeline(configs)
+
+
         # util.fine_tuning(configs)
         util.from_scratch(configs)
+
+
 
 
 

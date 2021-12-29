@@ -3,7 +3,7 @@ import logging
 import multiprocessing
 import os
 import pprint
-import sys
+import sys, h5py
 import timeit
 from pathlib import Path as Pathlb
 
@@ -21,14 +21,21 @@ from sklearn.metrics import (accuracy_score, confusion_matrix, f1_score,
 pd.options.mode.chained_assignment = None 
 
 import tensorflow as tf
+import tensorflow_addons as tfa
 
+colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
 from sklearn import svm
 from sklearn.model_selection import GridSearchCV, StratifiedKFold,  train_test_split
 from sklearn.neighbors import KNeighborsClassifier as knn
 
-from MLPackage import config as cfg
-from MLPackage import Features as feat
+import seaborn as sns
+if __name__ != "__main__":
+    from MLPackage import config as cfg
+    from MLPackage import Features as feat
+elif __name__ == "__main__":
+    import config as cfg
+    # import Features as feat
 
 # global variables
 
@@ -45,7 +52,7 @@ time = int(timeit.default_timer() * 1_000_000)
 
 
 
-SLURM_JOBID = str(os.environ.get('SLURM_JOBID',default=os.getpid()))
+SLURM_JOBID = str(  os.environ.get( 'SLURM_JOBID', default=os.getpid() )  )
 
 
 
@@ -801,77 +808,6 @@ def fine_tuning(configs):
 
 
 
-
-    # # ##################################################################
-    # #                phase 1: Reading image
-    # # ##################################################################
-    # logger.info("Reading stepscan dataset....")
-    # with h5py.File(cfg.configs["paths"]["stepscan_dataset.h5"], "r") as hdf:
-    #     barefoots = hdf.get("/barefoot/data")[:]
-    #     metadata = hdf.get("/barefoot/metadata")[:]
-
-    # data = barefoots.transpose(0,2,3,1)
-
-    # np.save(cfg.configs["paths"]["stepscan_data.npy"], data)
-    # np.save(cfg.configs["paths"]["stepscan_meta.npy"], metadata)
-
-
-
-
-
-    # ##################################################################
-    #                phase 2: extracting image features
-    # ##################################################################
-    # metadata = np.load(cfg.configs["paths"]["stepscan_meta.npy"])
-    # data = np.load(cfg.configs["paths"]["stepscan_data.npy"])
-
-    # logger.info(f"barefoots.shape: {data.shape}")
-    # logger.info(f"metadata.shape: {metadata.shape}")
-
-
-    # # plt.imshow(data[1,:,:,:].sum(axis=2))
-    # # plt.show()
-
-
-
-
-    # ## Extracting Image Features
-    # features = list()
-    # labels = list()
-
-    # for label, sample in zip(metadata, data):
-    #     try:
-    #         B = sample.sum(axis=1).sum(axis=0)
-    #         A = np.trim_zeros(B)
-
-    #         aa = np.where(B == A[0])
-    #         bb = np.where(B == A[-1])
-
-    #         if aa[0][0]<bb[0][0]:
-    #             features.append(feat.prefeatures(sample[10:70, 10:50, aa[0][0]:bb[0][0]]))
-    #             labels.append(label)
-    #         else:
-    #             # print(aa[0][0],bb[0][0])
-    #             k=sample
-    #             l=label
-        
-    #     except Exception as e:
-    #         logger.error(e)
-    #         continue
-        
-
-    # logger.info(f"len prefeatures: {len(features)}")
-    # logger.info(f"prefeatures.shape: {features[0].shape}")
-    # logger.info(f"labels.shape: {labels[0].shape}")
-
-    # np.save(cfg.configs["paths"]["stepscan_image_feature.npy"], features)
-    # np.save(cfg.configs["paths"]["stepscan_image_label.npy"], labels)
-
-
-
-
-
-
     # # ##################################################################
     # #                phase 3: processing labels
     # # ##################################################################
@@ -941,8 +877,8 @@ def fine_tuning(configs):
     # #                phase 5: Making tf.dataset object
     # # ##################################################################
 
-    X_train, X_test, y_train, y_test = train_test_split(images, labels, test_size=0.15, random_state=42, stratify=labels)
-    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.1, random_state=42, stratify=y_train)
+    X_train, X_test, y_train, y_test = train_test_split(images, labels, test_size=configs['CNN']["test_split"], random_state=42, stratify=labels)
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=configs['CNN']["val_split"], random_state=42, stratify=y_train)
 
 
 
@@ -991,18 +927,23 @@ def fine_tuning(configs):
     x = tf.keras.layers.RandomZoom(0.1)(x)
     x = eval("tf.keras.applications." + CNN_name + ".preprocess_input(x)")
     x = base_model(x)
-    x = tf.keras.layers.GlobalMaxPool2D()(x)
+    x = tf.keras.layers.MaxPool2D()(x)
     x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Flatten()(x)
+    x = tf.keras.layers.Dense(512,  activation='relu', name="last_dense-2")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
+    # x = tf.keras.layers.Dropout(0.2)(x)
+    x = tf.keras.layers.Dense(256,  activation='relu', name="last_dense-1")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
+    # x = tf.keras.layers.Dropout(0.2)(x)
     x = tf.keras.layers.Dense(128,  activation='relu', name="last_dense")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
-    x = tf.keras.layers.Dropout(0.2)(x)
+    # x = tf.keras.layers.Dropout(0.2)(x)
     output = tf.keras.layers.Dense(configs['CNN']['class_numbers'], name="prediction")(x) # activation='softmax',
 
     ## The CNN Model
     model = tf.keras.models.Model(inputs=input, outputs=output, name=configs['CNN']['base_model'])
 
     # Freeze the layers 
-    for layer in model.layers[-2:]:
-        layer.trainable = True
+    # for layer in model.layers[-2:]:
+    #     layer.trainable = True
 
 
     # for i,layer in enumerate(model.layers):
@@ -1031,7 +972,7 @@ def fine_tuning(configs):
     checkpoint = [
             tf.keras.callbacks.ModelCheckpoint(    path, save_best_only=True, monitor="val_loss"),
             tf.keras.callbacks.ReduceLROnPlateau(  monitor="val_loss", factor=0.5, patience=30, min_lr=0.00001),
-            tf.keras.callbacks.EarlyStopping(      monitor="val_loss", patience=90, verbose=1),
+            # tf.keras.callbacks.EarlyStopping(      monitor="val_loss", patience=90, verbose=1),
             tf.keras.callbacks.TensorBoard(        log_dir=TensorBoard_logs)   
         ]    
 
@@ -1059,7 +1000,7 @@ def fine_tuning(configs):
     return history
 
 
-
+ 
 def from_scratch(configs):
     logger.info("func: from_scratch")
     
@@ -1069,89 +1010,26 @@ def from_scratch(configs):
 
     # configs['CNN']["image_size"] = (32, 32, 3)
     # configs['CNN']["class_numbers"] = 10
-
-
-
-
-    # # ##################################################################
-    # #                phase 1: Reading image
-    # # ##################################################################
-    # logger.info("Reading dataset....")
-    # with h5py.File(cfg.configs["paths"]["stepscan_dataset.h5"], "r") as hdf:
-    #     barefoots = hdf.get("/barefoot/data")[:]
-    #     metadata = hdf.get("/barefoot/metadata")[:]
-
-    # data = barefoots.transpose(0,2,3,1)
-
-    # np.save(cfg.configs["paths"]["stepscan_data.npy"], data)
-    # np.save(cfg.configs["paths"]["stepscan_meta.npy"], metadata)
-
-
-
-
-
-    # # ##################################################################
-    # #                phase 2: extracting image features
-    # # ##################################################################
-    # metadata = np.load(cfg.configs["paths"]["stepscan_meta.npy"])
-    # data = np.load(cfg.configs["paths"]["stepscan_data.npy"])
-
-    # logger.info(f"barefoots.shape: {data.shape}")
-    # logger.info(f"metadata.shape: {metadata.shape}")
-
-
-    # # plt.imshow(data[1,:,:,:].sum(axis=2))
-    # # plt.show()
-
-
-
-
-    # ## Extracting Image Features
-    # features = list()
-    # labels = list()
-
-    # for label, sample in zip(metadata, data):
-    #     try:
-    #         B = sample.sum(axis=1).sum(axis=0)
-    #         A = np.trim_zeros(B)
-
-    #         aa = np.where(B == A[0])
-    #         bb = np.where(B == A[-1])
-
-    #         if aa[0][0]<bb[0][0]:
-    #             features.append(feat.prefeatures(sample[10:70, 10:50, aa[0][0]:bb[0][0]]))
-    #             labels.append(label)
-    #         else:
-    #             print(aa[0][0],bb[0][0])
-    #             k=sample
-    #             l=label
+    if configs['CNN']["dataset"]=="stepscan":
+        metadata = np.load(configs["paths"]["stepscan_image_label.npy"])
+        logger.info("metadata shape: {}".format(metadata.shape))
+        indices = metadata[:,0]
         
-    #     except Exception as e:
-    #         print(e)
-    #         continue
+        features = np.load(configs["paths"]["stepscan_image_feature.npy"])
+        logger.info("features shape: {}".format(features.shape))
+
+    elif configs['CNN']["dataset"]=="casia":
+        metadata = np.load(configs["paths"]["casia_dataset-meta.npy"])
+        logger.info("metadata shape: {}".format(metadata.shape))
+        indices = metadata[:,0]
         
-
-    # logger.info(f"len prefeatures: {len(features)}")
-    # logger.info(f"prefeatures.shape: {features[0].shape}")
-    # logger.info(f"labels.shape: {labels[0].shape}")
-
-    # np.save(cfg.configs["paths"]["stepscan_image_feature.npy"], features)
-    # np.save(cfg.configs["paths"]["stepscan_image_label.npy"], labels)
-
-
-
-
-
-
+        features = np.load(configs["paths"]["casia_image_feature.npy"])
+        logger.info("features shape: {}".format(features.shape))
+    
+    
     # # ##################################################################
     # #                phase 3: processing labels
     # # ##################################################################
-    metadata = np.load(configs["paths"]["stepscan_image_label.npy"])
-    logger.info("metadata shape: {}".format(metadata.shape))
-
-
-
-    indices = metadata[:,0]
     le = preprocessing.LabelEncoder()
     le.fit(indices)
 
@@ -1165,10 +1043,7 @@ def from_scratch(configs):
     # # ##################################################################
     # #                phase 4: Loading Image features
     # # ##################################################################
-    features = np.load(configs["paths"]["stepscan_image_feature.npy"])
-    logger.info("features shape: {}".format(features.shape))
-
-
+    
     # #CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100
     logger.info("batch_size: {}".format(configs["CNN"]["batch_size"]))
 
@@ -1199,8 +1074,8 @@ def from_scratch(configs):
     # #                phase 5: Making tf.dataset object
     # # ##################################################################
 
-    X_train, X_test, y_train, y_test = train_test_split(images, labels, test_size=0.15, random_state=42, stratify=labels)
-    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.1, random_state=42, stratify=y_train)
+    X_train, X_test, y_train, y_test = train_test_split(images, labels, test_size=configs['CNN']["test_split"], random_state=42, stratify=labels)
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=configs['CNN']["val_split"], random_state=42, stratify=y_train)
 
 
 
@@ -1248,24 +1123,34 @@ def from_scratch(configs):
 
     input = tf.keras.layers.Input(shape=configs["CNN"]["image_size"], dtype = tf.float64, name="original_img")
     x = tf.cast(input, tf.float32)
-    x = tf.keras.layers.RandomFlip("horizontal_and_vertical")(x)
-    x = tf.keras.layers.RandomRotation(0.2)(x)
-    x = tf.keras.layers.RandomZoom(0.1)(x)
-    x = convolutional_block(x, 8)
-    x = convolutional_block(x, 32)
+
+    # x = tf.keras.layers.RandomFlip("horizontal_and_vertical")(x)
+    # x = tf.keras.layers.RandomRotation(0.2)(x)
+    # x = tf.keras.layers.RandomZoom(0.1)(x)
+
+    # x = convolutional_block(x, 8)
+    # x = convolutional_block(x, 32)
     # x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
-    x = convolutional_block(x, 64)
-    # x = tf.keras.layers.Conv2D(16, kernel_size=(3, 3), activation='relu')(x)
-    # x = tf.keras.layers.BatchNormalization()(x)
-    # x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3), activation='relu')(x)
-    # x = tf.keras.layers.BatchNormalization()(x)
+    # x = convolutional_block(x, 64)
+    x = tf.keras.layers.BatchNormalization()(x)
+    
+    x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3))(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation('relu')(x)
     x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
-    x = tf.keras.layers.Dropout(0.3)(x)
+
+    x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3))(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
+
+
     x = tf.keras.layers.Flatten()(x)
-    x = tf.keras.layers.Dense(256,  activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.0001), name="last_dense-1")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
+    x = tf.keras.layers.Dense(256,  activation='relu', name="last_dense-1")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
     x = tf.keras.layers.Dropout(0.3)(x)
-    x = tf.keras.layers.Dense(128,  activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.0001), name="last_dense")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
-    x = tf.keras.layers.Dropout(0.3)(x)
+    x = tf.keras.layers.Dense(128,  activation='relu', name="last_dense")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
+    x = tf.keras.layers.Dropout(0.2)(x)
+
     output = tf.keras.layers.Dense(configs['CNN']['class_numbers'], name="prediction")(x) # activation='softmax',
 
     ## The CNN Model
@@ -1301,8 +1186,8 @@ def from_scratch(configs):
 
     checkpoint = [
             tf.keras.callbacks.ModelCheckpoint(    path, save_best_only=True, monitor="val_Accuracy"),
-            tf.keras.callbacks.ReduceLROnPlateau(  monitor="val_Accuracy", factor=0.5, patience=30, min_lr=0.00001),
-            # tf.keras.callbacks.EarlyStopping(      monitor="val_Accuracy", patience=90, verbose=1),
+            tf.keras.callbacks.ReduceLROnPlateau(  monitor="val_loss", factor=0.5, patience=15, min_lr=0.00001),
+            tf.keras.callbacks.EarlyStopping(      monitor="val_loss", patience=15, verbose=1),
             tf.keras.callbacks.TensorBoard(        log_dir=TensorBoard_logs)   
         ]    
 
@@ -1332,6 +1217,362 @@ def from_scratch(configs):
     return history
 
 
+ 
+def from_scratch_binary(configs):
+    
+    if configs['CNN']["image_feature"]=="tile":
+        configs['CNN']["image_size"] = (120, 80, 3)
+
+    # configs['CNN']["image_size"] = (32, 32, 3)
+    # configs['CNN']["class_numbers"] = 10
+    if configs['CNN']["dataset"]=="stepscan":
+        metadata = np.load(configs["paths"]["stepscan_image_label.npy"])
+        logger.info("metadata shape: {}".format(metadata.shape))
+        indices = metadata[:,0]
+        
+        features = np.load(configs["paths"]["stepscan_image_feature.npy"])
+        logger.info("features shape: {}".format(features.shape))
+
+    elif configs['CNN']["dataset"]=="casia":
+        metadata = np.load(configs["paths"]["casia_dataset-meta.npy"])
+        logger.info("metadata shape: {}".format(metadata.shape))
+        indices = metadata[:,0]
+        
+        features = np.load(configs["paths"]["casia_image_feature.npy"])
+        logger.info("features shape: {}".format(features.shape))
+    
+    
+    # # ##################################################################
+    # #                phase 3: processing labels
+    # # ##################################################################
+    le = preprocessing.LabelEncoder()
+    labels = le.fit_transform(indices)
+
+    Number_of_subjects = len(np.unique(indices))
+
+    logger.info(f"Number of subjects: {Number_of_subjects}")
+
+    le = preprocessing.OneHotEncoder()
+    labels = tf.one_hot(labels, Number_of_subjects)
+
+
+    # # ##################################################################
+    # #                phase 4: Loading Image features
+    # # ##################################################################
+    
+    # #CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100
+    logger.info("batch_size: {}".format(configs["CNN"]["batch_size"]))
+
+    maxvalues = [np.max(features[...,ind]) for ind in range(len(cfg.image_feature_name))]
+
+    for i in range(len(cfg.image_feature_name)):
+        features[..., i] = features[..., i]/maxvalues[i]
+
+
+    if configs['CNN']["image_feature"]=="tile":
+        images = tile(features)
+
+    else:
+        image_feature_name = dict(zip(cfg.image_feature_name, range(len(cfg.image_feature_name))))
+        ind = image_feature_name[configs['CNN']["image_feature"]]
+        
+        images = features[...,ind]
+        images = images[...,tf.newaxis]
+        images = np.concatenate((images, images, images), axis=-1)
+
+
+
+    logger.info(f"images: {images.shape}")
+    logger.info(f"labels: {labels.shape}")
+
+
+    # # ##################################################################
+    # #                phase 5: Making tf.dataset object
+    # # ##################################################################
+    results = list()
+    for subject in range(3):# Number_of_subjects
+
+        neg, pos = np.bincount(tf.cast(labels[:, subject], dtype=tf.int16))
+        total = neg + pos
+        logger.info('subject: {}\t    Total: {}\t    Positive: {} ({:.2f}% of total)'.format(
+            subject, total, pos, 100 * pos / total))
+
+        weight_for_0 = (1 / neg) * (total / 2.0)
+        weight_for_1 = (1 / pos) * (total / 2.0)
+
+        class_weight = {0: weight_for_0, 1: weight_for_1}
+
+        logger.info('Weight for class 0: {:.2f}'.format(weight_for_0))
+        logger.info('Weight for class 1: {:.2f}'.format(weight_for_1))
+
+        
+        X_train, X_test, y_train, y_test = train_test_split(images, labels[:, subject].numpy(), test_size=configs['CNN']["test_split"], random_state=42, stratify=labels[:, subject].numpy())
+        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=configs['CNN']["val_split"], random_state=42, stratify=y_train)
+
+
+
+        AUTOTUNE = tf.data.AUTOTUNE
+
+        train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(1000)
+        train_ds = train_ds.batch(configs['CNN']["batch_size"])
+        train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)).shuffle(1000)
+        val_ds = val_ds.batch(configs['CNN']["batch_size"])
+        val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+
+        test_ds = tf.data.Dataset.from_tensor_slices((X_test, y_test))
+        test_ds = test_ds.batch(configs['CNN']["batch_size"])
+        test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+
+
+
+        # # ##################################################################
+        # #                phase 6: Making Base Model
+        # # ##################################################################
+        CNN_name = "from_scratch_" + str(subject)
+
+        input = tf.keras.layers.Input(shape=configs["CNN"]["image_size"], dtype = tf.float64, name="original_img")
+        x = tf.cast(input, tf.float32)
+
+
+        x = tf.keras.layers.BatchNormalization()(x)
+        
+        x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3))(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+        x = tf.keras.layers.Activation('relu')(x)
+        x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
+
+        x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3))(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+        x = tf.keras.layers.Activation('relu')(x)
+        x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
+
+
+        x = tf.keras.layers.Flatten()(x)
+        x = tf.keras.layers.Dense(256,  activation='relu', name="last_dense-1")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
+        x = tf.keras.layers.Dropout(0.3)(x)
+        x = tf.keras.layers.Dense(128,  activation='relu', name="last_dense")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
+        x = tf.keras.layers.Dropout(0.2)(x)
+
+        output = tf.keras.layers.Dense(1, activation='sigmoid', name="prediction")(x) # activation='softmax',
+
+        ## The CNN Model
+        model = tf.keras.models.Model(inputs=input, outputs=output, name=CNN_name)
+
+
+        # for i,layer in enumerate(model.layers):
+        #     print(i,layer.name,layer.trainable)
+
+        # model.summary() 
+        # tf.keras.utils.plot_model(model, to_file=cfg.configs['CNN']['base_model'] + ".png", show_shapes=True)
+        # plt.show()
+
+
+
+        # # ##################################################################
+        # #                phase 7: training CNN
+        # # ##################################################################
+
+        
+        METRICS = [
+            tf.keras.metrics.TruePositives(name='tp'),
+            tf.keras.metrics.FalsePositives(name='fp'),
+            tf.keras.metrics.TrueNegatives(name='tn'),
+            tf.keras.metrics.FalseNegatives(name='fn'), 
+            tf.keras.metrics.BinaryAccuracy(name='accuracy'),
+            tf.keras.metrics.Precision(name='precision'),
+            tf.keras.metrics.Recall(name='recall'),
+            tf.keras.metrics.AUC(name='auc'),
+            tf.keras.metrics.AUC(name='prc', curve='PR'), # precision-recall curve
+        ]  
+
+        model.compile(
+            optimizer=tf.keras.optimizers.Adam(), #learning_rate=0.001
+            loss=tf.keras.losses.BinaryCrossentropy(from_logits=False),
+            metrics=METRICS, #tfa.metrics.F1Score(num_classes=1, average='macro'), tf.keras.metrics.TruePositives()]
+            )
+
+
+        time = int(timeit.timeit()*1_000_000)
+        TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], "_".join(("FS", configs["CNN"]["image_feature"], str(configs["CNN"]["test_split"])) ) , SLURM_JOBID+"_"+str(subject) )
+        path = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["CNN"]["image_feature"], str(configs["CNN"]["test_split"]) )), SLURM_JOBID+"_"+str(subject)+"_best.h5" )
+        logger.info(f"TensorBoard_logs: {TensorBoard_logs}")
+        logger.info(f"path: {path}")
+
+
+        checkpoint = [
+                tf.keras.callbacks.ModelCheckpoint(    path, save_best_only=True, monitor="val_loss"),
+                tf.keras.callbacks.ReduceLROnPlateau(  monitor="val_loss", factor=0.5, patience=15, min_lr=0.00001),
+                tf.keras.callbacks.EarlyStopping(      monitor="val_loss", patience=15, verbose=1),
+                tf.keras.callbacks.TensorBoard(        log_dir=TensorBoard_logs)   
+            ]  
+
+       
+
+
+        history = model.fit(
+            train_ds,    
+            batch_size=configs["CNN"]["batch_size"],
+            callbacks=[checkpoint],
+            epochs=configs["CNN"]["epochs"],
+            validation_data=val_ds,
+            verbose=configs["CNN"]["verbose"],
+            class_weight=class_weight,
+        )
+        path1 = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["CNN"]["image_feature"], str(configs["CNN"]["test_split"]) )), SLURM_JOBID+"_"+str(subject)+"_metrics.png" )
+        plot_metrics(history, path=path1)
+
+        # train_predictions_baseline = model.predict(train_ds, batch_size=configs["CNN"]["batch_size"])
+        test_predictions_baseline = model.predict(test_ds, batch_size=configs["CNN"]["batch_size"])
+
+
+        test_results = model.evaluate(test_ds, batch_size=configs["CNN"]["batch_size"], verbose=0)
+        train_results = model.evaluate(train_ds, batch_size=configs["CNN"]["batch_size"], verbose=0)
+        val_results = model.evaluate(val_ds, batch_size=configs["CNN"]["batch_size"], verbose=0)
+        
+        m_test = dict(zip(model.metrics_names, test_results))
+        m_train = dict(zip(model.metrics_names, train_results))
+        m_val = dict(zip(model.metrics_names, val_results))
+        # for name, value in zip(model.metrics_names, baseline_results):
+        #     print(name, ': ', value)
+
+        # pprint.pprint(m_test)
+
+        f1score_test = 2*m_test["recall"]*m_test["precision"]/(m_test["recall"]+m_test["precision"]+1e-9)
+        f1score_train = 2*m_train["recall"]*m_train["precision"]/(m_train["recall"]+m_train["precision"]+1e-9)
+        f1score_val = 2*m_val["recall"]*m_val["precision"]/(m_val["recall"]+m_val["precision"]+1e-9)
+
+        
+
+
+        path1 = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["CNN"]["image_feature"] , str(configs["CNN"]["test_split"]))), SLURM_JOBID+"_"+str(subject)+"_cm.png" )
+        plot_cm(y_test, test_predictions_baseline, path=path1)
+        
+
+        # test_loss, test_acc = model.evaluate(test_ds, verbose=2)
+        # train_loss, train_acc = model.evaluate(train_ds, verbose=2)
+        # val_loss, val_acc = model.evaluate(val_ds, verbose=2)
+
+        # path = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["CNN"]["image_feature"] )), SLURM_JOBID+"_"+str(subject)+"_"+str(int(np.round(test_acc*100)))+"%.h5" )
+        # model.save(path)
+        # # plt.plot(history.history['accuracy'], label='accuracy')
+        # # plt.plot(history.history['val_accuracy'], label = 'val_accuracy')
+
+        # plt.xlabel('Epoch')
+        # plt.ylabel('Accuracy')
+        # plt.show()
+
+        # resnet50_CD_FS
+
+        # logger.info(f"subject: {subject} \t test_loss: {np.round(test_loss,3)}, test_acc: {int(np.round(test_acc*100))}%")
+
+        results.append([time, subject, "Both", "End-to-end", f1score_test, f1score_train, f1score_val, configs["CNN"], configs['CNN']["image_feature"]+"_FS", configs["CNN"]["test_split"], configs["CNN"]["val_split"], m_train, m_val, m_test, path, TensorBoard_logs])
+
+    
+    col = ["testID", "subject ID", "direction", "clasifier", "f1score_test", "f1score_train", "f1score_val", "classifier_parameters", "feature_type", "test_ratio", "val_ratio", "train", "val", "test", "save_path", "tensorboard"] 
+    results = pd.DataFrame(results, columns=col)
+    return results# history
+
+def plot_cm(labels, predictions, p=0.5, path=os.getcwd()):
+    cm = confusion_matrix(labels, predictions > p)
+    plt.figure(figsize=(5,5))
+    sns.heatmap(cm, annot=True, fmt="d")
+    plt.title('Confusion matrix @{:.2f}'.format(p))
+    plt.ylabel('Actual label')
+    plt.xlabel('Predicted label')
+    plt.savefig(path, bbox_inches='tight')
+
+
+def plot_metrics(history, path=os.getcwd()):
+    metrics = ['loss', 'prc', 'precision', 'recall']
+    plt.figure(figsize=(10,10))
+    for n, metric in enumerate(metrics):
+        name = metric.replace("_"," ").capitalize()
+        plt.subplot(2,2,n+1)
+        plt.plot(history.epoch, history.history[metric], color=colors[0], label='Train')
+        plt.plot(history.epoch, history.history['val_'+metric],
+                color=colors[0], linestyle="--", label='Val')
+        plt.xlabel('Epoch')
+        plt.ylabel(name)
+        if metric == 'loss':
+            plt.ylim([0, plt.ylim()[1]])
+        elif metric == 'auc':
+            plt.ylim([0.8,1])
+        else:
+            plt.ylim([0,1])
+
+        plt.legend()
+    plt.savefig(path, bbox_inches='tight')
+
+
+def extracting_image_features_stepscan(configs):
+    # ##################################################################
+    #                phase 2: extracting image features
+    # ##################################################################
+    if configs["CNN"]["dataset"] == "stepscan":
+        metadata = np.load(configs["paths"]["stepscan_meta.npy"])
+        data = np.load(configs["paths"]["stepscan_data.npy"])
+
+        logger.info(f"barefoots.shape: {data.shape}")
+        logger.info(f"metadata.shape: {metadata.shape}")
+
+        # plt.imshow(data[1,:,:,:].sum(axis=2))
+        # plt.show()
+
+        ## Extracting Image Features
+        features = list()
+        labels = list()
+
+        for label, sample in zip(metadata, data):
+            try:
+                B = sample.sum(axis=1).sum(axis=0)
+                A = np.trim_zeros(B)
+
+                aa = np.where(B == A[0])
+                bb = np.where(B == A[-1])
+
+                if aa[0][0]<bb[0][0]:
+                    features.append(feat.prefeatures(sample[10:70, 10:50, aa[0][0]:bb[0][0]]))
+                    labels.append(label)
+                else:
+                    print(aa[0][0],bb[0][0])
+                    k=sample
+                    l=label
+            
+            except Exception as e:
+                print(e)
+                continue
+            
+
+        logger.info(f"len prefeatures: {len(features)}")
+        logger.info(f"prefeatures.shape: {features[0].shape}")
+        logger.info(f"labels.shape: {labels[0].shape}")
+
+        np.save(cfg.configs["paths"]["stepscan_image_feature.npy"], features)
+        np.save(cfg.configs["paths"]["stepscan_image_label.npy"], labels)
+    
+    else:
+        logger.error("The configs file has not been set for stepscan dataset!!!")
+
+
+
+def reading_stepscan_h5_file(configs):  
+    # ##################################################################
+    #                phase 1: Reading image
+    # ##################################################################
+    logger.info("Reading dataset....")
+    with h5py.File(configs["paths"]["stepscan_dataset.h5"], "r") as hdf:
+        barefoots = hdf.get("/barefoot/data")[:]
+        metadata = hdf.get("/barefoot/metadata")[:]
+
+    data = barefoots.transpose(0,2,3,1)
+
+    np.save(cfg.configs["paths"]["stepscan_data.npy"], data)
+    np.save(cfg.configs["paths"]["stepscan_meta.npy"], metadata)
+
 
 
 def collect_results(result):
@@ -1350,23 +1591,16 @@ def collect_results(result):
         Results_DF.to_excel(os.path.join(excel_path, 'Results'+str(time)+'.xlsx'), columns=columnsname)
 
 
-# def set_sonfig(configs):
-#     global paths, Pipeline, CNN, Template_Matching, SVM, KNN
-
-#     Pipeline = configs["Pipeline"]
-#     CNN = configs["CNN"]
-#     Template_Matching = configs["Template_Matching"]
-#     SVM = configs["SVM"]
-#     KNN = configs["KNN"]
-#     paths = configs["paths"]
     
 def main():
     configs = cfg.configs
     # configs["Pipeline"]["classifier"] = "knn_classifier"
 
 
-    fine_tuning(configs)  
+    a = from_scratch_binary(configs)
+    a.to_excel(os.path.join(cfg.configs["paths"]["results_dir"], 'a.xlsx'))
 
+    print(a)
     # collect_results(z)
 
     # 

@@ -102,7 +102,7 @@ logger = create_logger(logging.DEBUG)
 
 time = int(timeit.default_timer() * 1_000_000)
 
-def collect_results(result):
+def collect_results1(result):
     global time
     excel_path = os.path.join(cfg.configs["paths"]["results_dir"], f"Result_all_{os.getpid()}.xlsx")
     # excel_path = os.path.join(cfg.configs["paths"]["results_dir"], "Result.xlsx")
@@ -122,8 +122,8 @@ def collect_results(result):
 
 def main():
     p0 = ["knn_classifier", "svm_classifier", "Template_Matching_classifier"]
-    p1 = ["resnet50.ResNet50"]#, "efficientnet.EfficientNetB0", "mobilenet.MobileNet", "image"]
-    p2 = ["CD", "PTI", "Tmax", "Tmin", "P50", "P60", "P70", "P80", "P90", "P100"]
+    p1 = [0.1, 0.2, 0.3, 0.4, 0.6, 0.8]#, "efficientnet.EfficientNetB0", "mobilenet.MobileNet", "image"]
+    p2 = ["CD"]#, "PTI", "Tmax", "Tmin", "P50", "P60", "P70", "P80", "P90", "P100"]
     space = list(product(p1, p2))
 
 
@@ -133,19 +133,15 @@ def main():
     # logger.info(f"CPU count: {ncpus}")
 
     logger.info("func: FT")
-
+    i=0
     for parameters in space:
         logger.info(f"parameters: {parameters}")
 
         configs = copy.deepcopy(cfg.configs)
         # configs["Pipeline"]["classifier"] = parameters[0]
         
-        if parameters[1] != "image":
-            configs["CNN"]["base_model"] = parameters[0]
-            configs["Pipeline"]["category"] = "deep"
-
-        # elif parameters[1] == "image":
-        #     configs["Pipeline"]["category"] = "image"
+        configs["CNN"]["test_split"] = parameters[0]
+        configs["Pipeline"]["category"] = "deep"
 
         configs["CNN"]["image_feature"] = parameters[1]
         
@@ -154,8 +150,11 @@ def main():
         # breakpoint()
         # pool.apply_async(util.pipeline, args=(configs,), callback=collect_results)
         # collect_results(util.pipeline(configs))
-        # util.from_scratch(configs)
-        util.fine_tuning(configs)
+        a = util.from_scratch_binary(configs)
+        i=i+1
+        a.to_excel(os.path.join(cfg.configs["paths"]["results_dir"], str(i)+'_a1.xlsx'))
+
+        # util.fine_tuning(configs)
 
 
         

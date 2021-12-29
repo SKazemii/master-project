@@ -19,17 +19,21 @@ configs = {
         "Debug": False,
     },
     "CNN": {
+        "dataset": "casia", # casia stepscan
+        "train_sample": 2,
         "base_model": "resnet50.ResNet50", # vgg16.VGG16, resnet50.ResNet50, efficientnet.EfficientNetB0, mobilenet.MobileNet  inception_v3.InceptionV3
         "weights": "imagenet", 
         "include_top": False, 
         "image_size": (60, 40, 3),
         "batch_size": 32, 
         "class_numbers": 80,
-        "saving_path": "./results/deep_model/",
-        "epochs": 500,
+        "saving_path": "./results/deep_model",
+        "epochs": 100,
         "validation_split": 0.2,
-        "verbose": 1,
-        "image_feature": "PTI", # CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100, tile, fusion
+        "test_split": 0.1,
+        "val_split": 0.2,
+        "verbose": 2,
+        "image_feature": "CD", # CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100, tile, fusion
     },
     "Template_Matching": {
         "mode": "dist",

@@ -5,7 +5,7 @@
     "debug.console.fontSize": 14,
     "terminal.integrated.fontSize": 14,
     "terminal.integrated.fontWeight": "500",
-    "window.zoomLevel": 1,
+    "window.zoomLevel": 2,
     "python.defaultInterpreterPath": "c:/Users/skazemi1/AppData/Local/Programs/Python/Python39/python.exe",
     "python.formatting.provider": "black",
     "editor.formatOnSave": false,
