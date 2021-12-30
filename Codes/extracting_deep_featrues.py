@@ -1,5 +1,4 @@
- 
-# filter warnings
+ # filter warnings
 import warnings
 
 warnings.simplefilter(action="ignore", category=FutureWarning)

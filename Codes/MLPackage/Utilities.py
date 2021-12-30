@@ -1180,7 +1180,7 @@ def from_scratch(configs):
     model.compile(
         optimizer=tf.keras.optimizers.Adam(), #learning_rate=0.001
         loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False), 
-        metrics=METRICS
+        metrics=["Accuracy"]
         )
 
 
@@ -1207,8 +1207,9 @@ def from_scratch(configs):
         validation_data=val_ds,
         verbose=configs["CNN"]["verbose"],
     )
-    path1 = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["CNN"]["image_feature"], str(configs["CNN"]["test_split"]) )), SLURM_JOBID+"_metrics.png" )
-    plot_metrics(history, path=path1)
+
+    # path1 = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["CNN"]["image_feature"], str(configs["CNN"]["test_split"]) )), SLURM_JOBID+"_metrics.png" )
+    # plot_metrics(history, path=path1)
 
 
     test_results = model.evaluate(test_ds, batch_size=configs["CNN"]["batch_size"], verbose=0)
@@ -1225,16 +1226,20 @@ def from_scratch(configs):
     pprint.pprint(m_train)
     pprint.pprint(m_val)
 
-    f1score_test = 2*m_test["recall"]*m_test["precision"]/(m_test["recall"]+m_test["precision"]+1e-9)
-    f1score_train = 2*m_train["recall"]*m_train["precision"]/(m_train["recall"]+m_train["precision"]+1e-9)
-    f1score_val = 2*m_val["recall"]*m_val["precision"]/(m_val["recall"]+m_val["precision"]+1e-9)
+    # f1score_test = 2*m_test["recall"]*m_test["precision"]/(m_test["recall"]+m_test["precision"]+1e-9)
+    # f1score_train = 2*m_train["recall"]*m_train["precision"]/(m_train["recall"]+m_train["precision"]+1e-9)
+    # f1score_val = 2*m_val["recall"]*m_val["precision"]/(m_val["recall"]+m_val["precision"]+1e-9)
 
     
+    # logger.info("f1score_test: {:2.2f}\n".format(f1score_test))
+    # logger.info("f1score_train: {:2.2f}\n".format(f1score_train))
+    # logger.info("f1score_val: {:2.2f}\n".format(f1score_val))
+    
+    
+    # test_predictions_baseline = model.predict(test_ds, batch_size=configs["CNN"]["batch_size"])
 
-    test_predictions_baseline = model.predict(test_ds, batch_size=configs["CNN"]["batch_size"])
-
-    path1 = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["CNN"]["image_feature"] , str(configs["CNN"]["test_split"]))), SLURM_JOBID+"_"+str(subject)+"_cm.png" )
-    plot_cm(y_test, test_predictions_baseline, path=path1)
+    # path1 = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["CNN"]["image_feature"] , str(configs["CNN"]["test_split"]))), SLURM_JOBID+"_"+str(subject)+"_cm.png" )
+    # plot_cm(y_test, test_predictions_baseline, path=path1)
 
 
 
