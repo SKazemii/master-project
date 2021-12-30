@@ -122,8 +122,8 @@ def collect_results1(result):
 
 def main():
     p0 = ["knn_classifier", "svm_classifier", "Template_Matching_classifier"]
-    p1 = [0.1, 0.2, 0.3, 0.4, 0.6, 0.8]#, "efficientnet.EfficientNetB0", "mobilenet.MobileNet", "image"]
-    p2 = ["CD"]#, "PTI", "Tmax", "Tmin", "P50", "P60", "P70", "P80", "P90", "P100"]
+    p1 = [0.15]#0.1, 0.15, .2, .25, .3, .35, .4, .6, .8]#, "efficientnet.EfficientNetB0", "mobilenet.MobileNet", "image"]
+    p2 = [ "PTI"]#"CD", , "Tmax", "Tmin", "P50", "P60", "P70", "P80", "P90", "P100"]
     space = list(product(p1, p2))
 
 
@@ -133,14 +133,14 @@ def main():
     # logger.info(f"CPU count: {ncpus}")
 
     logger.info("func: FT")
-    i=0
+    i=17
     for parameters in space:
         logger.info(f"parameters: {parameters}")
 
         configs = copy.deepcopy(cfg.configs)
         # configs["Pipeline"]["classifier"] = parameters[0]
         
-        configs["CNN"]["test_split"] = parameters[0]
+        # configs["CNN"]["test_split"] = parameters[0]
         configs["Pipeline"]["category"] = "deep"
 
         configs["CNN"]["image_feature"] = parameters[1]
@@ -150,11 +150,14 @@ def main():
         # breakpoint()
         # pool.apply_async(util.pipeline, args=(configs,), callback=collect_results)
         # collect_results(util.pipeline(configs))
-        a = util.from_scratch_binary(configs)
-        i=i+1
-        a.to_excel(os.path.join(cfg.configs["paths"]["results_dir"], str(i)+'_a1.xlsx'))
+
+
+        # a = util.from_scratch_binary(configs)
+        # i=i+1
+        # a.to_excel(os.path.join(cfg.configs["paths"]["results_dir"], str(i)+'_a1.xlsx'))
 
         # util.fine_tuning(configs)
+        util.from_scratch(configs)
 
 
         

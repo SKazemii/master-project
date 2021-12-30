@@ -21,7 +21,7 @@ from sklearn.metrics import (accuracy_score, confusion_matrix, f1_score,
 pd.options.mode.chained_assignment = None 
 
 import tensorflow as tf
-import tensorflow_addons as tfa
+# import tensorflow_addons as tfa
 
 colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
@@ -1151,7 +1151,7 @@ def from_scratch(configs):
     x = tf.keras.layers.Dense(128,  activation='relu', name="last_dense")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
     x = tf.keras.layers.Dropout(0.2)(x)
 
-    output = tf.keras.layers.Dense(configs['CNN']['class_numbers'], name="prediction")(x) # activation='softmax',
+    output = tf.keras.layers.Dense(configs['CNN']['class_numbers'], activation='softmax', name="prediction")(x) # activation='softmax',
 
     ## The CNN Model
     model = tf.keras.models.Model(inputs=input, outputs=output, name=CNN_name)
@@ -1169,17 +1169,24 @@ def from_scratch(configs):
     # # ##################################################################
     # #                phase 7: training CNN
     # # ##################################################################
+    METRICS = [ 
+        tf.keras.metrics.Accuracy(name='accuracy'),
+        tf.keras.metrics.Precision(name='precision'),
+        tf.keras.metrics.Recall(name='recall'),
+        tf.keras.metrics.AUC(name='auc'),
+        tf.keras.metrics.AUC(name='prc', curve='PR'), # precision-recall curve
+    ]
 
     model.compile(
         optimizer=tf.keras.optimizers.Adam(), #learning_rate=0.001
-        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), 
-        metrics=["Accuracy"]
+        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False), 
+        metrics=METRICS
         )
 
 
     time = int(timeit.timeit()*1_000_000)
-    TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], "_".join(("FS", SLURM_JOBID, configs["CNN"]["image_feature"], str(time)) )  )
-    path = configs["CNN"]["saving_path"] + "_".join(( "FS", SLURM_JOBID, configs["CNN"]["image_feature"], "best.h5" ))
+    TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], "_".join(("FS", configs["CNN"]["image_feature"], SLURM_JOBID+"_"+str(time)) )  )
+    path = configs["CNN"]["saving_path"] + "_".join(( "FS", configs["CNN"]["image_feature"], SLURM_JOBID+"_best.h5" ))
     logger.info(f"TensorBoard_logs: {TensorBoard_logs}")
     logger.info(f"path: {path}")
 
@@ -1200,11 +1207,40 @@ def from_scratch(configs):
         validation_data=val_ds,
         verbose=configs["CNN"]["verbose"],
     )
+    path1 = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["CNN"]["image_feature"], str(configs["CNN"]["test_split"]) )), SLURM_JOBID+"_metrics.png" )
+    plot_metrics(history, path=path1)
 
-    test_loss, test_acc = model.evaluate(test_ds, verbose=2)
 
-    path = configs["CNN"]["saving_path"] + "_".join(( "FS", SLURM_JOBID, configs["CNN"]["image_feature"], str(int(np.round(test_acc*100)))+"%" + ".h5" ))
-    model.save(path)
+    test_results = model.evaluate(test_ds, batch_size=configs["CNN"]["batch_size"], verbose=0)
+    train_results = model.evaluate(train_ds, batch_size=configs["CNN"]["batch_size"], verbose=0)
+    val_results = model.evaluate(val_ds, batch_size=configs["CNN"]["batch_size"], verbose=0)
+
+    m_test = dict(zip(model.metrics_names, test_results))
+    m_train = dict(zip(model.metrics_names, train_results))
+    m_val = dict(zip(model.metrics_names, val_results))
+    # for name, value in zip(model.metrics_names, baseline_results):
+    #     print(name, ': ', value)
+
+    pprint.pprint(m_test)
+    pprint.pprint(m_train)
+    pprint.pprint(m_val)
+
+    f1score_test = 2*m_test["recall"]*m_test["precision"]/(m_test["recall"]+m_test["precision"]+1e-9)
+    f1score_train = 2*m_train["recall"]*m_train["precision"]/(m_train["recall"]+m_train["precision"]+1e-9)
+    f1score_val = 2*m_val["recall"]*m_val["precision"]/(m_val["recall"]+m_val["precision"]+1e-9)
+
+    
+
+    test_predictions_baseline = model.predict(test_ds, batch_size=configs["CNN"]["batch_size"])
+
+    path1 = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["CNN"]["image_feature"] , str(configs["CNN"]["test_split"]))), SLURM_JOBID+"_"+str(subject)+"_cm.png" )
+    plot_cm(y_test, test_predictions_baseline, path=path1)
+
+
+
+
+    # path = configs["CNN"]["saving_path"] + "_".join(( "FS", SLURM_JOBID, configs["CNN"]["image_feature"], str(int(np.round(test_acc*100)))+"%" + ".h5" ))
+    # model.save(path)
     # plt.plot(history.history['accuracy'], label='accuracy')
     # # plt.plot(history.history['val_accuracy'], label = 'val_accuracy')
 
@@ -1213,7 +1249,7 @@ def from_scratch(configs):
     # plt.show()
 
 
-    logger.info(f"test_loss: {np.round(test_loss,3)}, test_acc: {int(np.round(test_acc*100))}%")
+    # logger.info(f"test_loss: {np.round(test_loss,3)}, test_acc: {int(np.round(test_acc*100))}%")
     return history
 
 
@@ -1290,7 +1326,7 @@ def from_scratch_binary(configs):
     # #                phase 5: Making tf.dataset object
     # # ##################################################################
     results = list()
-    for subject in range(3):# Number_of_subjects
+    for subject in range(20):# Number_of_subjects
 
         neg, pos = np.bincount(tf.cast(labels[:, subject], dtype=tf.int16))
         total = neg + pos
@@ -1308,6 +1344,9 @@ def from_scratch_binary(configs):
         
         X_train, X_test, y_train, y_test = train_test_split(images, labels[:, subject].numpy(), test_size=configs['CNN']["test_split"], random_state=42, stratify=labels[:, subject].numpy())
         X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=configs['CNN']["val_split"], random_state=42, stratify=y_train)
+        X_train, _, y_train, _ = train_test_split(X_train, y_train, test_size=configs['CNN']["train_split"], random_state=42, stratify=y_train)
+
+
 
 
 

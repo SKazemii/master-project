@@ -19,8 +19,8 @@ configs = {
         "Debug": False,
     },
     "CNN": {
-        "dataset": "casia", # casia stepscan
-        "train_sample": 2,
+        "dataset": "stepscan", # casia stepscan
+        "train_sample": 2,#todo
         "base_model": "resnet50.ResNet50", # vgg16.VGG16, resnet50.ResNet50, efficientnet.EfficientNetB0, mobilenet.MobileNet  inception_v3.InceptionV3
         "weights": "imagenet", 
         "include_top": False, 
@@ -32,6 +32,7 @@ configs = {
         "validation_split": 0.2,
         "test_split": 0.1,
         "val_split": 0.2,
+        "train_split": 0.01,
         "verbose": 2,
         "image_feature": "CD", # CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100, tile, fusion
     },
