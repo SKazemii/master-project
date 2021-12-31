@@ -19,7 +19,7 @@ configs = {
         "Debug": False,
     },
     "CNN": {
-        "dataset": "stepscan", # casia stepscan
+        "dataset": "casia", # casia stepscan
         "train_sample": 2,#todo
         "base_model": "resnet50.ResNet50", # vgg16.VGG16, resnet50.ResNet50, efficientnet.EfficientNetB0, mobilenet.MobileNet  inception_v3.InceptionV3
         "weights": "imagenet", 
@@ -28,7 +28,7 @@ configs = {
         "batch_size": 32, 
         "class_numbers": 80,
         "saving_path": "./results/deep_model",
-        "epochs": 100,
+        "epochs": 500,
         "validation_split": 0.2,
         "test_split": 0.1,
         "val_split": 0.2,

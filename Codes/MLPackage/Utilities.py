@@ -3,7 +3,7 @@ import logging
 import multiprocessing
 import os
 import pprint
-import sys, h5py
+import sys, h5py, copy
 import timeit
 from pathlib import Path as Pathlb
 
@@ -1125,7 +1125,7 @@ def from_scratch(configs):
     x = tf.cast(input, tf.float32)
 
     # x = tf.keras.layers.RandomFlip("horizontal_and_vertical")(x)
-    # x = tf.keras.layers.RandomRotation(0.2)(x)
+    # x = tf.keras.layers.RandomRotation(0.1)(x)
     # x = tf.keras.layers.RandomZoom(0.1)(x)
 
     # x = convolutional_block(x, 8)
@@ -1134,22 +1134,25 @@ def from_scratch(configs):
     # x = convolutional_block(x, 64)
     x = tf.keras.layers.BatchNormalization()(x)
     
-    x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3))(x)
+    x = tf.keras.layers.Conv2D(32, kernel_size=(5, 5))(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.Activation('relu')(x)
     x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
+    x = tf.keras.layers.Dropout(0.25)(x)
+
 
     x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3))(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.Activation('relu')(x)
     x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
+    x = tf.keras.layers.Dropout(0.25)(x)
 
 
     x = tf.keras.layers.Flatten()(x)
-    x = tf.keras.layers.Dense(256,  activation='relu', name="last_dense-1")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
-    x = tf.keras.layers.Dropout(0.3)(x)
-    x = tf.keras.layers.Dense(128,  activation='relu', name="last_dense")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
-    x = tf.keras.layers.Dropout(0.2)(x)
+    x = tf.keras.layers.Dense(256, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.0001), name="last_dense-1")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
+    x = tf.keras.layers.Dropout(0.25)(x)
+    x = tf.keras.layers.Dense(128, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.0001), name="last_dense")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
+    x = tf.keras.layers.Dropout(0.25)(x)
 
     output = tf.keras.layers.Dense(configs['CNN']['class_numbers'], activation='softmax', name="prediction")(x) # activation='softmax',
 
@@ -1208,13 +1211,16 @@ def from_scratch(configs):
         verbose=configs["CNN"]["verbose"],
     )
 
+    
+
+
     # path1 = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["CNN"]["image_feature"], str(configs["CNN"]["test_split"]) )), SLURM_JOBID+"_metrics.png" )
     # plot_metrics(history, path=path1)
 
 
-    test_results = model.evaluate(test_ds, batch_size=configs["CNN"]["batch_size"], verbose=0)
-    train_results = model.evaluate(train_ds, batch_size=configs["CNN"]["batch_size"], verbose=0)
-    val_results = model.evaluate(val_ds, batch_size=configs["CNN"]["batch_size"], verbose=0)
+    test_results = model.evaluate(test_ds, verbose=2)
+    train_results = model.evaluate(train_ds, verbose=2)
+    val_results = model.evaluate(val_ds, verbose=2)
 
     m_test = dict(zip(model.metrics_names, test_results))
     m_train = dict(zip(model.metrics_names, train_results))
@@ -1222,9 +1228,10 @@ def from_scratch(configs):
     # for name, value in zip(model.metrics_names, baseline_results):
     #     print(name, ': ', value)
 
-    pprint.pprint(m_test)
-    pprint.pprint(m_train)
-    pprint.pprint(m_val)
+    
+    print("m_train: ",m_train)
+    print("m_val: ", m_val)
+    print("m_test: ", m_test)
 
     # f1score_test = 2*m_test["recall"]*m_test["precision"]/(m_test["recall"]+m_test["precision"]+1e-9)
     # f1score_train = 2*m_train["recall"]*m_train["precision"]/(m_train["recall"]+m_train["precision"]+1e-9)
@@ -1255,6 +1262,19 @@ def from_scratch(configs):
 
 
     # logger.info(f"test_loss: {np.round(test_loss,3)}, test_acc: {int(np.round(test_acc*100))}%")
+    acc = history.history["Accuracy"]
+    val_acc = history.history["val_Accuracy"]
+    loss = history.history["loss"]
+    val_loss = history.history["val_loss"]
+    epochs = range(1, len(acc)+1)
+    plt.plot(epochs, acc, "b", label="training acc")
+    plt.plot(epochs, val_acc, "r", label="val acc")
+    plt.legend()
+    plt.figure()
+    plt.plot(epochs, loss, "b", label="training loss")
+    plt.plot(epochs, val_loss, "r", label="val loss")
+    plt.legend()
+    plt.show()
     return history
 
 
@@ -1384,22 +1404,24 @@ def from_scratch_binary(configs):
 
         x = tf.keras.layers.BatchNormalization()(x)
         
-        x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3))(x)
+        x = tf.keras.layers.Conv2D(32, kernel_size=(5, 5))(x)
         x = tf.keras.layers.BatchNormalization()(x)
         x = tf.keras.layers.Activation('relu')(x)
         x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
+        x = tf.keras.layers.Dropout(0.25)(x)
 
         x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3))(x)
         x = tf.keras.layers.BatchNormalization()(x)
         x = tf.keras.layers.Activation('relu')(x)
         x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
+        x = tf.keras.layers.Dropout(0.25)(x)
 
 
         x = tf.keras.layers.Flatten()(x)
-        x = tf.keras.layers.Dense(256,  activation='relu', name="last_dense-1")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
-        x = tf.keras.layers.Dropout(0.3)(x)
-        x = tf.keras.layers.Dense(128,  activation='relu', name="last_dense")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
-        x = tf.keras.layers.Dropout(0.2)(x)
+        x = tf.keras.layers.Dense(256,  activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.0001), name="last_dense-1")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
+        x = tf.keras.layers.Dropout(0.25)(x)
+        x = tf.keras.layers.Dense(128,  activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.0001), name="last_dense")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
+        x = tf.keras.layers.Dropout(0.25)(x)
 
         output = tf.keras.layers.Dense(1, activation='sigmoid', name="prediction")(x) # activation='softmax',
 
@@ -1520,6 +1542,281 @@ def from_scratch_binary(configs):
     results = pd.DataFrame(results, columns=col)
     return results# history
 
+
+def from_scratch_binary_3(configs):
+    
+    if configs['CNN']["image_feature"]=="tile":
+        configs['CNN']["image_size"] = (120, 80, 3)
+
+    # configs['CNN']["image_size"] = (32, 32, 3)
+    # configs['CNN']["class_numbers"] = 10
+    if configs['CNN']["dataset"]=="stepscan":
+        metadata = np.load(configs["paths"]["stepscan_image_label.npy"])
+        logger.info("metadata shape: {}".format(metadata.shape))
+        indices = metadata[:,0]
+        
+        features = np.load(configs["paths"]["stepscan_image_feature.npy"])
+        logger.info("features shape: {}".format(features.shape))
+
+    elif configs['CNN']["dataset"]=="casia":
+        metadata = np.load(configs["paths"]["casia_dataset-meta.npy"])
+        logger.info("metadata shape: {}".format(metadata.shape))
+        indices = metadata[:,0]
+        
+        features = np.load(configs["paths"]["casia_image_feature.npy"])
+        logger.info("features shape: {}".format(features.shape))
+    
+    
+    # # ##################################################################
+    # #                phase 3: processing labels
+    # # ##################################################################
+    le = preprocessing.LabelEncoder()
+    labels = le.fit_transform(indices)
+
+    Number_of_subjects = len(np.unique(indices))
+
+    logger.info(f"Number of subjects: {Number_of_subjects}")
+
+    le = preprocessing.OneHotEncoder()
+    labels = tf.one_hot(labels, Number_of_subjects)
+
+
+    # # ##################################################################
+    # #                phase 4: Loading Image features
+    # # ##################################################################
+    
+    # #CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100
+    logger.info("batch_size: {}".format(configs["CNN"]["batch_size"]))
+
+    maxvalues = [np.max(features[...,ind]) for ind in range(len(cfg.image_feature_name))]
+
+    for i in range(len(cfg.image_feature_name)):
+        features[..., i] = features[..., i]/maxvalues[i]
+
+
+    if configs['CNN']["image_feature"]=="tile":
+        images = tile(features)
+
+    else:
+        image_feature_name = dict(zip(cfg.image_feature_name, range(len(cfg.image_feature_name))))
+        ind = image_feature_name["CD"]
+        ind1 = image_feature_name["PTI"]
+        ind2 = image_feature_name["P100"]
+        
+        images = features[...,ind]
+        images1 = features[...,ind1]
+        images2 = features[...,ind2]
+        
+        images = images[...,tf.newaxis]
+        images1 = images1[...,tf.newaxis]
+        images2 = images2[...,tf.newaxis]
+        images = np.concatenate((images, images1, images2), axis=-1)
+
+
+
+    logger.info(f"images: {images.shape}")
+    logger.info(f"labels: {labels.shape}")
+
+
+    # # ##################################################################
+    # #                phase 5: Making tf.dataset object
+    # # ##################################################################
+    results = list()
+    for subject in range(1):# Number_of_subjects
+
+        neg, pos = np.bincount(tf.cast(labels[:, subject], dtype=tf.int16))
+        total = neg + pos
+        logger.info('subject: {}\t    Total: {}\t    Positive: {} ({:.2f}% of total)'.format(
+            subject, total, pos, 100 * pos / total))
+
+        weight_for_0 = (1 / neg) * (total / 2.0)
+        weight_for_1 = (1 / pos) * (total / 2.0)
+
+        class_weight = {0: weight_for_0, 1: weight_for_1}
+
+        logger.info('Weight for class 0: {:.2f}'.format(weight_for_0))
+        logger.info('Weight for class 1: {:.2f}'.format(weight_for_1))
+
+        
+        X_train, X_test, y_train, y_test = train_test_split(images, labels[:, subject].numpy(), test_size=configs['CNN']["test_split"], random_state=42, stratify=labels[:, subject].numpy())
+        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=configs['CNN']["val_split"], random_state=42, stratify=y_train)
+        X_train, _, y_train, _ = train_test_split(X_train, y_train, test_size=configs['CNN']["train_split"], random_state=42, stratify=y_train)
+
+
+
+
+
+        AUTOTUNE = tf.data.AUTOTUNE
+
+        train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(1000)
+        train_ds = train_ds.batch(configs['CNN']["batch_size"])
+        train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)).shuffle(1000)
+        val_ds = val_ds.batch(configs['CNN']["batch_size"])
+        val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+
+        test_ds = tf.data.Dataset.from_tensor_slices((X_test, y_test))
+        test_ds = test_ds.batch(configs['CNN']["batch_size"])
+        test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+
+
+
+        # # ##################################################################
+        # #                phase 6: Making Base Model
+        # # ##################################################################
+        CNN_name = "from_scratch_" + str(subject)
+
+        input = tf.keras.layers.Input(shape=configs["CNN"]["image_size"], dtype = tf.float64, name="original_img")
+        x = tf.cast(input, tf.float32)
+
+
+        x = tf.keras.layers.BatchNormalization()(x)
+        
+        x = tf.keras.layers.Conv2D(32, kernel_size=(5, 5))(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+        x = tf.keras.layers.Activation('relu')(x)
+        x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
+        x = tf.keras.layers.Dropout(0.25)(x)
+
+        x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3))(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+        x = tf.keras.layers.Activation('relu')(x)
+        x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
+        x = tf.keras.layers.Dropout(0.25)(x)
+
+
+        x = tf.keras.layers.Flatten()(x)
+        x = tf.keras.layers.Dense(256,  activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.0001), name="last_dense-1")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
+        x = tf.keras.layers.Dropout(0.25)(x)
+        x = tf.keras.layers.Dense(128,  activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.0001), name="last_dense")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
+        x = tf.keras.layers.Dropout(0.25)(x)
+
+        output = tf.keras.layers.Dense(1, activation='sigmoid', name="prediction")(x) # activation='softmax',
+
+        ## The CNN Model
+        model = tf.keras.models.Model(inputs=input, outputs=output, name=CNN_name)
+
+
+        # for i,layer in enumerate(model.layers):
+        #     print(i,layer.name,layer.trainable)
+
+        # model.summary() 
+        # tf.keras.utils.plot_model(model, to_file=cfg.configs['CNN']['base_model'] + ".png", show_shapes=True)
+        # plt.show()
+
+
+
+        # # ##################################################################
+        # #                phase 7: training CNN
+        # # ##################################################################
+
+        
+        METRICS = [
+            tf.keras.metrics.TruePositives(name='tp'),
+            tf.keras.metrics.FalsePositives(name='fp'),
+            tf.keras.metrics.TrueNegatives(name='tn'),
+            tf.keras.metrics.FalseNegatives(name='fn'), 
+            tf.keras.metrics.BinaryAccuracy(name='accuracy'),
+            tf.keras.metrics.Precision(name='precision'),
+            tf.keras.metrics.Recall(name='recall'),
+            tf.keras.metrics.AUC(name='auc'),
+            tf.keras.metrics.AUC(name='prc', curve='PR'), # precision-recall curve
+        ]  
+
+        model.compile(
+            optimizer=tf.keras.optimizers.Adam(), #learning_rate=0.001
+            loss=tf.keras.losses.BinaryCrossentropy(from_logits=False),
+            metrics=METRICS, #tfa.metrics.F1Score(num_classes=1, average='macro'), tf.keras.metrics.TruePositives()]
+            )
+
+
+        time = int(timeit.timeit()*1_000_000)
+        TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], "_".join(("FS", configs["CNN"]["image_feature"], str(configs["CNN"]["train_split"])) ) , SLURM_JOBID+"_"+str(subject) )
+        path = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["CNN"]["image_feature"], str(configs["CNN"]["train_split"]) )), SLURM_JOBID+"_"+str(subject)+"_best.h5" )
+        logger.info(f"TensorBoard_logs: {TensorBoard_logs}")
+        logger.info(f"path: {path}")
+
+
+        checkpoint = [
+                tf.keras.callbacks.ModelCheckpoint(    path, save_best_only=True, monitor='val_precision', mode='max', verbose=1),
+                tf.keras.callbacks.ReduceLROnPlateau(  monitor="val_loss", factor=0.5, patience=15, min_lr=0.00001),
+                tf.keras.callbacks.EarlyStopping(      monitor="val_loss", patience=15, verbose=1),
+                tf.keras.callbacks.TensorBoard(        log_dir=TensorBoard_logs)   
+            ]  
+
+       
+
+
+        history = model.fit(
+            train_ds,    
+            batch_size=configs["CNN"]["batch_size"],
+            callbacks=[checkpoint],
+            epochs=configs["CNN"]["epochs"],
+            validation_data=val_ds,
+            verbose=configs["CNN"]["verbose"],
+            class_weight=class_weight,
+        )
+        model = tf.keras.models.load_model(path)
+
+
+        path1 = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["CNN"]["image_feature"], str(configs["CNN"]["train_split"]) )), SLURM_JOBID+"_"+str(subject)+"_metrics.png" )
+        plot_metrics(history, path=path1)
+
+        # train_predictions_baseline = model.predict(train_ds, batch_size=configs["CNN"]["batch_size"])
+        test_predictions_baseline = model.predict(test_ds, batch_size=configs["CNN"]["batch_size"])
+
+
+        test_results = model.evaluate(test_ds, batch_size=configs["CNN"]["batch_size"], verbose=0)
+        train_results = model.evaluate(train_ds, batch_size=configs["CNN"]["batch_size"], verbose=0)
+        val_results = model.evaluate(val_ds, batch_size=configs["CNN"]["batch_size"], verbose=0)
+        
+        m_test = dict(zip(model.metrics_names, test_results))
+        m_train = dict(zip(model.metrics_names, train_results))
+        m_val = dict(zip(model.metrics_names, val_results))
+        # for name, value in zip(model.metrics_names, baseline_results):
+        #     print(name, ': ', value)
+
+        # pprint.pprint(m_test)
+
+        f1score_test = 2*m_test["recall"]*m_test["precision"]/(m_test["recall"]+m_test["precision"]+1e-9)
+        f1score_train = 2*m_train["recall"]*m_train["precision"]/(m_train["recall"]+m_train["precision"]+1e-9)
+        f1score_val = 2*m_val["recall"]*m_val["precision"]/(m_val["recall"]+m_val["precision"]+1e-9)
+
+        
+
+
+        path1 = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["CNN"]["image_feature"] , str(configs["CNN"]["train_split"]))), SLURM_JOBID+"_"+str(subject)+"_cm.png" )
+        plot_cm(y_test, test_predictions_baseline, path=path1)
+        
+
+        # test_loss, test_acc = model.evaluate(test_ds, verbose=2)
+        # train_loss, train_acc = model.evaluate(train_ds, verbose=2)
+        # val_loss, val_acc = model.evaluate(val_ds, verbose=2)
+
+        # path = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["CNN"]["image_feature"] )), SLURM_JOBID+"_"+str(subject)+"_"+str(int(np.round(test_acc*100)))+"%.h5" )
+        # model.save(path)
+        # # plt.plot(history.history['accuracy'], label='accuracy')
+        # # plt.plot(history.history['val_accuracy'], label = 'val_accuracy')
+
+        # plt.xlabel('Epoch')
+        # plt.ylabel('Accuracy')
+        # plt.show()
+
+        # resnet50_CD_FS
+
+        # logger.info(f"subject: {subject} \t test_loss: {np.round(test_loss,3)}, test_acc: {int(np.round(test_acc*100))}%")
+
+        results.append([time, subject, "Both", "End-to-end", f1score_test, f1score_train, f1score_val, configs["CNN"], "CD PTI P100_FS", configs["CNN"]["test_split"], configs["CNN"]["val_split"], m_train, m_val, m_test, path, TensorBoard_logs])
+
+    
+    col = ["testID", "subject ID", "direction", "clasifier", "f1score_test", "f1score_train", "f1score_val", "classifier_parameters", "feature_type", "test_ratio", "val_ratio", "train", "val", "test", "save_path", "tensorboard"] 
+    results = pd.DataFrame(results, columns=col)
+    return results# history
+
+
 def plot_cm(labels, predictions, p=0.5, path=os.getcwd()):
     cm = confusion_matrix(labels, predictions > p)
     plt.figure(figsize=(5,5))
@@ -1602,7 +1899,6 @@ def extracting_image_features_stepscan(configs):
         logger.error("The configs file has not been set for stepscan dataset!!!")
 
 
-
 def reading_stepscan_h5_file(configs):  
     # ##################################################################
     #                phase 1: Reading image
@@ -1616,7 +1912,6 @@ def reading_stepscan_h5_file(configs):
 
     np.save(cfg.configs["paths"]["stepscan_data.npy"], data)
     np.save(cfg.configs["paths"]["stepscan_meta.npy"], metadata)
-
 
 
 def collect_results(result):
@@ -1634,17 +1929,24 @@ def collect_results(result):
     except:
         Results_DF.to_excel(os.path.join(excel_path, 'Results'+str(time)+'.xlsx'), columns=columnsname)
 
-
-    
+  
 def main():
     configs = cfg.configs
     # configs["Pipeline"]["classifier"] = "knn_classifier"
+    configs = copy.deepcopy(cfg.configs)
+    # configs["Pipeline"]["classifier"] = parameters[0]
+    
+    # configs["CNN"]["test_split"] = parameters[0]
+    configs["Pipeline"]["category"] = "deep"
+
+    configs["CNN"]["image_feature"] = "PTI"
 
 
-    a = from_scratch_binary(configs)
-    a.to_excel(os.path.join(cfg.configs["paths"]["results_dir"], 'a.xlsx'))
+    a = from_scratch_binary_3(configs)
+    
+    # a.to_excel(os.path.join(cfg.configs["paths"]["results_dir"], 'a.xlsx'))
 
-    print(a)
+    # print(a)
     # collect_results(z)
 
     # 
