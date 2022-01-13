@@ -8,7 +8,7 @@ configs = {
         "classifier": "Template_Matching_classifier", # knn_classifier   svm_classifier   Template_Matching_classifier
         "persentage": 0.95,
         "category": "deep", # deep, image, hand_crafted
-        "type": "FT", # FT, FS, PT
+        "type": "FT", # FT, FS, PT (pretrain)
         "normilizing": "z-score",
         "feature_type": "COA", # "all", "GRF_HC", "COA_HC", "GRF", "COA", "wt_COA",  ## todo: "wt_GRF"
         "test_ratio": 0.30,
@@ -16,7 +16,7 @@ configs = {
         "template_selection_method": "None",# "DEND" or MDIST
         "template_selection_k_cluster": 4,
         "verbose": 1,
-        "Debug": False,
+        "Debug": True,
     },
     "CNN": {
         "dataset": "casia", # casia stepscan
@@ -28,11 +28,11 @@ configs = {
         "batch_size": 32, 
         "class_numbers": 80,
         "saving_path": "./results/deep_model",
-        "epochs": 500,
+        "epochs": 150,
         "validation_split": 0.2,
         "test_split": 0.1,
         "val_split": 0.2,
-        "train_split": 0.01,
+        "train_split": 0.99,
         "verbose": 2,
         "image_feature": "CD", # CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100, tile, fusion
     },
