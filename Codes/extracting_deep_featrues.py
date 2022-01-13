@@ -318,7 +318,7 @@ def FT_deep_features(configs):
 
 def FS_deep_features(configs):
     a = configs["CNN"]["image_feature"]
-    g = glob.glob(configs["CNN"]["saving_path"]+f"FS*{a}*%.h5", recursive=True)
+    g = glob.glob(configs["CNN"]["saving_path"]+f"/FS_{a}*_best.h5", recursive=True)
     logger.info(g)
 
     try:
@@ -417,6 +417,7 @@ def main():
     p  = ["resnet50.ResNet50"]#, "efficientnet.EfficientNetB0", "mobilenet.MobileNet", "resnet50.ResNet50"]#
     p1 = ["CD", "PTI", "Tmax", "Tmin", "P50", "P60", "P70", "P80", "P90", "P100"]
     space = list(itertools.product(p,p1))
+    
     ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK',default=1))
     ncpus = 4
 

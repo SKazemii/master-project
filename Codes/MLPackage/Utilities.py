@@ -310,7 +310,8 @@ def pipeline(configs):
     if configs["Pipeline"]["category"]=="deep":
         if configs["Pipeline"]["type"]=="PT":
             feature_path = os.path.join(configs["paths"]["casia_deep_feature"], configs["CNN"]["base_model"].split(".")[0]+'_'+configs["CNN"]["image_feature"]+'_features.xlsx')
-            DF_features_all = pd.read_excel(feature_path, index_col = 0)
+            logger.info(feature_path)
+            DF_features_all = pd.read_excel(feature_path, index_col = 0, engine="xlrd")
         elif configs["Pipeline"]["type"]=="FS":
             feature_path = os.path.join(configs["paths"]["casia_deep_feature"], 'FS_'+configs["CNN"]["image_feature"]+'_features.xlsx')
             DF_features_all = pd.read_excel(feature_path, index_col = 0)
@@ -331,12 +332,6 @@ def pipeline(configs):
         meta = np.load(configs["paths"]["casia_dataset-meta.npy"])
 
         DF_features_all = pd.DataFrame(np.concatenate((image_features, meta[:,0:2]), axis=1 ), columns=["pixel_"+str(i) for i in range(image_features.shape[1])]+cfg.label)
-
-
-
- 
-     
-
 
 
     subjects = DF_features_all["subject ID"].unique()
@@ -360,7 +355,7 @@ def pipeline(configs):
 
 
     results = list()
-    if configs["Pipeline"]["Debug"]==True: subjects = [4, 5,]
+    if configs["Pipeline"]["Debug"]==True: subjects = subjects[:20]
 
     for subject in subjects:
         if (subject % 86) == 0: continue
@@ -430,6 +425,10 @@ def pipeline(configs):
             #                                                verbose=Pipeline["verbose"])
             if configs["Pipeline"]["category"]=="deep" or configs["Pipeline"]["category"]=="image" :
                 temp1="_".join((feature_type, configs["CNN"]["image_feature"], configs["Pipeline"]["type"]))
+            else:
+                temp1=feature_type
+
+
             result = eval(classifier)(pos_train=DF_positive_samples_train, 
                                 neg_train=DF_negative_samples_train, 
                                 pos_test=DF_positive_samples_test, 
@@ -1102,22 +1101,7 @@ def from_scratch(configs):
     # # ##################################################################
     # #                phase 6: Making Base Model
     # # ##################################################################
-    def convolutional_block(x, filter):
-        # copy tensor to variable called x_skip
-        x_skip = x
-        # Layer 1
-        x = tf.keras.layers.Conv2D(filter, (3,3), padding = 'same', strides = (2,2))(x)
-        x = tf.keras.layers.BatchNormalization(axis=3)(x)
-        x = tf.keras.layers.Activation('relu')(x)
-        # Layer 2
-        x = tf.keras.layers.Conv2D(filter, (3,3), padding = 'same')(x)
-        x = tf.keras.layers.BatchNormalization(axis=3)(x)
-        # Processing Residue with conv(1,1)
-        x_skip = tf.keras.layers.Conv2D(filter, (1,1), strides = (2,2))(x_skip)
-        # Add Residue
-        x = tf.keras.layers.Add()([x, x_skip])     
-        x = tf.keras.layers.Activation('relu')(x)
-        return x
+
 
     CNN_name = "from_scratch"
 
@@ -1128,10 +1112,6 @@ def from_scratch(configs):
     # x = tf.keras.layers.RandomRotation(0.1)(x)
     # x = tf.keras.layers.RandomZoom(0.1)(x)
 
-    # x = convolutional_block(x, 8)
-    # x = convolutional_block(x, 32)
-    # x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
-    # x = convolutional_block(x, 64)
     x = tf.keras.layers.BatchNormalization()(x)
     
     x = tf.keras.layers.Conv2D(32, kernel_size=(5, 5))(x)
@@ -1189,7 +1169,7 @@ def from_scratch(configs):
 
     time = int(timeit.timeit()*1_000_000)
     TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], "_".join(("FS", configs["CNN"]["image_feature"], SLURM_JOBID+"_"+str(time)) )  )
-    path = configs["CNN"]["saving_path"] + "_".join(( "FS", configs["CNN"]["image_feature"], SLURM_JOBID+"_best.h5" ))
+    path = configs["CNN"]["saving_path"] + "/" + "_".join(( "FS", configs["CNN"]["image_feature"], SLURM_JOBID+"_best.h5" ))
     logger.info(f"TensorBoard_logs: {TensorBoard_logs}")
     logger.info(f"path: {path}")
 
@@ -1229,9 +1209,9 @@ def from_scratch(configs):
     #     print(name, ': ', value)
 
     
-    print("m_train: ",m_train)
-    print("m_val: ", m_val)
-    print("m_test: ", m_test)
+    logger.info(f"m_train: {m_train}")
+    logger.info(f"m_val: {m_val}")
+    logger.info(f"m_test: {m_test}")
 
     # f1score_test = 2*m_test["recall"]*m_test["precision"]/(m_test["recall"]+m_test["precision"]+1e-9)
     # f1score_train = 2*m_train["recall"]*m_train["precision"]/(m_train["recall"]+m_train["precision"]+1e-9)
@@ -1353,23 +1333,25 @@ def from_scratch_binary(configs):
     results = list()
     for subject in range(20):# Number_of_subjects
 
-        neg, pos = np.bincount(tf.cast(labels[:, subject], dtype=tf.int16))
-        total = neg + pos
-        logger.info('subject: {}\t    Total: {}\t    Positive: {} ({:.2f}% of total)'.format(
-            subject, total, pos, 100 * pos / total))
+        
 
-        weight_for_0 = (1 / neg) * (total / 2.0)
-        weight_for_1 = (1 / pos) * (total / 2.0)
+        # neg, pos = np.bincount(tf.cast(labels[:, subject], dtype=tf.int16))
+        # total = neg + pos
+        # logger.info('subject: {}\t    Total: {}\t    Positive: {} ({:.2f}% of total)'.format(
+        #     subject, total, pos, 100 * pos / total))
 
-        class_weight = {0: weight_for_0, 1: weight_for_1}
+        # weight_for_0 = (1 / neg) * (total / 2.0)
+        # weight_for_1 = (1 / pos) * (total / 2.0)
 
-        logger.info('Weight for class 0: {:.2f}'.format(weight_for_0))
-        logger.info('Weight for class 1: {:.2f}'.format(weight_for_1))
+        # class_weight = {0: weight_for_0, 1: weight_for_1}
+
+        # logger.info('Weight for class 0: {:.2f}'.format(weight_for_0))
+        # logger.info('Weight for class 1: {:.2f}'.format(weight_for_1))
 
         
         X_train, X_test, y_train, y_test = train_test_split(images, labels[:, subject].numpy(), test_size=configs['CNN']["test_split"], random_state=42, stratify=labels[:, subject].numpy())
         X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=configs['CNN']["val_split"], random_state=42, stratify=y_train)
-        X_train, _, y_train, _ = train_test_split(X_train, y_train, test_size=configs['CNN']["train_split"], random_state=42, stratify=y_train)
+        _, X_train, _, y_train= train_test_split(X_train, y_train, test_size=configs['CNN']["train_split"], random_state=42, stratify=y_train)
 
 
 
@@ -1391,7 +1373,18 @@ def from_scratch_binary(configs):
         test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
 
 
+        negative_ds = (
+            train_ds
+            .unbatch()
+            .filter(lambda features, label: label==0)
+            .repeat())
+        positive_ds = (
+            train_ds
+            .unbatch()
+            .filter(lambda features, label: label==1)
+            .repeat())
 
+        balanced_ds = tf.data.experimental.sample_from_datasets( [negative_ds, positive_ds], [0.5, 0.5]).batch(configs['CNN']["batch_size"]).cache().prefetch(buffer_size=AUTOTUNE)
 
         # # ##################################################################
         # #                phase 6: Making Base Model
@@ -1461,10 +1454,11 @@ def from_scratch_binary(configs):
             metrics=METRICS, #tfa.metrics.F1Score(num_classes=1, average='macro'), tf.keras.metrics.TruePositives()]
             )
 
+        test = os.environ.get('SLURM_JOB_NAME',default="XX")
 
         time = int(timeit.timeit()*1_000_000)
-        TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], "_".join(("FS", configs["CNN"]["image_feature"], str(configs["CNN"]["test_split"])) ) , SLURM_JOBID+"_"+str(subject) )
-        path = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["CNN"]["image_feature"], str(configs["CNN"]["test_split"]) )), SLURM_JOBID+"_"+str(subject)+"_best.h5" )
+        TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], test, "_".join(("FS", configs["CNN"]["image_feature"], str(configs["CNN"]["test_split"]), str(configs["CNN"]["train_split"])) ) , SLURM_JOBID+"_"+str(subject) )
+        path = os.path.join( configs["CNN"]["saving_path"], test, "_".join(( "FS", configs["CNN"]["image_feature"], str(configs["CNN"]["test_split"]), str(configs["CNN"]["train_split"]) )), SLURM_JOBID+"_"+str(subject)+"_best.h5" )
         logger.info(f"TensorBoard_logs: {TensorBoard_logs}")
         logger.info(f"path: {path}")
 
@@ -1480,15 +1474,16 @@ def from_scratch_binary(configs):
 
 
         history = model.fit(
-            train_ds,    
+            balanced_ds,    
             batch_size=configs["CNN"]["batch_size"],
             callbacks=[checkpoint],
             epochs=configs["CNN"]["epochs"],
             validation_data=val_ds,
             verbose=configs["CNN"]["verbose"],
-            class_weight=class_weight,
+            steps_per_epoch=44,
+            # class_weight=class_weight,
         )
-        path1 = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["CNN"]["image_feature"], str(configs["CNN"]["test_split"]) )), SLURM_JOBID+"_"+str(subject)+"_metrics.png" )
+        path1 = os.path.join( configs["CNN"]["saving_path"], test, "_".join(( "FS", configs["CNN"]["image_feature"], str(configs["CNN"]["test_split"]) , str(configs["CNN"]["train_split"]))), SLURM_JOBID+"_"+str(subject)+"_metrics.png" )
         plot_metrics(history, path=path1)
 
         # train_predictions_baseline = model.predict(train_ds, batch_size=configs["CNN"]["batch_size"])
@@ -1514,7 +1509,7 @@ def from_scratch_binary(configs):
         
 
 
-        path1 = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["CNN"]["image_feature"] , str(configs["CNN"]["test_split"]))), SLURM_JOBID+"_"+str(subject)+"_cm.png" )
+        path1 = os.path.join( configs["CNN"]["saving_path"], test, "_".join(( "FS", configs["CNN"]["image_feature"] , str(configs["CNN"]["test_split"]), str(configs["CNN"]["train_split"]) )), SLURM_JOBID+"_"+str(subject)+"_cm.png" )
         plot_cm(y_test, test_predictions_baseline, path=path1)
         
 
@@ -1535,10 +1530,10 @@ def from_scratch_binary(configs):
 
         # logger.info(f"subject: {subject} \t test_loss: {np.round(test_loss,3)}, test_acc: {int(np.round(test_acc*100))}%")
 
-        results.append([time, subject, "Both", "End-to-end", f1score_test, f1score_train, f1score_val, configs["CNN"], configs['CNN']["image_feature"]+"_FS", configs["CNN"]["test_split"], configs["CNN"]["val_split"], m_train, m_val, m_test, path, TensorBoard_logs])
+        results.append([time, subject, "Both", "End-to-end", f1score_test, f1score_train, f1score_val, configs["CNN"], configs['CNN']["image_feature"]+"_FS", configs["CNN"]["test_split"], configs["CNN"]["val_split"], configs["CNN"]["train_split"],  m_train, m_val, m_test, path, TensorBoard_logs])
 
     
-    col = ["testID", "subject ID", "direction", "clasifier", "f1score_test", "f1score_train", "f1score_val", "classifier_parameters", "feature_type", "test_ratio", "val_ratio", "train", "val", "test", "save_path", "tensorboard"] 
+    col = ["testID", "subject ID", "direction", "clasifier", "f1score_test", "f1score_train", "f1score_val", "classifier_parameters", "feature_type", "test_ratio", "val_ratio", "train_split", "train", "val", "test", "save_path", "tensorboard"] 
     results = pd.DataFrame(results, columns=col)
     return results# history
 
@@ -1622,25 +1617,25 @@ def from_scratch_binary_3(configs):
     # #                phase 5: Making tf.dataset object
     # # ##################################################################
     results = list()
-    for subject in range(1):# Number_of_subjects
+    for subject in range(20):# Number_of_subjects
 
-        neg, pos = np.bincount(tf.cast(labels[:, subject], dtype=tf.int16))
-        total = neg + pos
-        logger.info('subject: {}\t    Total: {}\t    Positive: {} ({:.2f}% of total)'.format(
-            subject, total, pos, 100 * pos / total))
+        # neg, pos = np.bincount(tf.cast(labels[:, subject], dtype=tf.int16))
+        # total = neg + pos
+        # logger.info('subject: {}\t    Total: {}\t    Positive: {} ({:.2f}% of total)'.format(
+        #     subject, total, pos, 100 * pos / total))
 
-        weight_for_0 = (1 / neg) * (total / 2.0)
-        weight_for_1 = (1 / pos) * (total / 2.0)
+        # weight_for_0 = (1 / neg) * (total / 2.0)
+        # weight_for_1 = (1 / pos) * (total / 2.0)
 
-        class_weight = {0: weight_for_0, 1: weight_for_1}
+        # class_weight = {0: weight_for_0, 1: weight_for_1}
 
-        logger.info('Weight for class 0: {:.2f}'.format(weight_for_0))
-        logger.info('Weight for class 1: {:.2f}'.format(weight_for_1))
+        # logger.info('Weight for class 0: {:.2f}'.format(weight_for_0))
+        # logger.info('Weight for class 1: {:.2f}'.format(weight_for_1))
 
         
         X_train, X_test, y_train, y_test = train_test_split(images, labels[:, subject].numpy(), test_size=configs['CNN']["test_split"], random_state=42, stratify=labels[:, subject].numpy())
         X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=configs['CNN']["val_split"], random_state=42, stratify=y_train)
-        X_train, _, y_train, _ = train_test_split(X_train, y_train, test_size=configs['CNN']["train_split"], random_state=42, stratify=y_train)
+        _, X_train, _, y_train = train_test_split(X_train, y_train, test_size=configs['CNN']["train_split"], random_state=42, stratify=y_train)
 
 
 
@@ -1661,6 +1656,18 @@ def from_scratch_binary_3(configs):
         test_ds = test_ds.batch(configs['CNN']["batch_size"])
         test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
 
+        negative_ds = (
+            train_ds
+            .unbatch()
+            .filter(lambda features, label: label==0)
+            .repeat())
+        positive_ds = (
+            train_ds
+            .unbatch()
+            .filter(lambda features, label: label==1)
+            .repeat())
+
+        balanced_ds = tf.data.experimental.sample_from_datasets( [negative_ds, positive_ds], [0.5, 0.5]).batch(configs['CNN']["batch_size"]).cache().prefetch(buffer_size=AUTOTUNE)
 
 
 
@@ -1732,10 +1739,11 @@ def from_scratch_binary_3(configs):
             metrics=METRICS, #tfa.metrics.F1Score(num_classes=1, average='macro'), tf.keras.metrics.TruePositives()]
             )
 
+        test = os.environ.get('SLURM_JOB_NAME',default="XX")
 
         time = int(timeit.timeit()*1_000_000)
-        TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], "_".join(("FS", configs["CNN"]["image_feature"], str(configs["CNN"]["train_split"])) ) , SLURM_JOBID+"_"+str(subject) )
-        path = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["CNN"]["image_feature"], str(configs["CNN"]["train_split"]) )), SLURM_JOBID+"_"+str(subject)+"_best.h5" )
+        TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], test, "_".join(("FS", configs["CNN"]["image_feature"], str(configs["CNN"]["train_split"]), str(configs["CNN"]["test_split"])) ) , SLURM_JOBID+"_"+str(subject) )
+        path = os.path.join( configs["CNN"]["saving_path"], test, "_".join(( "FS", configs["CNN"]["image_feature"], str(configs["CNN"]["train_split"]), str(configs["CNN"]["test_split"]) )), SLURM_JOBID+"_"+str(subject)+"_best.h5" )
         logger.info(f"TensorBoard_logs: {TensorBoard_logs}")
         logger.info(f"path: {path}")
 
@@ -1751,18 +1759,19 @@ def from_scratch_binary_3(configs):
 
 
         history = model.fit(
-            train_ds,    
+            balanced_ds,    
             batch_size=configs["CNN"]["batch_size"],
             callbacks=[checkpoint],
             epochs=configs["CNN"]["epochs"],
             validation_data=val_ds,
             verbose=configs["CNN"]["verbose"],
-            class_weight=class_weight,
+            steps_per_epoch=44,
+            # class_weight=class_weight,
         )
         model = tf.keras.models.load_model(path)
 
 
-        path1 = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["CNN"]["image_feature"], str(configs["CNN"]["train_split"]) )), SLURM_JOBID+"_"+str(subject)+"_metrics.png" )
+        path1 = os.path.join( configs["CNN"]["saving_path"], test, "_".join(( "FS", configs["CNN"]["image_feature"], str(configs["CNN"]["train_split"]), str(configs["CNN"]["test_split"]) )), SLURM_JOBID+"_"+str(subject)+"_metrics.png" )
         plot_metrics(history, path=path1)
 
         # train_predictions_baseline = model.predict(train_ds, batch_size=configs["CNN"]["batch_size"])
@@ -1788,7 +1797,7 @@ def from_scratch_binary_3(configs):
         
 
 
-        path1 = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["CNN"]["image_feature"] , str(configs["CNN"]["train_split"]))), SLURM_JOBID+"_"+str(subject)+"_cm.png" )
+        path1 = os.path.join( configs["CNN"]["saving_path"], test, "_".join(( "FS", configs["CNN"]["image_feature"] , str(configs["CNN"]["train_split"]), str(configs["CNN"]["test_split"]))), SLURM_JOBID+"_"+str(subject)+"_cm.png" )
         plot_cm(y_test, test_predictions_baseline, path=path1)
         
 
@@ -1809,10 +1818,10 @@ def from_scratch_binary_3(configs):
 
         # logger.info(f"subject: {subject} \t test_loss: {np.round(test_loss,3)}, test_acc: {int(np.round(test_acc*100))}%")
 
-        results.append([time, subject, "Both", "End-to-end", f1score_test, f1score_train, f1score_val, configs["CNN"], "CD PTI P100_FS", configs["CNN"]["test_split"], configs["CNN"]["val_split"], m_train, m_val, m_test, path, TensorBoard_logs])
+        results.append([time, subject, "Both", "End-to-end", f1score_test, f1score_train, f1score_val, configs["CNN"], "CD PTI P100_FS", configs["CNN"]["test_split"], configs["CNN"]["val_split"], configs["CNN"]["train_split"], m_train, m_val, m_test, path, TensorBoard_logs])
 
     
-    col = ["testID", "subject ID", "direction", "clasifier", "f1score_test", "f1score_train", "f1score_val", "classifier_parameters", "feature_type", "test_ratio", "val_ratio", "train", "val", "test", "save_path", "tensorboard"] 
+    col = ["testID", "subject ID", "direction", "clasifier", "f1score_test", "f1score_train", "f1score_val", "classifier_parameters", "feature_type", "test_ratio", "val_ratio", "train_split", "train", "val", "test", "save_path", "tensorboard"] 
     results = pd.DataFrame(results, columns=col)
     return results# history
 

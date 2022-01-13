@@ -1,10 +1,10 @@
 #!/bin/bash
-#SBATCH --job-name=fine_tuning
+#SBATCH --job-name=Mode_8
 #SBATCH --account=def-escheme
-#SBATCH --mem-per-cpu=8192M  #16384M                                         # increase as needed
+#SBATCH --mem=12G                                         # increase as needed
 #SBATCH --ntasks-per-node=2
-#SBATCH --cpus-per-task=1
-#SBATCH --time=4:30:20                                              # walltime in d-hh:mm or hh:mm:ss format
+#SBATCH --cpus-per-task=4
+#SBATCH --time=0:09:20                                              # walltime in d-hh:mm or hh:mm:ss format
 #SBATCH --output=%x-%J.out
 #SBATCH --mail-user=saeed.kazemi@unb.ca
 #SBATCH --mail-type=ALL
