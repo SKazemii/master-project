@@ -4,57 +4,68 @@ from pathlib import Path as Pathlb
 
 
 configs = {
+    "features": {
+        "category": "image", # deep, image, hand_crafted
+
+        "image_feature_name": "P100", # CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100, tile, fusion
+        "Handcrafted_feature_name": "GRF_HC", # "all", "GRF_HC", "COA_HC", "GRF", "COA", "wt_COA",  ## todo: "wt_GRF"
+        
+        "template_selection_method": "DEND", # None, DEND, MDIST, Random
+        "template_selection_k_cluster": 200,
+    },
+
+    "dataset": {
+        "dataset_name": "casia", # casia stepscan
+    },
+
     "Pipeline": {
         "classifier": "Template_Matching_classifier", # knn_classifier   svm_classifier   Template_Matching_classifier
         "persentage": 0.95,
-        "category": "deep", # deep, image, hand_crafted
-        "type": "FT", # FT, FS, PT (pretrain)
         "normilizing": "z-score",
-        "feature_type": "COA", # "all", "GRF_HC", "COA_HC", "GRF", "COA", "wt_COA",  ## todo: "wt_GRF"
         "test_ratio": 0.30,
         "THRESHOLDs": np.linspace(0, 1, 100),
-        "template_selection_method": "None",# "DEND" or MDIST
-        "template_selection_k_cluster": 4,
-        "verbose": 1,
+        
+        "verbose": False,
         "Debug": True,
+        "Debug_N": 21,
     },
     "CNN": {
-        "dataset": "casia", # casia stepscan
-        "train_sample": 2,#todo
+        "CNN_type": "PT", # FT, FS, PT (pretrain)
+
         "base_model": "resnet50.ResNet50", # vgg16.VGG16, resnet50.ResNet50, efficientnet.EfficientNetB0, mobilenet.MobileNet  inception_v3.InceptionV3
         "weights": "imagenet", 
         "include_top": False, 
-        "image_size": (60, 40, 3),
         "batch_size": 32, 
-        "class_numbers": 80,
+        
         "saving_path": "./results/deep_model",
         "epochs": 150,
-        "validation_split": 0.2,
-        "test_split": 0.1,
+        "tes_split": 0.1,
         "val_split": 0.2,
-        "train_split": 0.99,
-        "verbose": 2,
-        "image_feature": "CD", # CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100, tile, fusion
+        "tra_split": 0.99,
+        "verbose": True,
     },
-    "Template_Matching": {
-        "mode": "dist",
-        "criteria": "min",
-        "random_runs": 50,
-        "score": "A", # A = np.power(distance+1, -1) or B = 1/np.exp(distance)
-        "verbose": 1,
-    },
-    "SVM": {
+    "classifier":{
+        "Template_Matching": {
+            "mode": "dist",
+            "criteria": "min",
+            "random_runs": 50,
+            "score": "A", # A = np.power(distance+1, -1) or B = 1/np.exp(distance)
+            "verbose": True,
+        },
+        "SVM": {
             "kernel": "linear",
-        "random_runs": 50,
-        "verbose": 1,
+            "random_runs": 50,
+            "verbose": True,
+        },
+        "KNN": {
+            "n_neighbors": 5,
+            "random_runs": 50,
+            "metric": "euclidean",
+            "weights": "uniform",
+            "verbose": True,
+        },
     },
-    "KNN": {
-        "n_neighbors": 5,
-        "random_runs": 50,
-        "metric": "euclidean",
-        "weights": "uniform",
-        "verbose": 1,
-    },
+    
     "paths": {
         "project_dir": os.getcwd(),
 
@@ -70,6 +81,8 @@ configs = {
 
         "stepscan_image_feature.npy": os.path.join(os.getcwd(), "Datasets", "stepscan", "stepscan_image_feature.npy"),
         "stepscan_image_label.npy": os.path.join(os.getcwd(), "Datasets", "stepscan", "stepscan_image_label.npy"),
+
+        "stepscan_deep_feature": os.path.join(os.getcwd(), "Datasets", "stepscan", "deep_features"),
 
 
         "casia_dataset.h5": os.path.join(os.getcwd(), "Datasets", "Casia-D", "footpressures_align.h5"),

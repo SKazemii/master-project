@@ -110,13 +110,13 @@ def collect_results(result):
     if os.path.isfile(excel_path):
         Results_DF = pd.read_excel(excel_path, index_col = 0)
     else:
-        Results_DF = pd.DataFrame(columns=util.columnsname)
+        Results_DF = pd.DataFrame(columns=util.columnsname_result_DF)
 
     Results_DF = Results_DF.append(result)
     try:
-        Results_DF.to_excel(excel_path, columns=util.columnsname)
+        Results_DF.to_excel(excel_path, columns=util.columnsname_result_DF)
     except:
-        Results_DF.to_excel(excel_path+str(time)+'.xlsx', columns=util.columnsname)
+        Results_DF.to_excel(excel_path+str(time)+'.xlsx', columns=util.columnsname_result_DF)
 
 
 
@@ -127,7 +127,7 @@ def main():
     # logger.info(f"CPU count: {ncpus}")
 
 
-    test = os.environ.get('SLURM_JOB_NAME',default="Mode_6")
+    test = os.environ.get('SLURM_JOB_NAME',default="Mode_11")
     logger.info(f"test name: {test}")
 
 
@@ -184,9 +184,24 @@ def main():
         p1 = ["Template_Matching_classifier", "knn_classifier", "svm_classifier"]
         space = list(product(p0, p1))
 
+    elif test=="Mode_11":
+        p0 = [.1, .2, .3, .4, .5, .6, .7, .8, .9]
+        p1 = ["Template_Matching_classifier", "knn_classifier", "svm_classifier"]
+        p2 = ["CD", "PTI", "P90", "P100"]
+
+        space = list(product(p0, p1, p2))
+
     for parameters in space:
         logger.info(f"parameters: {parameters}")
         configs = copy.deepcopy(cfg.configs)
+
+        if test=="Mode_11":
+            configs["features"]["image_feature_name"] = parameters[2]
+            configs["Pipeline"]["classifier"] = parameters[1]
+            configs["Pipeline"]["test_ratio"] = parameters[0]
+            configs["features"]["category"] = "image"
+            configs['dataset']["dataset_name"] = "casia"
+            collect_results(util.pipeline(configs))
 
         if test=="Mode_1":
             configs["CNN"]["image_feature"] = parameters
@@ -268,6 +283,7 @@ def main():
             a = util.pipeline(configs)
             i=i+1
             a.to_excel(os.path.join(cfg.configs["paths"]["results_dir"], str(i)+'_Mode_10.xlsx'))
+    
     # pool.close()
     # pool.join()
 

@@ -35,19 +35,9 @@ if __name__ != "__main__":
     from MLPackage import Features as feat
 elif __name__ == "__main__":
     import config as cfg
-    # import Features as feat
-
-# global variables
-
-# Pipeline = cfg.configs["Pipeline"]
-# CNN = cfg.configs["CNN"]
-# Template_Matching = cfg.configs["Template_Matching"]
-# SVM = cfg.configs["SVM"]
-# KNN = cfg.configs["KNN"]
-# paths = cfg.configs["paths"]
 
 # num_pc = 0
-columnsname = ["testID", "subject ID", "direction", "clasifier", "PCA", "num_pc", "classifier_parameters", "normilizing", "feature_type", "test_ratio", "mean(EER)", "t_idx", "mean(acc)", "mean(f1)", "# positive samples training", "# positive samples test", "# negative samples test", "len(FAR)", "len(FRR)"] + ["FAR_" + str(i) for i in range(100)] + ["FRR_" + str(i) for i in range(100)] 
+columnsname_result_DF = ["testID", "subject ID", "direction", "clasifier", "PCA", "num_pc", "classifier_parameters", "normilizing", "feature_type", "test_ratio", "mean(EER)", "t_idx", "mean(acc)", "mean(f1)", "# positive samples training", "# positive samples test", "# negative samples test", "len(FAR)", "len(FRR)"] + ["FAR_" + str(i) for i in range(100)] + ["FRR_" + str(i) for i in range(100)] 
 time = int(timeit.default_timer() * 1_000_000)
 
 
@@ -94,24 +84,25 @@ def knn_classifier(**kwargs):
     global time
     num_pc = kwargs["num_pc"]
     configs = kwargs["configs"]
+    x_train = kwargs["x_train"]
 
-    pos_samples = kwargs["pos_train"].shape
-    temp = kwargs["neg_train"].sample(n = pos_samples[0])
-
-
-    kwargs["pos_train"]["left(0)/right(1)"] = kwargs["pos_train"]["left(0)/right(1)"].map(lambda x: 1)
-    temp["left(0)/right(1)"] = temp["left(0)/right(1)"].map(lambda x: 0)
-    x_train = kwargs["pos_train"].append(temp)
+    # pos_samples = kwargs["pos_train"].shape
+    # temp = kwargs["neg_train"].sample(n = pos_samples[0])
 
 
-    kwargs["pos_train"]["left(0)/right(1)"] = kwargs["pos_train"]["left(0)/right(1)"].map(lambda x: 1)
-    kwargs["neg_train"]["left(0)/right(1)"] = kwargs["neg_train"]["left(0)/right(1)"].map(lambda x: 0)
-    x_train = kwargs["pos_train"].append(kwargs["neg_train"])
+    # kwargs["pos_train"]["left(0)/right(1)"] = kwargs["pos_train"]["left(0)/right(1)"].map(lambda x: 1)
+    # temp["left(0)/right(1)"] = temp["left(0)/right(1)"].map(lambda x: 0)
+    # x_train = kwargs["pos_train"].append(temp)
+
+
+    # kwargs["pos_train"]["left(0)/right(1)"] = kwargs["pos_train"]["left(0)/right(1)"].map(lambda x: 1)
+    # kwargs["neg_train"]["left(0)/right(1)"] = kwargs["neg_train"]["left(0)/right(1)"].map(lambda x: 0)
+    # x_train = kwargs["pos_train"].append(kwargs["neg_train"])
 
     # cv = StratifiedKFold(n_splits=5, shuffle=True)
 
 
-    clf = knn(n_neighbors=configs["KNN"]["n_neighbors"], metric=configs["KNN"]["metric"], weights=configs["KNN"]["weights"])
+    clf = knn(n_neighbors=configs["classifier"]["KNN"]["n_neighbors"], metric=configs["classifier"]["KNN"]["metric"], weights=configs["classifier"]["KNN"]["weights"])
 
 
     # space = KNN
@@ -128,10 +119,10 @@ def knn_classifier(**kwargs):
 
 
     # execute search
-    result = clf.fit(x_train.iloc[:, :-2].values, x_train.iloc[:, -1], )
+    result = clf.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1], )
     best_model = result#.best_estimator_
 
-    y_pred = best_model.predict_proba(x_train.iloc[:, :-2].values)[:, 1]
+    y_pred = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
     
 
     FAR, tpr, _ = roc_curve(x_train.iloc[:, -1], y_pred, pos_label=1)
@@ -144,24 +135,29 @@ def knn_classifier(**kwargs):
 
     acc = list()
     f1 = list()
-    for _ in range(configs["KNN"]["random_runs"]):
-        pos_samples = kwargs["pos_test"].shape
-        temp = kwargs["neg_test"].sample(n = pos_samples[0])
+    for _ in range(configs["classifier"]["KNN"]["random_runs"]):
+        # pos_samples = kwargs["pos_test"].shape
+        # temp = kwargs["neg_test"].sample(n = pos_samples[0])
 
-        DF_temp = pd.concat([kwargs["pos_test"], temp])
-        DF_temp["subject ID"] = DF_temp["subject ID"].map(lambda x: 1 if x == kwargs["sub"] else 0)
+        # DF_temp = pd.concat([kwargs["pos_test"], temp])
+        # DF_temp["subject ID"] = DF_temp["subject ID"].map(lambda x: 1 if x == kwargs["sub"] else 0)
+        DF_temp = balancer(kwargs["x_test"])
 
-        y_pred = best_model.predict(DF_temp.iloc[:, :-2].values)
+        y_pred = best_model.predict(DF_temp.iloc[:, :-1].values)
 
-        acc.append( accuracy_score(DF_temp.iloc[:,-2].values, y_pred)*100 )
-        f1.append(  f1_score(DF_temp.iloc[:,-2].values, y_pred)*100 )
+        acc.append( accuracy_score(DF_temp.iloc[:,-1].values, y_pred)*100 )
+        f1.append(  f1_score(DF_temp.iloc[:,-1].values, y_pred)*100 )
       
     
     results = list()
 
-    results.append([time, kwargs["sub"], kwargs["dir"], "KNN", configs["Pipeline"]["persentage"], num_pc, configs["KNN"], configs["Pipeline"]["normilizing"], kwargs["feature_type"], configs["Pipeline"]["test_ratio"]])
-
-    results.append([EER, t_idx, np.mean(acc), np.mean(f1), kwargs["pos_train"].shape[0], kwargs["pos_test"].shape[0], kwargs["neg_test"].shape[0], len(FAR), len(FRR)])
+    results.append([time, kwargs["sub"], kwargs["dir"], "KNN", configs["Pipeline"]["persentage"], num_pc, configs["classifier"]["KNN"], configs["Pipeline"]["normilizing"], kwargs["feature_type"], configs["Pipeline"]["test_ratio"]])
+    x_test = kwargs["x_test"]
+    pos_samples_shape = x_test[x_test["binary_labels"]==1].shape[0]
+    neg_samples_shape = x_test[x_test["binary_labels"]==0].shape[0]
+    x_train = kwargs["x_train"]
+    pos_samples = x_train[x_train["binary_labels"]==1].shape[0]
+    results.append([EER, t_idx, np.mean(acc), np.mean(f1), pos_samples, pos_samples_shape, neg_samples_shape, len(FAR), len(FRR)])
 
     results.append(FAR)
     results.append(FRR)
@@ -176,20 +172,20 @@ def svm_classifier(**kwargs):
     num_pc = kwargs["num_pc"]
     configs = kwargs["configs"]
 
-    pos_samples = kwargs["pos_train"].shape
-    temp = kwargs["neg_train"].sample(n = 100)#pos_samples[0])
+    # pos_samples = kwargs["pos_train"].shape
+    # temp = kwargs["neg_train"].sample(n = 100)#pos_samples[0])
     
 
-    kwargs["pos_train"]["left(0)/right(1)"] = kwargs["pos_train"]["left(0)/right(1)"].map(lambda x: 1)
-    temp["left(0)/right(1)"] = temp["left(0)/right(1)"].map(lambda x: 0)
-    x_train = kwargs["pos_train"].append(temp)
+    # kwargs["pos_train"]["left(0)/right(1)"] = kwargs["pos_train"]["left(0)/right(1)"].map(lambda x: 1)
+    # temp["left(0)/right(1)"] = temp["left(0)/right(1)"].map(lambda x: 0)
+    x_train = kwargs["x_train"]#.append(temp)
 
 
-    clf = svm.SVC(kernel=configs["SVM"]["kernel"] , probability=True)
-    clf.fit(x_train.iloc[:, :-2], x_train.iloc[:, -1])
+    clf = svm.SVC(kernel=configs["classifier"]["SVM"]["kernel"] , probability=True)
+    clf.fit(x_train.iloc[:, :-1], x_train.iloc[:, -1])
 
 
-    y_pred = clf.predict_proba(x_train.iloc[:, :-2])[:, 1]
+    y_pred = clf.predict_proba(x_train.iloc[:, :-1])[:, 1]
     
 
     # for _ in range(SVM["random_runs"]):
@@ -203,24 +199,29 @@ def svm_classifier(**kwargs):
 
     acc = list()
     f1 = list()
-    for _ in range(configs["SVM"]["random_runs"]):
-        pos_samples = kwargs["pos_test"].shape
-        temp = kwargs["neg_test"].sample(n = pos_samples[0])
+    for _ in range(configs["classifier"]["SVM"]["random_runs"]):
+        # pos_samples = kwargs["pos_test"].shape
+        # temp = kwargs["neg_test"].sample(n = pos_samples[0])
 
-        DF_temp = pd.concat([kwargs["pos_test"], temp])
-        DF_temp["subject ID"] = DF_temp["subject ID"].map(lambda x: 1 if x == kwargs["sub"] else 0)
+        # DF_temp = pd.concat([kwargs["pos_test"], temp])
+        # DF_temp["subject ID"] = DF_temp["subject ID"].map(lambda x: 1 if x == kwargs["sub"] else 0)
+        DF_temp = balancer(kwargs["x_test"])
 
-        y_pred = clf.predict(DF_temp.iloc[:, :-2])
+        y_pred = clf.predict(DF_temp.iloc[:, :-1])
 
-        acc.append( accuracy_score(DF_temp.iloc[:,-2].values, y_pred)*100 )
-        f1.append(  f1_score(DF_temp.iloc[:,-2].values, y_pred)*100 )
+        acc.append( accuracy_score(DF_temp.iloc[:,-1].values, y_pred)*100 )
+        f1.append(  f1_score(DF_temp.iloc[:,-1].values, y_pred)*100 )
       
     
     results = list()
 
-    results.append([time, kwargs["sub"], kwargs["dir"], "SVM", configs["Pipeline"]["persentage"], num_pc, configs["SVM"], configs["Pipeline"]["normilizing"], kwargs["feature_type"], configs["Pipeline"]["test_ratio"]])
-
-    results.append([EER, t_idx, np.mean(acc), np.mean(f1), kwargs["pos_train"].shape[0], kwargs["pos_test"].shape[0], kwargs["neg_test"].shape[0], len(FAR), len(FRR)])
+    results.append([time, kwargs["sub"], kwargs["dir"], "SVM", configs["Pipeline"]["persentage"], num_pc, configs["classifier"]["SVM"], configs["Pipeline"]["normilizing"], kwargs["feature_type"], configs["Pipeline"]["test_ratio"]])
+    x_test = kwargs["x_test"]
+    pos_samples_shape = x_test[x_test["binary_labels"]==1].shape[0]
+    neg_samples_shape = x_test[x_test["binary_labels"]==0].shape[0]
+    x_train = kwargs["x_train"]
+    pos_samples = x_train[x_train["binary_labels"]==1].shape[0]
+    results.append([EER, t_idx, np.mean(acc), np.mean(f1), pos_samples, pos_samples_shape, neg_samples_shape, len(FAR), len(FRR)])
 
     results.append(FAR)
     results.append(FRR)
@@ -238,23 +239,26 @@ def Template_Matching_classifier(**kwargs):
     FRR = list()
     EER = list()
     TH  = list()
-    for _ in range(configs["Template_Matching"]["random_runs"]):
-        pos_samples = kwargs["pos_train"].shape
-        temp = kwargs["neg_train"].sample(n = pos_samples[0])
+    for _ in range(configs["classifier"]["Template_Matching"]["random_runs"]):
+        DF_temp = balancer(kwargs["x_train"])
 
+        pos_samples = DF_temp[DF_temp["binary_labels"]==1]
+        neg_samples = DF_temp[DF_temp["binary_labels"]==0]
 
-        distModel1, distModel2 = compute_score_matrix(kwargs["pos_train"].iloc[:, :-2].values,
-                                                    temp.iloc[:, :-2].values,
-                                                    mode = configs["Template_Matching"]["mode"], score = configs["Template_Matching"]["score"])
+        distModel1, distModel2 = compute_score_matrix(pos_samples.iloc[:, :-1].values,
+                                                    neg_samples.iloc[:, :-1].values,
+                                                    mode = configs["classifier"]["Template_Matching"]["mode"], 
+                                                    score = configs["classifier"]["Template_Matching"]["score"])
 
         Model_client, Model_imposter = model(distModel1,
                                                 distModel2, 
-                                                criteria=configs["Template_Matching"]["criteria"], 
-                                                score=configs["Template_Matching"]["score"] )
+                                                criteria=configs["classifier"]["Template_Matching"]["criteria"], 
+                                                score=configs["classifier"]["Template_Matching"]["score"] )
 
 
 
-        FAR_temp, FRR_temp = calculating_fxr(Model_client, Model_imposter, distModel1, distModel2, configs["Pipeline"]["THRESHOLDs"], configs["Template_Matching"]["score"])
+        FAR_temp, FRR_temp = calculating_fxr(Model_client, Model_imposter, distModel1, distModel2, configs["Pipeline"]["THRESHOLDs"], configs["classifier"]["Template_Matching"]["score"])
+        
         EER_temp = compute_eer(FAR_temp, FRR_temp)
 
         FAR.append(FAR_temp)
@@ -268,16 +272,21 @@ def Template_Matching_classifier(**kwargs):
     f1 = list()
     t_idx = int(np.ceil(np.mean(TH)))
 
-    for _ in range(configs["Template_Matching"]["random_runs"]):
-        pos_samples = kwargs["pos_test"].shape
-        temp = kwargs["neg_test"].sample(n = pos_samples[0])
+    for _ in range(configs["classifier"]["Template_Matching"]["random_runs"]):
+        # pos_samples = kwargs["pos_test"].shape
+        # temp = kwargs["neg_test"].sample(n = pos_samples[0])
 
-        DF_temp = pd.concat([kwargs["pos_test"], temp])
-        DF_temp["subject ID"] = DF_temp["subject ID"].map(lambda x: 1 if x == kwargs["sub"] else 0)
+        # DF_temp = pd.concat([kwargs["pos_test"], temp])
+        # DF_temp["subject ID"] = DF_temp["subject ID"].map(lambda x: 1 if x == kwargs["sub"] else 0)
+        
 
 
-        distModel1 , distModel2 = compute_score_matrix(kwargs["pos_train"].iloc[:, :-2].values, DF_temp.iloc[:, :-2].values, mode=configs["Template_Matching"]["mode"], score=configs["Template_Matching"]["score"])
-        Model_client, Model_test = model(distModel1, distModel2, criteria=configs["Template_Matching"]["criteria"], score=configs["Template_Matching"]["score"])
+        DF_temp = balancer(kwargs["x_test"])
+
+
+
+        distModel1 , distModel2 = compute_score_matrix(pos_samples.iloc[:, :-1].values, DF_temp.iloc[:, :-1].values, mode=configs["classifier"]["Template_Matching"]["mode"], score=configs["classifier"]["Template_Matching"]["score"])
+        Model_client, Model_test = model(distModel1, distModel2, criteria=configs["classifier"]["Template_Matching"]["criteria"], score=configs["classifier"]["Template_Matching"]["score"])
 
 
         y_pred = np.zeros((Model_test.shape))
@@ -286,87 +295,113 @@ def Template_Matching_classifier(**kwargs):
         y_pred[Model_test > configs["Pipeline"]["THRESHOLDs"][t_idx]] = 1
 
 
-        acc.append( accuracy_score(DF_temp.iloc[:,-2].values, y_pred)*100 )
-        f1.append(  f1_score(DF_temp.iloc[:,-2].values, y_pred)*100 )
+        acc.append( accuracy_score(DF_temp.iloc[:,-1].values, y_pred)*100 )
+        f1.append(  f1_score(DF_temp.iloc[:,-1].values, y_pred)*100 )
     
     results = list()
 
-    results.append([time, kwargs["sub"], kwargs["dir"], "Template_Matching", configs["Pipeline"]["persentage"], num_pc, configs["Template_Matching"], configs["Pipeline"]["normilizing"], kwargs["feature_type"], configs["Pipeline"]["test_ratio"]])
+    results.append([time, kwargs["sub"], kwargs["dir"], "Template_Matching", configs["Pipeline"]["persentage"], num_pc, configs["classifier"]["Template_Matching"], configs["Pipeline"]["normilizing"], kwargs["feature_type"], configs["Pipeline"]["test_ratio"]])
+    x_test = kwargs["x_test"]
+    pos_samples_shape = x_test[x_test["binary_labels"]==1].shape[0]
+    neg_samples_shape = x_test[x_test["binary_labels"]==0].shape[0]
 
-    results.append([np.mean(EER), t_idx, np.mean(acc), np.mean(f1), kwargs["pos_train"].shape[0], kwargs["pos_test"].shape[0], kwargs["neg_test"].shape[0], len(FAR[0]), len(FRR[0])])
+
+
+
+
+    results.append([np.mean(EER), t_idx, np.mean(acc), np.mean(f1), pos_samples.shape[0], pos_samples_shape, neg_samples_shape, len(FAR[0]), len(FRR[0])])
     results.append(list(np.mean(FAR, axis=0)))
     results.append(list(np.mean(FRR, axis=0)))
 
     results = [val for sublist in results for val in sublist]
     return results
 
+def balancer(DF):
+    pos_samples = DF[DF["binary_labels"]==1]
+    neg_samples = DF[DF["binary_labels"]==0].sample(n = pos_samples.shape[0])
+    DF_balanced = pd.concat([pos_samples, neg_samples])
+    return DF_balanced
+
     
 
 def pipeline(configs):
+    tic=timeit.default_timer()
 
-    # set_sonfig(configs)
+
     classifier = configs["Pipeline"]["classifier"]
-
-    if configs["Pipeline"]["category"]=="deep":
-        if configs["Pipeline"]["type"]=="PT":
-            feature_path = os.path.join(configs["paths"]["casia_deep_feature"], configs["CNN"]["base_model"].split(".")[0]+'_'+configs["CNN"]["image_feature"]+'_features.xlsx')
-            logger.info(feature_path)
-            DF_features_all = pd.read_excel(feature_path, index_col = 0, engine="xlrd")
-        elif configs["Pipeline"]["type"]=="FS":
-            feature_path = os.path.join(configs["paths"]["casia_deep_feature"], 'FS_'+configs["CNN"]["image_feature"]+'_features.xlsx')
-            DF_features_all = pd.read_excel(feature_path, index_col = 0)
-        elif configs["Pipeline"]["type"]=="FT":
-            feature_path = os.path.join(configs["paths"]["casia_deep_feature"], 'FT_resnet50_'+configs["CNN"]["image_feature"]+'_features.xlsx')
-            DF_features_all = pd.read_excel(feature_path, index_col = 0)
-    elif configs["Pipeline"]["category"]=="hand_crafted":
-        feature_path = configs["paths"]["casia_all_feature.xlsx"]
-        DF_features_all = pd.read_excel(feature_path, index_col = 0)
-    elif configs["Pipeline"]["category"]=="image":
-        feature_path = configs["paths"]["casia_image_feature.npy"]
-        image_features = np.load(feature_path)
-        image_feature_name_dict = dict(zip(cfg.image_feature_name, range(len(cfg.image_feature_name))))
-        image_features = image_features[..., image_feature_name_dict[configs["CNN"]["image_feature"]]]
-        image_features = image_features.reshape(2851, 2400 ,1).squeeze()
-
-        
-        meta = np.load(configs["paths"]["casia_dataset-meta.npy"])
-
-        DF_features_all = pd.DataFrame(np.concatenate((image_features, meta[:,0:2]), axis=1 ), columns=["pixel_"+str(i) for i in range(image_features.shape[1])]+cfg.label)
-
-
-    subjects = DF_features_all["subject ID"].unique()
-    
     persentage = configs["Pipeline"]["persentage"]
     normilizing = configs["Pipeline"]["normilizing"]
     test_ratio = configs["Pipeline"]["test_ratio"]
 
-    if configs["Pipeline"]["category"]=="deep":
-        feature_type = configs["CNN"]["base_model"].split(".")[0]
-    elif configs["Pipeline"]["category"]=="hand_crafted":
-        feature_type = configs["Pipeline"]["feature_type"]
-    elif configs["Pipeline"]["category"]=="image":
+    logger.info(f"Start [pipeline]:   +++   {classifier}")
+
+
+    if configs["features"]["category"]=="deep":
+        feature_type = "deep"
+        if configs["dataset"]["dataset_name"]=="casia":      
+            if configs["CNN"]["CNN_type"]=="PT":
+                feature_path = os.path.join(configs["paths"]["casia_deep_feature"], configs["CNN"]["base_model"].split(".")[0]+'_'+configs["features"]["image_feature_name"]+'_features.xlsx')
+                DF_features_all = pd.read_excel(feature_path, index_col = 0)
+            elif configs["CNN"]["CNN_type"]=="FS":
+                feature_path = os.path.join(configs["paths"]["casia_deep_feature"], 'FS_'+configs["features"]["image_feature_name"]+'_features.xlsx')
+                DF_features_all = pd.read_excel(feature_path, index_col = 0)
+            elif configs["CNN"]["CNN_type"]=="FT":
+                feature_path = os.path.join(configs["paths"]["casia_deep_feature"], 'FT_resnet50_'+configs["features"]["image_feature_name"]+'_features.xlsx')
+                DF_features_all = pd.read_excel(feature_path, index_col = 0)
+
+        if configs["dataset"]["dataset_name"]=="stepscan":      
+            if configs["CNN"]["CNN_type"]=="PT":
+                feature_path = os.path.join(configs["paths"]["stepscan_deep_feature"], configs["CNN"]["base_model"].split(".")[0]+'_'+configs["features"]["image_feature_name"]+'_features.xlsx')
+                DF_features_all = pd.read_excel(feature_path, index_col = 0)
+            elif configs["CNN"]["CNN_type"]=="FS":
+                feature_path = os.path.join(configs["paths"]["stepscan_deep_feature"], 'FS_'+configs["features"]["image_feature_name"]+'_features.xlsx')
+                DF_features_all = pd.read_excel(feature_path, index_col = 0)
+            elif configs["CNN"]["CNN_type"]=="FT":
+                feature_path = os.path.join(configs["paths"]["stepscan_deep_feature"], 'FT_resnet50_'+configs["features"]["image_feature_name"]+'_features.xlsx')
+                DF_features_all = pd.read_excel(feature_path, index_col = 0)
+    elif configs["features"]["category"]=="hand_crafted":
+        feature_type = configs["features"]["Handcrafted_feature_name"]
+        feature_path = configs["paths"]["casia_all_feature.xlsx"]
+        DF_features_all = pd.read_excel(feature_path, index_col = 0)
+    elif configs["features"]["category"]=="image":
         feature_type = "image"
+        if configs["dataset"]["dataset_name"]=="casia":      
+            feature_path = configs["paths"]["casia_image_feature.npy"]
+            meta = np.load(configs["paths"]["casia_dataset-meta.npy"])
+
+        elif configs["dataset"]["dataset_name"]=="stepscan":
+            feature_path = configs["paths"]["stepscan_image_feature.npy"]
+            meta = np.load(configs["paths"]["stepscan_image_label.npy"]) #todo adding information about left and right
+
+        image_features = np.load(feature_path)
+        image_feature_name_dict = dict(zip(cfg.image_feature_name, range(len(cfg.image_feature_name))))
+        image_features = image_features[..., image_feature_name_dict[configs["features"]["image_feature_name"]]]
+        
+        logger.info(image_features.shape[0])
+        image_features = image_features.reshape(image_features.shape[0], 2400 ,1).squeeze()
+
+        
+        DF_features_all = pd.DataFrame(np.concatenate((image_features, meta[:,0:2]), axis=1 ), columns=["pixel_"+str(i) for i in range(image_features.shape[1])]+cfg.label)
+
+    subjects = DF_features_all["subject ID"].unique()
+       
     
-    DF_features = extracting_features(DF_features_all, feature_type, configs)
-    tic=timeit.default_timer()
-
-
-    logger.info("Start [pipeline]:   +++   {}".format(classifier))
-
+    DF_features = extracting_features(DF_features_all, feature_type)
 
     results = list()
-    if configs["Pipeline"]["Debug"]==True: subjects = subjects[:20]
+    if configs["Pipeline"]["Debug"]==True: subjects = subjects[:configs["Pipeline"]["Debug_N"]]
 
-    for subject in subjects:
-        if (subject % 86) == 0: continue
+    for idx_s, subject in enumerate(subjects):
+        if subject==86: continue
         
         
-        if (subject % 10) == 0 and configs["Pipeline"]["verbose"] is True:
-            logger.info("--------------- Subject Number: {}".format(subject))
+        if (idx_s % 10) == 0:
+            logger.info("--------------->> Subject Number: {} [out of {}]".format(idx_s, len(subjects)))
         
 
         for idx, direction in enumerate(["left_0", "right_1"]):
-            logger.info(f"-->> Model {subject},\t {direction} \t\t PID: {os.getpid()}")    
+            if configs["Pipeline"]["verbose"] is True:
+                logger.info(f"-->> Model {subject},\t {direction} \t\t PID: {os.getpid()}")    
 
 
             DF_side = DF_features[DF_features["left(0)/right(1)"] == idx]
@@ -390,56 +425,68 @@ def pipeline(configs):
             df_test = pd.concat([DF_positive_samples_test, DF_negative_samples_test])
 
             Scaled_train, Scaled_test = scaler(normilizing, df_train, df_test)
+        
+
+            (DF_features_PCA_train, DF_features_PCA_test, num_pc) = projector(persentage, 
+                                                                            feature_type, 
+                                                                            Scaled_train, 
+                                                                            Scaled_test)
+
+            DF_positive_samples_train = DF_features_PCA_train[DF_features_PCA_train["subject ID"] == subject]
+            DF_negative_samples_train = DF_features_PCA_train[DF_features_PCA_train["subject ID"] != subject]
+                    
+                    
+            DF_positive_samples_test = DF_features_PCA_test[DF_features_PCA_test["subject ID"] == subject]   
+            DF_negative_samples_test = DF_features_PCA_test[DF_features_PCA_test["subject ID"] != subject]
+ 
             
-            # logger.info("direction: {}".format(direction))
-            # logger.info("subject: {}".format(subject))
-            # breakpoint()
 
-            (DF_positive_samples_test, 
-            DF_positive_samples_train, 
-            DF_negative_samples_test, 
-            DF_negative_samples_train,
-            num_pc) = projector(persentage, 
-                                feature_type, 
-                                subject, 
-                                df_train, 
-                                df_test, 
-                                Scaled_train, 
-                                Scaled_test,
-                                configs)
+            
+            DF_negative_samples_train = template_selection(DF_negative_samples_train, 
+                                                           method=configs["features"]["template_selection_method"], 
+                                                           k_cluster=configs["features"]["template_selection_k_cluster"], 
+                                                           verbose=True)
 
-            # logger.debug("DF_positive_samples_train.shape {}".format(DF_positive_samples_train.shape))    
-            # logger.debug("DF_negative_samples_train.shape {}".format(DF_negative_samples_train.shape))   
-            # logger.debug("DF_positive_samples_test.shape {}".format(DF_positive_samples_test.shape))    
-            # logger.debug("DF_negative_samples_test.shape {}".format(DF_negative_samples_test.shape))    
+            DF_positive_samples_train["binary_labels"] = 1
+            DF_negative_samples_train["binary_labels"] = 0
+            x_train = DF_positive_samples_train.append(DF_negative_samples_train).drop(columns=["subject ID", "left(0)/right(1)"])
+       
+                    
+            DF_positive_samples_test["binary_labels"] = 1  
+            DF_negative_samples_test["binary_labels"] = 0
+            x_test = DF_positive_samples_test.append(DF_negative_samples_test).drop(columns=["subject ID", "left(0)/right(1)"])
+
+
+
+
+            if configs["features"]["category"] in ["image"]:
+                temp1="_".join((configs["features"]["category"], configs["features"]["image_feature_name"]))
                 
+            elif configs["features"]["category"] in ["deep"]:
+                if configs["CNN"]["CNN_type"] in ["PT", "FT"]:
+                    temp1="_".join((configs["CNN"]["CNN_type"], 
+                                    configs["features"]["category"], 
+                                    configs["features"]["image_feature_name"], 
+                                    configs["CNN"]["base_model"].split(".")[0]))
 
-
-            # DF_positive_samples_train = template_selection(DF_positive_samples_train, 
-            #                                                method=Pipeline["template_selection_method"], 
-            #                                                k_cluster=Pipeline["template_selection_k_cluster"], 
-            #                                                verbose=Pipeline["verbose"])
-            # DF_negative_samples_train = template_selection(DF_negative_samples_train, 
-            #                                                method="MDIST", 
-            #                                                k_cluster=200, 
-            #                                                verbose=Pipeline["verbose"])
-            if configs["Pipeline"]["category"]=="deep" or configs["Pipeline"]["category"]=="image" :
-                temp1="_".join((feature_type, configs["CNN"]["image_feature"], configs["Pipeline"]["type"]))
+                elif configs["CNN"]["CNN_type"] in ["FS"]:
+                    temp1="_".join((configs["CNN"]["CNN_type"], 
+                                    configs["features"]["category"], 
+                                    configs["features"]["image_feature_name"]))
+            
             else:
                 temp1=feature_type
 
 
-            result = eval(classifier)(pos_train=DF_positive_samples_train, 
-                                neg_train=DF_negative_samples_train, 
-                                pos_test=DF_positive_samples_test, 
-                                neg_test=DF_negative_samples_test, 
+            result = eval(classifier)(x_train=x_train, 
+                                x_test=x_test, 
                                 sub=subject, 
                                 dir=direction,
                                 num_pc=num_pc,
                                 feature_type=temp1, 
                                 configs=configs)
 
-            result = np.pad(result, (0, len(columnsname) - len(result)), 'constant')
+            result = np.pad(result, (0, len(columnsname_result_DF) - len(result)), 'constant')
                     
             results.append(result)
             # print(results)
@@ -448,15 +495,15 @@ def pipeline(configs):
     toc=timeit.default_timer()
     logger.info("End   [pipeline]:     ---    {}, \t\t Process time: {:.2f}  seconds".format(feature_type, toc - tic)) 
 
-    return pd.DataFrame(results, columns=columnsname)
+    return pd.DataFrame(results, columns=columnsname_result_DF)
 
 
 
-def extracting_features(DF_features_all, feature_type, configs):
-    if configs["Pipeline"]["category"]=="deep" or configs["Pipeline"]["category"]=="image":
+def extracting_features(DF_features_all, feature_type):
+    if feature_type in ["deep", "image"]:
         return DF_features_all
     elif feature_type == "all": #"all", "GRF_HC", "COA_HC", "GRF", "COA", "wt_GRF", "wt_COA"
-        DF_features = DF_features_all.drop(columns=cfg.wt_GRF).copy()
+        DF_features = DF_features_all.drop(columns=cfg.wt_GRF).copy() #todo  wt_GRF is not working why?
     elif feature_type == "GRF_HC":
         DF_features = DF_features_all.loc[:, cfg.GRF_HC + cfg.label]
     elif feature_type == "COA_HC":
@@ -474,49 +521,36 @@ def extracting_features(DF_features_all, feature_type, configs):
     return DF_features
 
 
-
-def projector(persentage, feature_type, subject, df_train, df_test, Scaled_train, Scaled_test, configs):
+def projector(persentage, feature_type, Scaled_train, Scaled_test):
     if persentage == 1.0:
-        num_pc = Scaled_train.shape[1]
+        num_pc = Scaled_train.shape[1]-2
                 
 
         columnsName = ["PC"+str(i) for i in list(range(1, num_pc+1))] + ["subject ID", "left(0)/right(1)"]
-        DF_features_PCA_train = pd.DataFrame(np.concatenate((Scaled_train[:,:num_pc],df_train.iloc[:, -2:].values), axis = 1), columns = columnsName)
-        DF_features_PCA_test = pd.DataFrame(np.concatenate((Scaled_test[:,:num_pc],df_test.iloc[:, -2:].values), axis = 1), columns = columnsName)
 
-        DF_positive_samples_train = DF_features_PCA_train[DF_features_PCA_train["subject ID"] == subject]
-        DF_negative_samples_train = DF_features_PCA_train[DF_features_PCA_train["subject ID"] != subject]
-                
-                
-        DF_positive_samples_test = DF_features_PCA_test[DF_features_PCA_test["subject ID"] == subject]   
-        DF_negative_samples_test = DF_features_PCA_test[DF_features_PCA_test["subject ID"] != subject]
+        DF_features_PCA_train = pd.DataFrame(Scaled_train.values, columns=columnsName)
+        DF_features_PCA_test = pd.DataFrame(Scaled_test.values, columns=columnsName)
 
-    elif persentage != 1.0 and (feature_type in ["image", "GRF_HC", "COA_HC", "GRF", "wt_GRF", configs["CNN"]["base_model"].split(".")[0]]):
+
+    elif persentage != 1.0 and (feature_type in ["image", "GRF_HC", "COA_HC", "GRF", "wt_GRF", "deep" ]):
         principal = PCA(svd_solver="full")
-        PCA_out_train = principal.fit_transform(Scaled_train)
-        PCA_out_test = principal.transform(Scaled_test)
+        PCA_out_train = principal.fit_transform(Scaled_train.iloc[:,:-2])
+        PCA_out_test = principal.transform(Scaled_test.iloc[:,:-2])
 
         variance_ratio = np.cumsum(principal.explained_variance_ratio_)
         high_var_PC = np.zeros(variance_ratio.shape)
         high_var_PC[variance_ratio <= persentage] = 1
 
-        loadings = principal.components_
         num_pc = int(np.sum(high_var_PC))
 
 
 
 
         columnsName = ["PC"+str(i) for i in list(range(1, num_pc+1))] + ["subject ID", "left(0)/right(1)"]
-        DF_features_PCA_train = (pd.DataFrame(np.concatenate((PCA_out_train[:,:num_pc],df_train.iloc[:, -2:].values), axis = 1), columns = columnsName))
-        DF_features_PCA_test = (pd.DataFrame(np.concatenate((PCA_out_test[:,:num_pc],df_test.iloc[:, -2:].values), axis = 1), columns = columnsName))
+        DF_features_PCA_train = pd.DataFrame(np.concatenate((PCA_out_train[:,:num_pc],Scaled_train.iloc[:, -2:].values), axis = 1), columns = columnsName)
+        DF_features_PCA_test  = pd.DataFrame(np.concatenate((PCA_out_test[:,:num_pc],Scaled_test.iloc[:, -2:].values), axis = 1), columns = columnsName)
 
-        DF_positive_samples_train = DF_features_PCA_train[DF_features_PCA_train["subject ID"] == subject]
-        DF_negative_samples_train = DF_features_PCA_train[DF_features_PCA_train["subject ID"] != subject]
-                
-                
-        DF_positive_samples_test = DF_features_PCA_test[DF_features_PCA_test["subject ID"] == subject]   
-        DF_negative_samples_test = DF_features_PCA_test[DF_features_PCA_test["subject ID"] != subject]
-            
+     
     elif persentage != 1.0 and (feature_type in ["all", "COA", "wt_COA"]):
         tempa = []
         tempb = []
@@ -543,7 +577,6 @@ def projector(persentage, feature_type, subject, df_train, df_test, Scaled_train
             high_var_PC = np.zeros(variance_ratio.shape)
             high_var_PC[variance_ratio <= persentage] = 1
 
-            loadings = principal.components_
             num_pc = int(np.sum(high_var_PC))
 
 
@@ -562,35 +595,29 @@ def projector(persentage, feature_type, subject, df_train, df_test, Scaled_train
 
         columnsName = ["PC_" + str(i) for i in list(range(1, num_pc+1))] + ["subject ID", "left(0)/right(1)"]
 
-        DF_features_PCA_train = pd.DataFrame(np.concatenate((tempa[len(tempx)-1],df_train.iloc[:, -2:].values), axis = 1), columns = columnsName)
-        DF_features_PCA_test = pd.DataFrame(np.concatenate((tempb[len(tempx)-1],df_test.iloc[:, -2:].values), axis = 1), columns = columnsName)
+        DF_features_PCA_train = pd.DataFrame(np.concatenate((tempa[len(tempx)-1],Scaled_train.iloc[:, -2:].values), axis = 1), columns = columnsName)
+        DF_features_PCA_test = pd.DataFrame(np.concatenate((tempb[len(tempx)-1],Scaled_test.iloc[:, -2:].values), axis = 1), columns = columnsName)
 
-        DF_positive_samples_train = DF_features_PCA_train[DF_features_PCA_train["subject ID"] == subject]
-        DF_negative_samples_train = DF_features_PCA_train[DF_features_PCA_train["subject ID"] != subject]
-                
-                
-        DF_positive_samples_test = DF_features_PCA_test[DF_features_PCA_test["subject ID"] == subject]   
-        DF_negative_samples_test = DF_features_PCA_test[DF_features_PCA_test["subject ID"] != subject]
-
-    return DF_positive_samples_test,DF_positive_samples_train,DF_negative_samples_test,DF_negative_samples_train, num_pc
-
+        
+    return DF_features_PCA_train, DF_features_PCA_test, num_pc
 
 
 def scaler(normilizing, df_train, df_test):
     if normilizing == "minmax":
         scaling = preprocessing.MinMaxScaler()
-        Scaled_train = scaling.fit_transform(df_train.iloc[:, :-2])
-        Scaled_test = scaling.transform(df_test.iloc[:, :-2])
 
     elif normilizing == "z-score":
         scaling = preprocessing.StandardScaler()
-        Scaled_train = scaling.fit_transform(df_train.iloc[:, :-2])
-        Scaled_test = scaling.transform(df_test.iloc[:, :-2])
 
-    Scaled_train = pd.DataFrame(Scaled_train, columns=df_train.columns[:-2])
-    Scaled_test = pd.DataFrame(Scaled_test, columns=df_test.columns[:-2])
+    Scaled_train = scaling.fit_transform(df_train.iloc[:, :-2])
+    Scaled_test = scaling.transform(df_test.iloc[:, :-2])
+
+    Scaled_train = pd.DataFrame(np.concatenate((Scaled_train, df_train.iloc[:, -2:].values), axis = 1), columns = df_train.columns)
+    Scaled_test  = pd.DataFrame(np.concatenate((Scaled_test,  df_test.iloc[:, -2:].values),  axis = 1), columns = df_train.columns)
+
+    # Scaled_train = pd.DataFrame(Scaled_train, columns=df_train.columns[:-2])
+    # Scaled_test = pd.DataFrame(Scaled_test, columns=df_test.columns[:-2])
     return Scaled_train, Scaled_test
-
 
 
 def compute_score_matrix(positive_samples, negative_samples, mode="dist", score = None):
@@ -684,7 +711,6 @@ def model(distModel1, distModel2, criteria = "average", score = None ):
     return model_client, model_imposter
 
 
-
 def calculating_fxr(Model_client, Model_imposter, distModel1, distModel2, THRESHOLDs, score):
     """ Returns FAR and FRR our model """
 
@@ -725,7 +751,6 @@ def compute_eer(fpr, fnr):
     return eer, min_index
 
 
-
 def compute_similarity(distance, mode = "A"):
     """change distance score to similarity score."""
 
@@ -737,35 +762,45 @@ def compute_similarity(distance, mode = "A"):
 
 
 
-def template_selection(DF_positive_samples_train,  method, k_cluster, verbose=1):
+def template_selection(DF, method, k_cluster, verbose=True):
+    if DF.shape[0]<k_cluster:
+        k_cluster=DF.shape[0]
+ 
     if method == "DEND":
-        kmeans = KMeans(n_clusters = k_cluster)
-        kmeans.fit(DF_positive_samples_train.iloc[:, :-2].values)
+        kmeans = KMeans(n_clusters=k_cluster)
+        kmeans.fit(DF.iloc[:, :-2].values)
         clusters = np.unique(kmeans.labels_)
+        col = DF.columns
 
-        for i, r in DF_positive_samples_train.reset_index(drop=True).iterrows():
-            DF_positive_samples_train.loc[i,"dist"] = distance.euclidean(kmeans.cluster_centers_[kmeans.labels_[i]], r[:-2].values)
-            DF_positive_samples_train.loc[i,"label"] = kmeans.labels_[i]
-        DF_positive_samples_train_clustered = pd.DataFrame(np.empty((k_cluster,DF_positive_samples_train.shape[1]-2)))
+        DF1 = DF.copy().reset_index(drop=True)
+        for i, r in DF.reset_index(drop=True).iterrows():
+            
+            DF1.loc[i,"dist"] = distance.euclidean(kmeans.cluster_centers_[kmeans.labels_[i]], r[:-2].values)
+            DF1.loc[i,"label"] = kmeans.labels_[i]
+        DF_clustered = list()
+
         for cluster in clusters:
-            mean_cluster = DF_positive_samples_train[DF_positive_samples_train["label"] == cluster].sort_values(by=['dist'])
-            DF_positive_samples_train_clustered.iloc[cluster, :] = mean_cluster.iloc[0,:-2]
+            mean_cluster = DF1[DF1["label"] == cluster].sort_values(by=['dist'])
+            DF_clustered.append(mean_cluster.iloc[0,:-2])
+
+        DF_clustered  = pd.DataFrame(DF_clustered, columns=col)
         if verbose: 
-            logger.info(f"Clustered data size: { DF_positive_samples_train_clustered.shape}")
-        DF_positive_samples_train_clustered.columns = DF_positive_samples_train.columns.values[:-2]
+            logger.info(f"Clustered data shape: {DF_clustered.shape}")
+            logger.info(f"original data shape: {DF.shape}")
 
     elif method == "MDIST":
-        A = distance.squareform(distance.pdist(DF_positive_samples_train.iloc[:, :-2].values)).mean(axis=1)
+        A = distance.squareform(distance.pdist(DF.iloc[:, :-2].values)).mean(axis=1)
         i = np.argsort(A)[:k_cluster]
-        DF_positive_samples_train_clustered = DF_positive_samples_train.iloc[i, :]
-        DF_positive_samples_train_clustered.columns = DF_positive_samples_train.columns.values
+        DF_clustered = DF.iloc[i, :]
+        DF_clustered  = pd.DataFrame(np.concatenate((DF_clustered,  DF.iloc[:, -2:].values),  axis = 1), columns=DF.columns)
 
     elif method == "None":
-        DF_positive_samples_train_clustered = DF_positive_samples_train
-        DF_positive_samples_train_clustered.columns = DF_positive_samples_train.columns.values
+        DF_clustered  = pd.DataFrame(DF, columns=DF.columns)
 
-    return DF_positive_samples_train_clustered
+    elif method == "Random":
+        DF_clustered  = pd.DataFrame(DF, columns=DF.columns).sample(n=k_cluster)
 
+    return DF_clustered
 
 
 def tile(samples):
@@ -791,7 +826,6 @@ def tile(samples):
         tile_image.append(total_image)
 
     return np.array(tile_image)
-
 
 
 def fine_tuning(configs):
@@ -965,8 +999,8 @@ def fine_tuning(configs):
         )
 
     time = int(timeit.timeit()*1_000_000)
-    TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], "_".join(("FT", SLURM_JOBID, CNN_name, configs["CNN"]["image_feature"], str(time)) )  )
-    path = configs["CNN"]["saving_path"] + "_".join(( "FT", SLURM_JOBID, CNN_name, configs["CNN"]["image_feature"], "best.h5" ))
+    TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], "_".join(("FT", SLURM_JOBID, CNN_name, configs["features"]["image_feature_name"], str(time)) )  )
+    path = configs["CNN"]["saving_path"] + "_".join(( "FT", SLURM_JOBID, CNN_name, configs["features"]["image_feature_name"], "best.h5" ))
 
     checkpoint = [
             tf.keras.callbacks.ModelCheckpoint(    path, save_best_only=True, monitor="val_loss"),
@@ -986,7 +1020,7 @@ def fine_tuning(configs):
     )
     test_loss, test_acc = model.evaluate(test_ds, verbose=2)
 
-    path = configs["CNN"]["saving_path"] + "_".join(( "FT", SLURM_JOBID, CNN_name, configs["CNN"]["image_feature"], str(int(np.round(test_acc*100)))+"%" + ".h5" ))
+    path = configs["CNN"]["saving_path"] + "_".join(( "FT", SLURM_JOBID, CNN_name, configs["features"]["image_feature_name"], str(int(np.round(test_acc*100)))+"%" + ".h5" ))
     model.save(path)
     # plt.plot(history.history['accuracy'], label='accuracy')
     # # plt.plot(history.history['val_accuracy'], label = 'val_accuracy')
@@ -999,7 +1033,6 @@ def fine_tuning(configs):
     return history
 
 
- 
 def from_scratch(configs):
     logger.info("func: from_scratch")
     
@@ -1168,8 +1201,8 @@ def from_scratch(configs):
 
 
     time = int(timeit.timeit()*1_000_000)
-    TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], "_".join(("FS", configs["CNN"]["image_feature"], SLURM_JOBID+"_"+str(time)) )  )
-    path = configs["CNN"]["saving_path"] + "/" + "_".join(( "FS", configs["CNN"]["image_feature"], SLURM_JOBID+"_best.h5" ))
+    TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], "_".join(("FS", configs["features"]["image_feature_name"], SLURM_JOBID+"_"+str(time)) )  )
+    path = configs["CNN"]["saving_path"] + "/" + "_".join(( "FS", configs["features"]["image_feature_name"], SLURM_JOBID+"_best.h5" ))
     logger.info(f"TensorBoard_logs: {TensorBoard_logs}")
     logger.info(f"path: {path}")
 
@@ -1194,7 +1227,7 @@ def from_scratch(configs):
     
 
 
-    # path1 = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["CNN"]["image_feature"], str(configs["CNN"]["test_split"]) )), SLURM_JOBID+"_metrics.png" )
+    # path1 = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["features"]["image_feature_name"], str(configs["CNN"]["test_split"]) )), SLURM_JOBID+"_metrics.png" )
     # plot_metrics(history, path=path1)
 
 
@@ -1225,13 +1258,13 @@ def from_scratch(configs):
     
     # test_predictions_baseline = model.predict(test_ds, batch_size=configs["CNN"]["batch_size"])
 
-    # path1 = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["CNN"]["image_feature"] , str(configs["CNN"]["test_split"]))), SLURM_JOBID+"_"+str(subject)+"_cm.png" )
+    # path1 = os.path.join( configs["CNN"]["saving_path"], "_".join(( "FS", configs["features"]["image_feature_name"] , str(configs["CNN"]["test_split"]))), SLURM_JOBID+"_"+str(subject)+"_cm.png" )
     # plot_cm(y_test, test_predictions_baseline, path=path1)
 
 
 
 
-    # path = configs["CNN"]["saving_path"] + "_".join(( "FS", SLURM_JOBID, configs["CNN"]["image_feature"], str(int(np.round(test_acc*100)))+"%" + ".h5" ))
+    # path = configs["CNN"]["saving_path"] + "_".join(( "FS", SLURM_JOBID, configs["features"]["image_feature_name"], str(int(np.round(test_acc*100)))+"%" + ".h5" ))
     # model.save(path)
     # plt.plot(history.history['accuracy'], label='accuracy')
     # # plt.plot(history.history['val_accuracy'], label = 'val_accuracy')
@@ -1258,7 +1291,6 @@ def from_scratch(configs):
     return history
 
 
- 
 def from_scratch_binary(configs):
     
     if configs['CNN']["image_feature"]=="tile":
@@ -1457,8 +1489,8 @@ def from_scratch_binary(configs):
         test = os.environ.get('SLURM_JOB_NAME',default="XX")
 
         time = int(timeit.timeit()*1_000_000)
-        TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], test, "_".join(("FS", configs["CNN"]["image_feature"], str(configs["CNN"]["test_split"]), str(configs["CNN"]["train_split"])) ) , SLURM_JOBID+"_"+str(subject) )
-        path = os.path.join( configs["CNN"]["saving_path"], test, "_".join(( "FS", configs["CNN"]["image_feature"], str(configs["CNN"]["test_split"]), str(configs["CNN"]["train_split"]) )), SLURM_JOBID+"_"+str(subject)+"_best.h5" )
+        TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], test, "_".join(("FS", configs["features"]["image_feature_name"], str(configs["CNN"]["test_split"]), str(configs["CNN"]["train_split"])) ) , SLURM_JOBID+"_"+str(subject) )
+        path = os.path.join( configs["CNN"]["saving_path"], test, "_".join(( "FS", configs["features"]["image_feature_name"], str(configs["CNN"]["test_split"]), str(configs["CNN"]["train_split"]) )), SLURM_JOBID+"_"+str(subject)+"_best.h5" )
         logger.info(f"TensorBoard_logs: {TensorBoard_logs}")
         logger.info(f"path: {path}")
 
@@ -1483,7 +1515,7 @@ def from_scratch_binary(configs):
             steps_per_epoch=44,
             # class_weight=class_weight,
         )
-        path1 = os.path.join( configs["CNN"]["saving_path"], test, "_".join(( "FS", configs["CNN"]["image_feature"], str(configs["CNN"]["test_split"]) , str(configs["CNN"]["train_split"]))), SLURM_JOBID+"_"+str(subject)+"_metrics.png" )
+        path1 = os.path.join( configs["CNN"]["saving_path"], test, "_".join(( "FS", configs["features"]["image_feature_name"], str(configs["CNN"]["test_split"]) , str(configs["CNN"]["train_split"]))), SLURM_JOBID+"_"+str(subject)+"_metrics.png" )
         plot_metrics(history, path=path1)
 
         # train_predictions_baseline = model.predict(train_ds, batch_size=configs["CNN"]["batch_size"])
@@ -1509,7 +1541,7 @@ def from_scratch_binary(configs):
         
 
 
-        path1 = os.path.join( configs["CNN"]["saving_path"], test, "_".join(( "FS", configs["CNN"]["image_feature"] , str(configs["CNN"]["test_split"]), str(configs["CNN"]["train_split"]) )), SLURM_JOBID+"_"+str(subject)+"_cm.png" )
+        path1 = os.path.join( configs["CNN"]["saving_path"], test, "_".join(( "FS", configs["features"]["image_feature_name"] , str(configs["CNN"]["test_split"]), str(configs["CNN"]["train_split"]) )), SLURM_JOBID+"_"+str(subject)+"_cm.png" )
         plot_cm(y_test, test_predictions_baseline, path=path1)
         
 
@@ -1742,8 +1774,8 @@ def from_scratch_binary_3(configs):
         test = os.environ.get('SLURM_JOB_NAME',default="XX")
 
         time = int(timeit.timeit()*1_000_000)
-        TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], test, "_".join(("FS", configs["CNN"]["image_feature"], str(configs["CNN"]["train_split"]), str(configs["CNN"]["test_split"])) ) , SLURM_JOBID+"_"+str(subject) )
-        path = os.path.join( configs["CNN"]["saving_path"], test, "_".join(( "FS", configs["CNN"]["image_feature"], str(configs["CNN"]["train_split"]), str(configs["CNN"]["test_split"]) )), SLURM_JOBID+"_"+str(subject)+"_best.h5" )
+        TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], test, "_".join(("FS", configs["features"]["image_feature_name"], str(configs["CNN"]["train_split"]), str(configs["CNN"]["test_split"])) ) , SLURM_JOBID+"_"+str(subject) )
+        path = os.path.join( configs["CNN"]["saving_path"], test, "_".join(( "FS", configs["features"]["image_feature_name"], str(configs["CNN"]["train_split"]), str(configs["CNN"]["test_split"]) )), SLURM_JOBID+"_"+str(subject)+"_best.h5" )
         logger.info(f"TensorBoard_logs: {TensorBoard_logs}")
         logger.info(f"path: {path}")
 
@@ -1771,7 +1803,7 @@ def from_scratch_binary_3(configs):
         model = tf.keras.models.load_model(path)
 
 
-        path1 = os.path.join( configs["CNN"]["saving_path"], test, "_".join(( "FS", configs["CNN"]["image_feature"], str(configs["CNN"]["train_split"]), str(configs["CNN"]["test_split"]) )), SLURM_JOBID+"_"+str(subject)+"_metrics.png" )
+        path1 = os.path.join( configs["CNN"]["saving_path"], test, "_".join(( "FS", configs["features"]["image_feature_name"], str(configs["CNN"]["train_split"]), str(configs["CNN"]["test_split"]) )), SLURM_JOBID+"_"+str(subject)+"_metrics.png" )
         plot_metrics(history, path=path1)
 
         # train_predictions_baseline = model.predict(train_ds, batch_size=configs["CNN"]["batch_size"])
@@ -1797,7 +1829,7 @@ def from_scratch_binary_3(configs):
         
 
 
-        path1 = os.path.join( configs["CNN"]["saving_path"], test, "_".join(( "FS", configs["CNN"]["image_feature"] , str(configs["CNN"]["train_split"]), str(configs["CNN"]["test_split"]))), SLURM_JOBID+"_"+str(subject)+"_cm.png" )
+        path1 = os.path.join( configs["CNN"]["saving_path"], test, "_".join(( "FS", configs["features"]["image_feature_name"] , str(configs["CNN"]["train_split"]), str(configs["CNN"]["test_split"]))), SLURM_JOBID+"_"+str(subject)+"_cm.png" )
         plot_cm(y_test, test_predictions_baseline, path=path1)
         
 
@@ -1924,40 +1956,42 @@ def reading_stepscan_h5_file(configs):
 
 
 def collect_results(result):
-    global columnsname, time
+    global columnsname_result_DF, time
     excel_path = cfg.configs["paths"]["results_dir"]
 
     if os.path.isfile(os.path.join(excel_path, 'Results.xlsx')):
         Results_DF = pd.read_excel(os.path.join(excel_path, 'Results.xlsx'), index_col = 0)
     else:
-        Results_DF = pd.DataFrame(columns=columnsname)
+        Results_DF = pd.DataFrame(columns=columnsname_result_DF)
 
     Results_DF = Results_DF.append(result)
     try:
-        Results_DF.to_excel(os.path.join(excel_path, 'Results.xlsx'), columns=columnsname)
+        Results_DF.to_excel(os.path.join(excel_path, 'Results.xlsx'), columns=columnsname_result_DF)
     except:
-        Results_DF.to_excel(os.path.join(excel_path, 'Results'+str(time)+'.xlsx'), columns=columnsname)
+        Results_DF.to_excel(os.path.join(excel_path, 'Results'+str(time)+'.xlsx'), columns=columnsname_result_DF)
 
   
 def main():
     configs = cfg.configs
     # configs["Pipeline"]["classifier"] = "knn_classifier"
     configs = copy.deepcopy(cfg.configs)
+    pipeline(configs)
     # configs["Pipeline"]["classifier"] = parameters[0]
     
     # configs["CNN"]["test_split"] = parameters[0]
-    configs["Pipeline"]["category"] = "deep"
+    # configs["Pipeline"]["category"] = "deep"
 
-    configs["CNN"]["image_feature"] = "PTI"
+    # configs["CNN"]["image_feature"] = "PTI"
 
 
-    a = from_scratch_binary_3(configs)
+    # a = from_scratch_binary_3(configs)
     
     # a.to_excel(os.path.join(cfg.configs["paths"]["results_dir"], 'a.xlsx'))
 
     # print(a)
     # collect_results(z)
 
+    
     # 
     # pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
     # for ii in test_ratios:
