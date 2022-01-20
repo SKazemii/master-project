@@ -5,10 +5,10 @@ from pathlib import Path as Pathlb
 
 configs = {
     "features": {
-        "category": "image", # deep, image, hand_crafted
+        "category": "hand_crafted", # deep, image, hand_crafted
 
         "image_feature_name": "P100", # CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100, tile, fusion
-        "Handcrafted_feature_name": "GRF_HC", # "all", "GRF_HC", "COA_HC", "GRF", "COA", "wt_COA",  ## todo: "wt_GRF"
+        "Handcrafted_feature_name": "all", # "all", "GRF_HC", "COA_HC", "GRF", "COA", "wt_COA",  ## todo: "wt_GRF"
         
         "template_selection_method": "DEND", # None, DEND, MDIST, Random
         "template_selection_k_cluster": 200,
@@ -19,7 +19,7 @@ configs = {
     },
 
     "Pipeline": {
-        "classifier": "Template_Matching_classifier", # knn_classifier   svm_classifier   Template_Matching_classifier
+        "classifier": "knn_classifier", # knn_classifier   svm_classifier   Template_Matching_classifier
         "persentage": 0.95,
         "normilizing": "z-score",
         "test_ratio": 0.30,

@@ -86,52 +86,19 @@ def knn_classifier(**kwargs):
     configs = kwargs["configs"]
     x_train = kwargs["x_train"]
 
-    # pos_samples = kwargs["pos_train"].shape
-    # temp = kwargs["neg_train"].sample(n = pos_samples[0])
 
-
-    # kwargs["pos_train"]["left(0)/right(1)"] = kwargs["pos_train"]["left(0)/right(1)"].map(lambda x: 1)
-    # temp["left(0)/right(1)"] = temp["left(0)/right(1)"].map(lambda x: 0)
-    # x_train = kwargs["pos_train"].append(temp)
-
-
-    # kwargs["pos_train"]["left(0)/right(1)"] = kwargs["pos_train"]["left(0)/right(1)"].map(lambda x: 1)
-    # kwargs["neg_train"]["left(0)/right(1)"] = kwargs["neg_train"]["left(0)/right(1)"].map(lambda x: 0)
-    # x_train = kwargs["pos_train"].append(kwargs["neg_train"])
-
-    # cv = StratifiedKFold(n_splits=5, shuffle=True)
 
 
     clf = knn(n_neighbors=configs["classifier"]["KNN"]["n_neighbors"], metric=configs["classifier"]["KNN"]["metric"], weights=configs["classifier"]["KNN"]["weights"])
 
 
-    # space = KNN
-
-    # # define search
-    # search = GridSearchCV(
-    #     clf,
-    #     space,
-    #     scoring="accuracy",
-    #     n_jobs=-1,
-    #     cv=cv,
-    #     refit=True,
-    # )
-
-
-    # execute search
-    result = clf.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1], )
-    best_model = result#.best_estimator_
-
+    best_model = clf.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
     y_pred = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
-    
 
-    FAR, tpr, _ = roc_curve(x_train.iloc[:, -1], y_pred, pos_label=1)
-    FRR = 1 - tpr
 
+    FRR, FAR = FAR_cal(configs, x_train, y_pred)
     EER, t_idx = compute_eer(FAR, FRR)
     
-    
-
 
     acc = list()
     f1 = list()
@@ -165,6 +132,25 @@ def knn_classifier(**kwargs):
     results = [val for sublist in results for val in sublist]
     return results
 
+def FAR_cal(configs, x_train, y_pred):
+    FRR = list()
+    FAR = list()
+    for tx in configs["Pipeline"]["THRESHOLDs"]:
+        E1 = np.zeros((y_pred.shape))
+        E1[y_pred >= tx] = 1
+
+        e = pd.DataFrame([x_train.iloc[:, -1].values, E1]).T
+        e.columns = ["y", "pred"]
+        e['FAR'] = e.apply(lambda x: 1 if x['y'] < x['pred'] else 0, axis=1)
+        e['FRR'] = e.apply(lambda x: 1 if x['y'] > x['pred'] else 0, axis=1)
+        
+        a1 = e.sum()
+        N = e.shape[0]-a1["y"]
+        P = a1["y"]
+        FRR.append(a1['FRR']/P)
+        FAR.append(a1['FAR']/N)
+    return FRR,FAR
+
 
 
 def svm_classifier(**kwargs):
@@ -187,24 +173,14 @@ def svm_classifier(**kwargs):
 
     y_pred = clf.predict_proba(x_train.iloc[:, :-1])[:, 1]
     
-
-    # for _ in range(SVM["random_runs"]):
-    FAR, tpr, threshold = roc_curve(x_train.iloc[:, -1], y_pred, pos_label=1)
-    FRR = 1 - tpr
-
+    
+    FRR, FAR = FAR_cal(configs, x_train, y_pred)
     EER, t_idx = compute_eer(FAR, FRR)
-    
-    
     
 
     acc = list()
     f1 = list()
     for _ in range(configs["classifier"]["SVM"]["random_runs"]):
-        # pos_samples = kwargs["pos_test"].shape
-        # temp = kwargs["neg_test"].sample(n = pos_samples[0])
-
-        # DF_temp = pd.concat([kwargs["pos_test"], temp])
-        # DF_temp["subject ID"] = DF_temp["subject ID"].map(lambda x: 1 if x == kwargs["sub"] else 0)
         DF_temp = balancer(kwargs["x_test"])
 
         y_pred = clf.predict(DF_temp.iloc[:, :-1])
@@ -228,7 +204,6 @@ def svm_classifier(**kwargs):
 
     results = [val for sublist in results for val in sublist]
     return results
-
 
 
 def Template_Matching_classifier(**kwargs):
@@ -316,6 +291,7 @@ def Template_Matching_classifier(**kwargs):
     results = [val for sublist in results for val in sublist]
     return results
 
+
 def balancer(DF):
     pos_samples = DF[DF["binary_labels"]==1]
     neg_samples = DF[DF["binary_labels"]==0].sample(n = pos_samples.shape[0])
@@ -323,7 +299,6 @@ def balancer(DF):
     return DF_balanced
 
     
-
 def pipeline(configs):
     tic=timeit.default_timer()
 
@@ -445,7 +420,7 @@ def pipeline(configs):
             DF_negative_samples_train = template_selection(DF_negative_samples_train, 
                                                            method=configs["features"]["template_selection_method"], 
                                                            k_cluster=configs["features"]["template_selection_k_cluster"], 
-                                                           verbose=True)
+                                                           verbose=False)
 
             DF_positive_samples_train["binary_labels"] = 1
             DF_negative_samples_train["binary_labels"] = 0
@@ -496,7 +471,6 @@ def pipeline(configs):
     logger.info("End   [pipeline]:     ---    {}, \t\t Process time: {:.2f}  seconds".format(feature_type, toc - tic)) 
 
     return pd.DataFrame(results, columns=columnsname_result_DF)
-
 
 
 def extracting_features(DF_features_all, feature_type):

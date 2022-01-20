@@ -127,7 +127,7 @@ def main():
     # logger.info(f"CPU count: {ncpus}")
 
 
-    test = os.environ.get('SLURM_JOB_NAME',default="Mode_11")
+    test = os.environ.get('SLURM_JOB_NAME',default="Mode_12")
     logger.info(f"test name: {test}")
 
 
@@ -188,12 +188,23 @@ def main():
         p0 = [.1, .2, .3, .4, .5, .6, .7, .8, .9]
         p1 = ["Template_Matching_classifier", "knn_classifier", "svm_classifier"]
         p2 = ["CD", "PTI", "P90", "P100"]
-
         space = list(product(p0, p1, p2))
+
+    elif test=="Mode_12":
+        p0 = [.1, .2, .3, .4, .5, .6, .7, .8, .9]
+        p1 = ["Template_Matching_classifier", "knn_classifier", "svm_classifier"]
+        space = list(product(p0, p1))
 
     for parameters in space:
         logger.info(f"parameters: {parameters}")
         configs = copy.deepcopy(cfg.configs)
+
+        if test=="Mode_12":
+            configs["Pipeline"]["classifier"] = parameters[1]
+            configs["Pipeline"]["test_ratio"] = parameters[0]
+            configs["features"]["category"] = "hand_crafted"
+            configs['dataset']["dataset_name"] = "casia"
+            collect_results(util.pipeline(configs))
 
         if test=="Mode_11":
             configs["features"]["image_feature_name"] = parameters[2]
