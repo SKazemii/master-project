@@ -127,7 +127,7 @@ def main():
     # logger.info(f"CPU count: {ncpus}")
 
 
-    test = os.environ.get('SLURM_JOB_NAME',default="Mode_12")
+    test = os.environ.get('SLURM_JOB_NAME',default="Mode_13")
     logger.info(f"test name: {test}")
 
 
@@ -184,29 +184,45 @@ def main():
         p1 = ["Template_Matching_classifier", "knn_classifier", "svm_classifier"]
         space = list(product(p0, p1))
 
-    elif test=="Mode_11":
+    elif test=="Mode_11": # image features second pipeline
         p0 = [.1, .2, .3, .4, .5, .6, .7, .8, .9]
         p1 = ["Template_Matching_classifier", "knn_classifier", "svm_classifier"]
         p2 = ["CD", "PTI", "P90", "P100"]
         space = list(product(p0, p1, p2))
 
-    elif test=="Mode_12":
+    elif test=="Mode_12": # handcrafted features first pipeline
         p0 = [.1, .2, .3, .4, .5, .6, .7, .8, .9]
         p1 = ["Template_Matching_classifier", "knn_classifier", "svm_classifier"]
         space = list(product(p0, p1))
+
+    elif test=="Mode_13": # PT features third pipeline
+        p0 = [.1, .2, .3, .4, .5, .6, .7, .8, .9]
+        p1 = ["Template_Matching_classifier", "knn_classifier", "svm_classifier"]
+        p2 = ["vgg16.VGG16", "efficientnet.EfficientNetB0", "mobilenet.MobileNet"] # , "resnet50.ResNet50"
+        space = list(product(p0, p1, p2))
 
     for parameters in space:
         logger.info(f"parameters: {parameters}")
         configs = copy.deepcopy(cfg.configs)
 
-        if test=="Mode_12":
+        if test=="Mode_13": # PT features third pipeline
+            configs["CNN"]["CNN_type"] = "PT"
+            configs["CNN"]["base_model"] = parameters[2]
+            configs["Pipeline"]["classifier"] = parameters[1]
+            configs["Pipeline"]["test_ratio"] = parameters[0]
+            configs["features"]["category"] = "deep"
+            configs['dataset']["dataset_name"] = "casia"
+            configs["features"]["image_feature_name"] = "P100"
+            collect_results(util.pipeline(configs))
+
+        if test=="Mode_12": # handcrafted features first pipeline
             configs["Pipeline"]["classifier"] = parameters[1]
             configs["Pipeline"]["test_ratio"] = parameters[0]
             configs["features"]["category"] = "hand_crafted"
             configs['dataset']["dataset_name"] = "casia"
             collect_results(util.pipeline(configs))
 
-        if test=="Mode_11":
+        if test=="Mode_11": # image features second pipeline
             configs["features"]["image_feature_name"] = parameters[2]
             configs["Pipeline"]["classifier"] = parameters[1]
             configs["Pipeline"]["test_ratio"] = parameters[0]

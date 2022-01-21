@@ -106,11 +106,12 @@ def deep_features(configs):
     logger.info("MaduleName: {}\n".format(CNN_name))
     
     
-    input = tf.keras.layers.Input(shape=configs['CNN']["image_size"], dtype = tf.float64, name="original_img")
+    input = tf.keras.layers.Input(shape= (60, 40, 3), dtype = tf.float64, name="original_img")#todo image size
     x = tf.cast(input, tf.float32)
     x = eval("tf.keras.applications." + CNN_name + ".preprocess_input(x)")
     x = base_model(x)
-    output = tf.keras.layers.GlobalMaxPool2D()(x)
+    # x = tf.keras.layers.MaxPool2D()(x)
+    output = tf.keras.layers.Flatten()(x)
 
 
 
@@ -133,7 +134,7 @@ def deep_features(configs):
     # # Image Preprocessing and Loading
     # ## Loading Images
 
-    prefeatures = np.load(configs['paths']["casia_image_feature.npy"])
+    prefeatures = np.load(configs['paths']["casia_image_feature.npy"])#todo
     logger.info("prefeature shape: {}".format(prefeatures.shape))
 
 
@@ -166,7 +167,7 @@ def deep_features(configs):
 
     for image_batch, labels_batch in train_ds:
 
-        if configs['CNN']["image_feature"]=="tile":
+        if configs['features']["image_feature_name"]=="tile":
             tile_images = util.tile(image_batch)
             feature = model(tile_images)
             Deep_features = np.append(Deep_features, feature, axis=0)
@@ -176,7 +177,7 @@ def deep_features(configs):
         
         else:
             image_feature_name = dict(zip(cfg.image_feature_name, range(len(cfg.image_feature_name))))
-            ind = image_feature_name[configs['CNN']["image_feature"]]
+            ind = image_feature_name[configs['features']["image_feature_name"]]
             
             images = image_batch[...,ind]
             images = images[...,tf.newaxis]
@@ -200,7 +201,7 @@ def deep_features(configs):
 
     time = int(timeit.default_timer() * 1_000_000)
 
-    file_name =  CNN_name + '_' + configs['CNN']["image_feature"] +'_features.xlsx'
+    file_name =  "PT_" + CNN_name + '_' + configs['features']["image_feature_name"] +'_features.xlsx'
     saving_path = os.path.join(configs['paths']["casia_deep_feature"], file_name)
     columnsName = [CNN_name+"_"+str(i) for i in range(Deep_features.shape[1])]  + cfg.label
     Deep_features = np.concatenate((Deep_features, metadata[:Deep_features.shape[0], 0:2]), axis=1)
@@ -414,9 +415,9 @@ def FS_deep_features(configs):
 def main():
 
 
-    p  = ["resnet50.ResNet50"]#, "efficientnet.EfficientNetB0", "mobilenet.MobileNet", "resnet50.ResNet50"]#
-    p1 = ["CD", "PTI", "Tmax", "Tmin", "P50", "P60", "P70", "P80", "P90", "P100"]
-    space = list(itertools.product(p,p1))
+    p0  = ["resnet50.ResNet50"] # "vgg16.VGG16", "efficientnet.EfficientNetB0", "mobilenet.MobileNet", 
+    p1 = ["CD", "PTI", "P90", "P100"]
+    space = list(itertools.product(p0,p1))
     
     ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK',default=1))
     ncpus = 4
@@ -426,13 +427,12 @@ def main():
     for parameters in space:
         configs = copy.deepcopy(cfg.configs)
         configs["CNN"]["base_model"] = parameters[0]
-        configs["CNN"]["image_feature"] = parameters[1]
-        configs["CNN"]["image_size"] =  (60, 40, 3)
+        configs["features"]["image_feature_name"] = parameters[1]
         # pprint.pprint(configs)
         # breakpoint()
         # pool.apply_async(deep_features, args=(configs,))
         # FT_deep_features(configs)
-        FS_deep_features(configs)
+        deep_features(configs)
         
     # pool.close()
     # pool.join()

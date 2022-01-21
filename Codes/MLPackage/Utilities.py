@@ -315,7 +315,7 @@ def pipeline(configs):
         feature_type = "deep"
         if configs["dataset"]["dataset_name"]=="casia":      
             if configs["CNN"]["CNN_type"]=="PT":
-                feature_path = os.path.join(configs["paths"]["casia_deep_feature"], configs["CNN"]["base_model"].split(".")[0]+'_'+configs["features"]["image_feature_name"]+'_features.xlsx')
+                feature_path = os.path.join(configs["paths"]["casia_deep_feature"], "PT_"+configs["CNN"]["base_model"].split(".")[0]+'_'+configs["features"]["image_feature_name"]+'_features.xlsx')
                 DF_features_all = pd.read_excel(feature_path, index_col = 0)
             elif configs["CNN"]["CNN_type"]=="FS":
                 feature_path = os.path.join(configs["paths"]["casia_deep_feature"], 'FS_'+configs["features"]["image_feature_name"]+'_features.xlsx')
