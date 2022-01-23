@@ -19,15 +19,16 @@ configs = {
     },
 
     "Pipeline": {
-        "classifier": "knn_classifier", # knn_classifier   svm_classifier   Template_Matching_classifier
+        "classifier": "svm_classifier", # knn_classifier   svm_classifier   Template_Matching_classifier
         "persentage": 0.95,
         "normilizing": "z-score",
         "test_ratio": 0.30,
+        "train_ratio": 0.30,
         "THRESHOLDs": np.linspace(0, 1, 100),
         
         "verbose": False,
         "Debug": True,
-        "Debug_N": 21,
+        "Debug_N": 2,
     },
     "CNN": {
         "CNN_type": "PT", # FT, FS, PT (pretrain)
