@@ -106,12 +106,12 @@ def deep_features(configs):
     logger.info("MaduleName: {}\n".format(CNN_name))
     
     
-    input = tf.keras.layers.Input(shape= (60, 40, 3), dtype = tf.float64, name="original_img")#todo image size
+    input = tf.keras.layers.Input(shape= (60, 40, 3), dtype = tf.float64, name="original_img") # todo image size
     x = tf.cast(input, tf.float32)
     x = eval("tf.keras.applications." + CNN_name + ".preprocess_input(x)")
     x = base_model(x)
-    # x = tf.keras.layers.MaxPool2D()(x)
-    output = tf.keras.layers.Flatten()(x)
+    output = tf.keras.layers.GlobalMaxPool2D()(x)
+    # output = tf.keras.layers.Flatten()(x)
 
 
 
@@ -134,7 +134,11 @@ def deep_features(configs):
     # # Image Preprocessing and Loading
     # ## Loading Images
 
-    prefeatures = np.load(configs['paths']["casia_image_feature.npy"])#todo
+    if configs['features']["combination"]==True:
+        prefeatures = np.load(configs['paths']["casia_image_Cfeature.npy"]) # todo
+    else:
+        prefeatures = np.load(configs['paths']["casia_image_feature.npy"]) # todo
+
     logger.info("prefeature shape: {}".format(prefeatures.shape))
 
 
@@ -201,16 +205,35 @@ def deep_features(configs):
 
     time = int(timeit.default_timer() * 1_000_000)
 
-    file_name =  "PT_" + CNN_name + '_' + configs['features']["image_feature_name"] +'_features.xlsx'
-    saving_path = os.path.join(configs['paths']["casia_deep_feature"], file_name)
-    columnsName = [CNN_name+"_"+str(i) for i in range(Deep_features.shape[1])]  + cfg.label
-    Deep_features = np.concatenate((Deep_features, metadata[:Deep_features.shape[0], 0:2]), axis=1)
 
-    try:
-        pd.DataFrame(Deep_features, columns=columnsName).to_excel(saving_path)
-    except Exception as e:
-        print(e)
-        pd.DataFrame(Deep_features, columns=columnsName).to_excel(os.path.join(temp_dir, file_name+str(time)+'.xlsx'))
+    if configs['features']["combination"]==True:
+        file_name =  "PT_" + CNN_name + '_' + configs['features']["image_feature_name"] +'_Cfeatures.xlsx'
+        saving_path = os.path.join(configs['paths']["casia_deep_feature"], file_name)
+        columnsName = [CNN_name+"_"+str(i) for i in range(Deep_features.shape[1])]  + cfg.label
+        Deep_features = np.concatenate((Deep_features, metadata[:Deep_features.shape[0], 0:2]), axis=1)
+
+        try:
+            df = pd.DataFrame(Deep_features, columns=columnsName)
+            df["left(0)/right(1)"] = 2
+            df.to_excel(saving_path)
+        except Exception as e:
+            print(e)
+            df = pd.DataFrame(Deep_features, columns=columnsName)
+            df["left(0)/right(1)"] = 2
+            df.to_excel(os.path.join(temp_dir, file_name+str(time)+'.xlsx'))
+
+
+    else:   
+        file_name =  "PT_" + CNN_name + '_' + configs['features']["image_feature_name"] +'_features.xlsx'
+        saving_path = os.path.join(configs['paths']["casia_deep_feature"], file_name)
+        columnsName = [CNN_name+"_"+str(i) for i in range(Deep_features.shape[1])]  + cfg.label
+        Deep_features = np.concatenate((Deep_features, metadata[:Deep_features.shape[0], 0:2]), axis=1)
+
+        try:
+            pd.DataFrame(Deep_features, columns=columnsName).to_excel(saving_path)
+        except Exception as e:
+            print(e)
+            pd.DataFrame(Deep_features, columns=columnsName).to_excel(os.path.join(temp_dir, file_name+str(time)+'.xlsx'))
 
 
 
@@ -416,7 +439,7 @@ def main():
 
 
     p0  = ["resnet50.ResNet50"] # "vgg16.VGG16", "efficientnet.EfficientNetB0", "mobilenet.MobileNet", 
-    p1 = ["CD", "PTI", "P90", "P100"]
+    p1 = ["P100"]
     space = list(itertools.product(p0,p1))
     
     ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK',default=1))

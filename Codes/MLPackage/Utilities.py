@@ -1,4 +1,5 @@
 
+from calendar import c
 import logging
 import multiprocessing
 import os
@@ -14,6 +15,7 @@ from scipy.spatial import distance
 from sklearn import preprocessing
 
 from sklearn.cluster import KMeans
+from sklearn import model_selection
 from sklearn.decomposition import PCA
 from sklearn.metrics import (accuracy_score, confusion_matrix, f1_score,
                              roc_curve)
@@ -38,7 +40,7 @@ elif __name__ == "__main__":
     import config as cfg
                     
 # num_pc = 0
-columnsname_result_DF = ["testID", "subject ID", "direction", "clasifier", "PCA", "num_pc", "classifier_parameters", "normilizing", "feature_type", "test_ratio", "mean(EER)", "t_idx", 
+columnsname_result_DF = ["testID", "subject ID", "direction", "clasifier", "PCA", "num_pc", "classifier_parameters", "normilizing", "feature_type", "test_ratio", "mean(EER)", "Th", 
                         "mean(acc)", "mean(f1)", "ACC%", "BACC%", "FAR(FPR)", "FRR(FNR)", "CM", "# positive samples training", "# positive samples test", "# negative samples test", "len(FAR)", "len(FRR)"] + ["FAR_" + str(i) for i in range(100)] + ["FRR_" + str(i) for i in range(100)] 
 time = int(timeit.default_timer() * 1_000_000)
 
@@ -95,15 +97,20 @@ def knn_classifier(**kwargs):
 
 
     best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
-    y_pred = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
+    y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
 
-
-    FRR, FAR = FAR_cal(configs, x_train, y_pred)
+    FRR, FAR = FAR_cal(configs, x_train, y_pred_tr)
     EER, t_idx = compute_eer(FAR, FRR)
+    # plt.plot(np.linspace(0, 1, 100), FRR )
+    # plt.plot(np.linspace(0, 1, 100), FAR)
+    # plt.show()
     
+    # print(best_model.predict_proba(x_train.iloc[:, :-1].values))
 
     acc = list()
     f1 = list()
+    CMM = list()
+    BACC = list()
 
 
     for _ in range(configs["classifier"]["KNN"]["random_runs"]):
@@ -112,21 +119,30 @@ def knn_classifier(**kwargs):
         y_pred = best_model.predict_proba(DF_temp.iloc[:, :-1].values)[:, 1]
         y_pred[y_pred >= configs["Pipeline"]["THRESHOLDs"][t_idx]] = 1
         y_pred[y_pred < configs["Pipeline"]["THRESHOLDs"][t_idx]] = 0
-        
+
+        # print(best_model.predict_proba(DF_temp.iloc[:, :-1].values))
+        # # 
+        # breakpoint()
 
         acc.append( accuracy_score(DF_temp.iloc[:,-1].values, y_pred)*100 )
         f1.append(  f1_score(DF_temp.iloc[:,-1].values, y_pred)*100 )
+        CM = confusion_matrix(DF_temp.iloc[:,-1].values, y_pred)
+        spec = (CM[0,0]/(CM[0,1]+CM[0,0]+1e-33))*100
+        sens = (CM[1,1]/(CM[1,0]+CM[1,1]+1e-33))*100
+        BACC.append( (spec + sens)/2 )
+        CMM.append(CM)
+    CM = np.array(CMM).sum(axis=0) 
     
+    # breakpoint()
 
     y_pred = best_model.predict_proba(kwargs["x_test"].iloc[:, :-1].values)[:, 1]
     y_pred[y_pred >= configs["Pipeline"]["THRESHOLDs"][t_idx]] = 1
     y_pred[y_pred < configs["Pipeline"]["THRESHOLDs"][t_idx]] = 0
-    CM = confusion_matrix(kwargs["x_test"].iloc[:,-1].values, y_pred)
-    spec = (CM[0,0]/(CM[0,1]+CM[0,0]+1e-33))*100
-    sens = (CM[1,1]/(CM[1,0]+CM[1,1]+1e-33))*100
-    BACC = (spec + sens)/2
+
     ACC = accuracy_score(kwargs["x_test"].iloc[:,-1].values, y_pred)*100
 
+    breakpoint()
+    scorehist(kwargs, configs, x_train, y_pred_tr, t_idx, y_pred)
     # metrices = {"ACC%": ACC,
     #             "BACC%": BACC,
     #             "FAR": CM[0,1]/CM[0,:].sum(),
@@ -142,13 +158,14 @@ def knn_classifier(**kwargs):
     neg_samples_shape = x_test[x_test["binary_labels"]==0].shape[0]
     x_train = kwargs["x_train"]
     pos_samples = x_train[x_train["binary_labels"]==1].shape[0]
-    results.append([EER, t_idx, np.mean(acc), np.mean(f1), ACC, BACC, CM[0,1]/CM[0,:].sum(), CM[1,0]/CM[1,:].sum(), CM, pos_samples, pos_samples_shape, neg_samples_shape, len(FAR), len(FRR)])
+    results.append([EER, configs["Pipeline"]["THRESHOLDs"][t_idx], np.mean(acc), np.mean(f1), ACC, np.mean(BACC), CM[0,1]/CM[0,:].sum(), CM[1,0]/CM[1,:].sum(), CM, pos_samples, pos_samples_shape, neg_samples_shape, len(FAR), len(FRR)])
 
     results.append(FAR)
     results.append(FRR)
 
     results = [val for sublist in results for val in sublist]
     return results
+
 
 def FAR_cal(configs, x_train, y_pred):
     FRR = list()
@@ -170,7 +187,6 @@ def FAR_cal(configs, x_train, y_pred):
     return FRR,FAR
 
 
-
 def svm_classifier(**kwargs):
     global time
     num_pc = kwargs["num_pc"]
@@ -179,20 +195,30 @@ def svm_classifier(**kwargs):
     
     x_train = kwargs["x_train"]#.append(temp)
 
+    cv = model_selection.LeaveOneOut()
 
-    classifier = svm.SVC(kernel=configs["classifier"]["SVM"]["kernel"] , probability=True)
+    classifier = svm.SVC(kernel=configs["classifier"]["SVM"]["kernel"] , probability=True, random_state=configs["Pipeline"]["random_state"], )
     classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
 
 
-    y_pred = classifier.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
+    y_pred_tr = classifier.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
     
     
-    FRR, FAR = FAR_cal(configs, x_train, y_pred)
+    FRR, FAR = FAR_cal(configs, x_train, y_pred_tr)
     EER, t_idx = compute_eer(FAR, FRR)
-    
+    # print(x_train.sort_index())
+    # print(configs["Pipeline"]["THRESHOLDs"][t_idx])
+    # logger.info("Done!!")
+    # sys.exit()
 
+
+    # plot_eer(FRR, FAR)
+    
+    # plo 
     acc = list()
     f1 = list()
+    CMM = list()
+    BACC = list()
     for _ in range(configs["classifier"]["SVM"]["random_runs"]):
         DF_temp, pos_number = balancer(kwargs["x_test"])
 
@@ -202,19 +228,23 @@ def svm_classifier(**kwargs):
 
         acc.append( accuracy_score(DF_temp.iloc[:,-1].values, y_pred)*100 )
         f1.append(  f1_score(DF_temp.iloc[:,-1].values, y_pred)*100 )
+        CM = confusion_matrix(DF_temp.iloc[:,-1].values, y_pred)
+        spec = (CM[0,0]/(CM[0,1]+CM[0,0]+1e-33))*100
+        sens = (CM[1,1]/(CM[1,0]+CM[1,1]+1e-33))*100
+        BACC.append( (spec + sens)/2 )
+        CMM.append(CM)
+    CM = np.array(CMM).sum(axis=0) 
       
     
     #breakpoint()
     y_pred = classifier.predict_proba(kwargs["x_test"].iloc[:, :-1].values)[:, 1]
     y_pred[y_pred >= configs["Pipeline"]["THRESHOLDs"][t_idx]] = 1
     y_pred[y_pred < configs["Pipeline"]["THRESHOLDs"][t_idx]] = 0
-    CM = confusion_matrix(kwargs["x_test"].iloc[:,-1].values, y_pred)
-
-    spec = (CM[0,0]/(CM[0,1]+CM[0,0]+1e-33))*100
-    sens = (CM[1,1]/(CM[1,0]+CM[1,1]+1e-33))*100
-    BACC = (spec + sens)/2
     ACC = accuracy_score(kwargs["x_test"].iloc[:,-1].values, y_pred)*100
+    # breakpoint()
+
     breakpoint()
+    scorehist(kwargs, configs, x_train, y_pred_tr, t_idx, y_pred)
 
 
     results = list()
@@ -225,12 +255,26 @@ def svm_classifier(**kwargs):
     neg_samples_shape = x_test[x_test["binary_labels"]==0].shape[0]
     x_train = kwargs["x_train"]
     pos_samples = x_train[x_train["binary_labels"]==1].shape[0]
-    results.append([EER, t_idx, np.mean(acc), np.mean(f1), ACC, BACC, CM[0,1]/CM[0,:].sum(), CM[1,0]/CM[1,:].sum(), CM, pos_samples, pos_samples_shape, neg_samples_shape, len(FAR), len(FRR)])
+    results.append([EER, configs["Pipeline"]["THRESHOLDs"][t_idx], np.mean(acc), np.mean(f1), ACC, np.mean(BACC), CM[0,1]/CM[0,:].sum(), CM[1,0]/CM[1,:].sum(), CM, pos_samples, pos_samples_shape, neg_samples_shape, len(FAR), len(FRR)])
     results.append(FAR)
     results.append(FRR)
 
     results = [val for sublist in results for val in sublist]
     return results
+
+def scorehist(kwargs, configs, x_train, y_pred_tr, t_idx, y_pred):
+    train_scores = pd.DataFrame([x_train.iloc[:, -1].map(lambda x: "training - Imposter" if x==0 else "training - claimed").values, y_pred_tr], index=["y_true", "y_pred"]).T
+    
+    test_scores = pd.DataFrame([kwargs["x_test"].iloc[:, -1].map(lambda x: "test - Imposter" if x==0 else "test - claimed").values, y_pred], index=["y_true", "y_pred"]).T
+
+    scores = pd.concat((train_scores,test_scores), axis=0).reset_index()
+    sns.color_palette("Paired")
+
+    sns.histplot(data=scores, x="y_pred", hue="y_true", bins=50, stat="percent", multiple="dodge", palette="Paired")
+    plt.plot([configs["Pipeline"]["THRESHOLDs"][t_idx], configs["Pipeline"]["THRESHOLDs"][t_idx]], [0,33] , 'b--')
+    plt.text(configs["Pipeline"]["THRESHOLDs"][t_idx], 33 , f'Threshold = {round(configs["Pipeline"]["THRESHOLDs"][t_idx], 2)}')#Marker="*", color="red")
+
+    plt.show()
 
 
 def Template_Matching_classifier(**kwargs):
@@ -252,14 +296,11 @@ def Template_Matching_classifier(**kwargs):
                                                     mode = configs["classifier"]["Template_Matching"]["mode"], 
                                                     score = configs["classifier"]["Template_Matching"]["score"])
 
-        Model_client, Model_imposter = model(distModel1,
-                                                distModel2, 
-                                                criteria=configs["classifier"]["Template_Matching"]["criteria"], 
-                                                score=configs["classifier"]["Template_Matching"]["score"] )
-
-
-
-        FAR_temp, FRR_temp = calculating_fxr(Model_client, Model_imposter, distModel1, distModel2, configs["Pipeline"]["THRESHOLDs"], configs["classifier"]["Template_Matching"]["score"])
+        Model_client_tr, Model_imposter_tr = model(distModel1,
+                                            distModel2, 
+                                            criteria=configs["classifier"]["Template_Matching"]["criteria"], 
+                                            score=configs["classifier"]["Template_Matching"]["score"] )
+        FAR_temp, FRR_temp = calculating_fxr(Model_client_tr, Model_imposter_tr, distModel1, distModel2, configs["Pipeline"]["THRESHOLDs"], configs["classifier"]["Template_Matching"]["score"])
         
         EER_temp = compute_eer(FAR_temp, FRR_temp)
 
@@ -268,10 +309,14 @@ def Template_Matching_classifier(**kwargs):
         EER.append(EER_temp[0])
         TH.append(EER_temp[1])
 
+    # breakpoint()
+    # plot_eer(list(np.mean(FAR, axis=0)), list(np.mean(FRR, axis=0)))
     
     
     acc = list()
     f1 = list()
+    CMM = list()
+    BACC = list()
     t_idx = int(np.ceil(np.mean(TH)))
 
     for _ in range(configs["classifier"]["Template_Matching"]["random_runs"]):
@@ -281,24 +326,52 @@ def Template_Matching_classifier(**kwargs):
         distModel1 , distModel2 = compute_score_matrix(pos_samples.iloc[:, :-1].values, DF_temp.iloc[:, :-1].values, mode=configs["classifier"]["Template_Matching"]["mode"], score=configs["classifier"]["Template_Matching"]["score"])
         Model_client, Model_test = model(distModel1, distModel2, criteria=configs["classifier"]["Template_Matching"]["criteria"], score=configs["classifier"]["Template_Matching"]["score"])
 
+        # breakpoint()  plot_cm(labels, predictions, p=0.5, path=os.getcwd())
 
         y_pred = np.zeros((Model_test.shape))
-        y_pred[Model_test > configs["Pipeline"]["THRESHOLDs"][t_idx]] = 1
+        y_pred[Model_test >= configs["Pipeline"]["THRESHOLDs"][t_idx]] = 1
 
 
         acc.append( accuracy_score(DF_temp.iloc[:,-1].values, y_pred)*100 )
         f1.append(  f1_score(DF_temp.iloc[:,-1].values, y_pred)*100 )
-
-
+        # breakpoint()
+        
+        # CM = confusion_matrix(kwargs["x_test"].iloc[:,-1].values, y_pred)
+        # plot_cm(DF_temp.iloc[:,-1].values, y_pred)
+        CM = confusion_matrix(DF_temp.iloc[:,-1].values, y_pred)
+        spec = (CM[0,0]/(CM[0,1]+CM[0,0]+1e-33))*100
+        sens = (CM[1,1]/(CM[1,0]+CM[1,1]+1e-33))*100
+        BACC.append( (spec + sens)/2 )
+        CMM.append(CM)
+    CM = np.array(CMM).sum(axis=0) 
+    
+    
     distModel1 , distModel2 = compute_score_matrix(pos_samples.iloc[:, :-1].values, kwargs["x_test"].iloc[:, :-1].values, mode=configs["classifier"]["Template_Matching"]["mode"], score=configs["classifier"]["Template_Matching"]["score"])
     Model_client, Model_test = model(distModel1, distModel2, criteria=configs["classifier"]["Template_Matching"]["criteria"], score=configs["classifier"]["Template_Matching"]["score"])
     y_pred = np.zeros((Model_test.shape))
-    y_pred[y_pred > configs["Pipeline"]["THRESHOLDs"][t_idx]] = 1
-    CM = confusion_matrix(kwargs["x_test"].iloc[:,-1].values, y_pred)
-    spec = (CM[0,0]/(CM[0,1]+CM[0,0]+1e-33))*100
-    sens = (CM[1,1]/(CM[1,0]+CM[1,1]+1e-33))*100
-    BACC = (spec + sens)/2
+    y_pred[y_pred >= configs["Pipeline"]["THRESHOLDs"][t_idx]] = 1
     ACC = accuracy_score(kwargs["x_test"].iloc[:,-1].values, y_pred)*100
+
+
+    breakpoint()
+    distModel1 , distModel2 = compute_score_matrix(pos_samples.iloc[:, :-1].values, kwargs["x_train"].iloc[:, :-1].values, mode=configs["classifier"]["Template_Matching"]["mode"], score=configs["classifier"]["Template_Matching"]["score"])
+    Model_client_tr, Model_test_tr = model(distModel1, distModel2, criteria=configs["classifier"]["Template_Matching"]["criteria"], score=configs["classifier"]["Template_Matching"]["score"])
+    y_pred_tr = np.zeros((Model_test_tr.shape))
+    y_pred_tr[y_pred_tr >= configs["Pipeline"]["THRESHOLDs"][t_idx]] = 1
+    
+    train_scores = pd.DataFrame([kwargs["x_train"].iloc[:, -1].map(lambda x: "training - Imposter" if x==0 else "training - claimed").values, y_pred_tr], index=["y_true", "y_pred"]).T
+    
+    test_scores = pd.DataFrame([kwargs["x_test"].iloc[:, -1].map(lambda x: "test - Imposter" if x==0 else "test - claimed").values, y_pred], index=["y_true", "y_pred"]).T
+
+    scores = pd.concat((train_scores, test_scores), axis=0).reset_index()
+    sns.color_palette("Paired")
+
+    sns.histplot(data=scores, x="y_pred", hue="y_true", bins=50, stat="percent", multiple="dodge", palette="Paired")
+    plt.plot([configs["Pipeline"]["THRESHOLDs"][t_idx], configs["Pipeline"]["THRESHOLDs"][t_idx]], [0,33] , 'b--')
+    plt.text(configs["Pipeline"]["THRESHOLDs"][t_idx], 33 , f'Threshold = {round(configs["Pipeline"]["THRESHOLDs"][t_idx], 2)}')#Marker="*", color="red")
+
+    plt.show()
+    
     results = list()
 
     results.append([time, kwargs["sub"], kwargs["dir"], "Template_Matching", configs["Pipeline"]["persentage"], num_pc, configs["classifier"]["Template_Matching"], configs["Pipeline"]["normilizing"], kwargs["feature_type"], configs["Pipeline"]["test_ratio"]])
@@ -307,7 +380,7 @@ def Template_Matching_classifier(**kwargs):
     neg_samples_shape = x_test[x_test["binary_labels"]==0].shape[0]
 
 
-    results.append([np.mean(EER), t_idx, np.mean(acc), np.mean(f1), ACC, BACC, CM[0,1]/CM[0,:].sum(), CM[1,0]/CM[1,:].sum(), CM, pos_samples.shape[0], pos_samples_shape, neg_samples_shape, len(FAR[0]), len(FRR[0])])
+    results.append([np.mean(EER), configs["Pipeline"]["THRESHOLDs"][t_idx], np.mean(acc), np.mean(f1), ACC, np.mean(BACC), CM[0,1]/CM[0,:].sum(), CM[1,0]/CM[1,:].sum(), CM, pos_samples.shape[0], pos_samples_shape, neg_samples_shape, len(FAR[0]), len(FRR[0])])
     results.append(list(np.mean(FAR, axis=0)))
     results.append(list(np.mean(FRR, axis=0)))
 
@@ -315,9 +388,27 @@ def Template_Matching_classifier(**kwargs):
     return results
 
 
+def plot_eer(FAR, FRR, path=os.getcwd()):
+    """ Returns equal error rate (EER) and the corresponding threshold. """
+    abs_diffs = np.abs(np.subtract(FRR, FAR)) 
+    
+    min_index = np.argmin(abs_diffs)
+    # breakpoint()
+    min_index = 99 - np.argmin(abs_diffs[::-1])
+    plt.figure(figsize=(5,5))
+    eer = np.mean((FAR[min_index], FRR[min_index]))
+    plt.plot( np.linspace(0, 1, 100), FRR)
+    plt.plot( np.linspace(0, 1, 100), FAR)
+    plt.plot(np.linspace(0, 1, 100)[min_index], eer, "r*")
+    plt.savefig(path, bbox_inches='tight')
+
+    plt.show()
+    # return eer, min_index
+
+
 def balancer(DF):
     pos_samples = DF[DF["binary_labels"]==1]
-    neg_samples = DF[DF["binary_labels"]==0].sample(n = pos_samples.shape[0])
+    neg_samples = DF[DF["binary_labels"]==0].sample(n = pos_samples.shape[0])#, random_state=cfg.config["Pipeline"]["random_state"])
     DF_balanced = pd.concat([pos_samples, neg_samples])
     return DF_balanced, pos_samples.shape[0]
 
@@ -337,7 +428,7 @@ def pipeline(configs):
 
     if configs["features"]["category"]=="deep":
         feature_type = "deep"
-        if configs["dataset"]["dataset_name"]=="casia":      
+        if configs["dataset"]["dataset_name"]=="casia" and configs["features"]["combination"]==False:      
             if configs["CNN"]["CNN_type"]=="PT":
                 feature_path = os.path.join(configs["paths"]["casia_deep_feature"], "PT_"+configs["CNN"]["base_model"].split(".")[0]+'_'+configs["features"]["image_feature_name"]+'_features.xlsx')
                 DF_features_all = pd.read_excel(feature_path, index_col = 0)
@@ -346,6 +437,16 @@ def pipeline(configs):
                 DF_features_all = pd.read_excel(feature_path, index_col = 0)
             elif configs["CNN"]["CNN_type"]=="FT":
                 feature_path = os.path.join(configs["paths"]["casia_deep_feature"], 'FT_resnet50_'+configs["features"]["image_feature_name"]+'_features.xlsx')
+                DF_features_all = pd.read_excel(feature_path, index_col = 0)
+        elif configs["dataset"]["dataset_name"]=="casia" and configs["features"]["combination"]==True:      
+            if configs["CNN"]["CNN_type"]=="PT":
+                feature_path = os.path.join(configs["paths"]["casia_deep_feature"], "PT_"+configs["CNN"]["base_model"].split(".")[0]+'_'+configs["features"]["image_feature_name"]+'_Cfeatures.xlsx')
+                DF_features_all = pd.read_excel(feature_path, index_col = 0)
+            elif configs["CNN"]["CNN_type"]=="FS":
+                feature_path = os.path.join(configs["paths"]["casia_deep_feature"], 'FS_'+configs["features"]["image_feature_name"]+'_Cfeatures.xlsx')
+                DF_features_all = pd.read_excel(feature_path, index_col = 0)
+            elif configs["CNN"]["CNN_type"]=="FT":
+                feature_path = os.path.join(configs["paths"]["casia_deep_feature"], 'FT_resnet50_'+configs["features"]["image_feature_name"]+'_Cfeatures.xlsx')
                 DF_features_all = pd.read_excel(feature_path, index_col = 0)
 
         if configs["dataset"]["dataset_name"]=="stepscan":      
@@ -359,14 +460,23 @@ def pipeline(configs):
                 feature_path = os.path.join(configs["paths"]["stepscan_deep_feature"], 'FT_resnet50_'+configs["features"]["image_feature_name"]+'_features.xlsx')
                 DF_features_all = pd.read_excel(feature_path, index_col = 0)
     elif configs["features"]["category"]=="hand_crafted":
-        feature_type = configs["features"]["Handcrafted_feature_name"]
-        feature_path = configs["paths"]["casia_all_feature.xlsx"]
-        DF_features_all = pd.read_excel(feature_path, index_col = 0)
+        if configs["features"]["combination"]==True:
+            feature_type = configs["features"]["Handcrafted_feature_name"]
+            feature_path = configs["paths"]["casia_all_Cfeature.xlsx"]
+            DF_features_all = pd.read_excel(feature_path, index_col = 0)
+        else:
+            feature_type = configs["features"]["Handcrafted_feature_name"]
+            feature_path = configs["paths"]["casia_all_feature.xlsx"]
+            DF_features_all = pd.read_excel(feature_path, index_col = 0)
     elif configs["features"]["category"]=="image":
         feature_type = "image"
-        if configs["dataset"]["dataset_name"]=="casia":      
-            feature_path = configs["paths"]["casia_image_feature.npy"]
-            meta = np.load(configs["paths"]["casia_dataset-meta.npy"])
+        if configs["dataset"]["dataset_name"]=="casia":
+            if configs["features"]["combination"]==True:      
+                feature_path = configs["paths"]["casia_image_Cfeature.npy"]
+                meta = np.load(configs["paths"]["casia_dataset-meta.npy"])
+            else:
+                feature_path = configs["paths"]["casia_image_feature.npy"]
+                meta = np.load(configs["paths"]["casia_dataset-meta.npy"])
 
         elif configs["dataset"]["dataset_name"]=="stepscan":
             feature_path = configs["paths"]["stepscan_image_feature.npy"]
@@ -381,41 +491,73 @@ def pipeline(configs):
 
         
         DF_features_all = pd.DataFrame(np.concatenate((image_features, meta[:,0:2]), axis=1 ), columns=["pixel_"+str(i) for i in range(image_features.shape[1])]+cfg.label)
+        if configs["features"]["combination"]==True:
+            DF_features_all["left(0)/right(1)"]=2
 
-    subjects = DF_features_all["subject ID"].unique()
-       
-    
+
+
+    if configs["Pipeline"]["Debug"]==True: 
+        subjects, samples = np.unique(DF_features_all["subject ID"].values, return_counts=True)
+
+        s = [a[0] for a in list(zip(subjects, samples)) if a[1]>=configs["Pipeline"]["min_number_of_sample"]]
+        subjects = s[:configs["Pipeline"]["Debug_N"]] 
+
+        DF_features_all =  DF_features_all[DF_features_all["subject ID"].isin(subjects)]
+        
     DF_features = extracting_features(DF_features_all, feature_type)
 
     results = list()
-    if configs["Pipeline"]["Debug"]==True: subjects = subjects[:configs["Pipeline"]["Debug_N"]]
+    
 
     for idx_s, subject in enumerate(subjects):
-        if subject==86: continue
+        if subject in [86, 12]: continue
         
         
         if (idx_s % 10) == 0:
             logger.info("--------------->> Subject Number: {} [out of {}]".format(idx_s, len(subjects)))
         
+        if configs["features"]["combination"]==False:
+            directions = ["left_0", "right_1"]
+        else:
+            directions = ["both"]
 
-        for idx, direction in enumerate(["left_0", "right_1"]):
+
+
+        for idx, direction in enumerate(directions):#, "right_1"]):  configs["features"]["combination"]==True:
             if configs["Pipeline"]["verbose"] is True:
                 logger.info(f"-->> Model {subject},\t {direction} \t\t PID: {os.getpid()}")    
 
-
-            DF_side = DF_features[DF_features["left(0)/right(1)"] == idx]
+            if configs["features"]["combination"]==False:
+                DF_side = DF_features[DF_features["left(0)/right(1)"] == idx]
+            else:
+                DF_side = DF_features[DF_features["left(0)/right(1)"] == 2]
         
             DF_positive_samples = DF_side[DF_side["subject ID"] == subject]
             DF_negative_samples = DF_side[DF_side["subject ID"] != subject]
 
-                
-            DF_positive_samples_test = DF_positive_samples.sample(frac = test_ratio, replace = False, random_state = 2)
-            DF_positive_samples_train = DF_positive_samples.drop(DF_positive_samples_test.index)
-            DF_positive_samples_train = DF_positive_samples_train.sample(frac = train_ratio, replace = False, random_state = 2)
 
-            DF_negative_samples_test = DF_negative_samples.sample(frac = test_ratio, replace = False, random_state = 2)
+            DF_positive_samples_train = DF_positive_samples.sample(n = train_ratio, replace = False, random_state=configs["Pipeline"]["random_state"])
+            DF_positive_samples = DF_positive_samples.drop(DF_positive_samples_train.index)
+            DF_positive_samples_test  = DF_positive_samples.sample(n = test_ratio, replace = False, random_state=configs["Pipeline"]["random_state"])
+
+            DF_negative_samples_test  = DF_negative_samples.sample(frac = .5, replace = False, random_state=configs["Pipeline"]["random_state"])
             DF_negative_samples_train = DF_negative_samples.drop(DF_negative_samples_test.index)
-            DF_negative_samples_train = DF_negative_samples_train.sample(frac = train_ratio, replace = False, random_state = 2)
+            DF_negative_samples_train = DF_negative_samples_train.sample(frac = 1, replace = False, random_state=configs["Pipeline"]["random_state"])
+            
+            
+            # DF_positive_samples_test  = DF_positive_samples.sample(n = test_ratio, replace = False, random_state=configs["Pipeline"]["random_state"])
+            # DF_positive_samples_train = DF_positive_samples.drop(DF_positive_samples_test.index)
+            # DF_positive_samples_train = DF_positive_samples_train.sample(n = train_ratio, replace = False, random_state=configs["Pipeline"]["random_state"])
+
+            # DF_negative_samples_test  = DF_negative_samples.sample(frac = .5, replace = False, random_state=configs["Pipeline"]["random_state"])
+            # DF_negative_samples_train = DF_negative_samples.drop(DF_negative_samples_test.index)
+            # DF_negative_samples_train = DF_negative_samples_train.sample(frac = 1, replace = False, random_state=configs["Pipeline"]["random_state"])
+
+
+            # print(DF_positive_samples_train.sort_index().head(10))
+            # # print(DF_negative_samples_train.sort_index().head(10))
+            # logger.info("Done!!")
+            # sys.exit()
 
             
             df_train = pd.concat([DF_positive_samples_train, DF_negative_samples_train])
@@ -653,7 +795,6 @@ def compute_score_matrix(positive_samples, negative_samples, mode="dist", score 
         return positive_model, negative_model
 
 
-
 def model(distModel1, distModel2, criteria = "average", score = None ):
     if score is None:
         if criteria == "average":
@@ -721,7 +862,7 @@ def calculating_fxr(Model_client, Model_imposter, distModel1, distModel2, THRESH
 
 
             E2 = np.zeros((Model_imposter.shape))
-            E2[Model_imposter > tx] = 1
+            E2[Model_imposter >= tx] = 1
             FAR_temp.append(np.sum(E2)/distModel2.shape[1])
 
     elif score is None:
@@ -737,13 +878,21 @@ def calculating_fxr(Model_client, Model_imposter, distModel1, distModel2, THRESH
     return FAR_temp, FRR_temp
     
 
-
-def compute_eer(fpr, fnr):
+def compute_eer(FAR, FRR):
     """ Returns equal error rate (EER) and the corresponding threshold. """
-    abs_diffs = np.abs(np.subtract(fpr, fnr)) 
+    abs_diffs = np.abs(np.subtract(FRR, FAR)) 
+    
     min_index = np.argmin(abs_diffs)
-    eer = np.mean((fpr[min_index], fnr[min_index]))
-
+    # breakpoint()
+    min_index = 99 - np.argmin(abs_diffs[::-1])
+    
+    eer = np.mean((FAR[min_index], FRR[min_index]))
+    # plt.plot( np.linspace(0, 1, 100),FRR)
+    # plt.plot( np.linspace(0, 1, 100), FAR)
+    # plt.plot(np.linspace(0, 1, 100), abs_diffs)
+    # np.linspace(0, 1, 100)[min_index]
+    # eer
+    # plt.show()
     return eer, min_index
 
 
@@ -757,13 +906,12 @@ def compute_similarity(distance, mode = "A"):
         return 1/np.exp(distance)
 
 
-
 def template_selection(DF, method, k_cluster, verbose=True):
     if DF.shape[0]<k_cluster:
         k_cluster=DF.shape[0]
  
     if method == "DEND":
-        kmeans = KMeans(n_clusters=k_cluster)
+        kmeans = KMeans(n_clusters=k_cluster, random_state=cfg.configs["Pipeline"]["random_state"] )
         kmeans.fit(DF.iloc[:, :-2].values)
         clusters = np.unique(kmeans.labels_)
         col = DF.columns
@@ -776,7 +924,7 @@ def template_selection(DF, method, k_cluster, verbose=True):
         DF_clustered = list()
 
         for cluster in clusters:
-            mean_cluster = DF1[DF1["label"] == cluster].sort_values(by=['dist'])
+            mean_cluster = DF1[DF1["label"] == cluster].sort_values(by=['dist'], )
             DF_clustered.append(mean_cluster.iloc[0,:-2])
 
         DF_clustered  = pd.DataFrame(DF_clustered, columns=col)
@@ -906,8 +1054,8 @@ def fine_tuning(configs):
     # #                phase 5: Making tf.dataset object
     # # ##################################################################
 
-    X_train, X_test, y_train, y_test = train_test_split(images, labels, test_size=configs['CNN']["test_split"], random_state=42, stratify=labels)
-    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=configs['CNN']["val_split"], random_state=42, stratify=y_train)
+    X_train, X_test, y_train, y_test = train_test_split(images, labels, test_size=configs['CNN']["test_split"], random_state=configs["Pipeline"]["random_state"], stratify=labels)
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=configs['CNN']["val_split"], random_state=configs["Pipeline"]["random_state"], stratify=y_train)
 
 
 
@@ -1102,8 +1250,8 @@ def from_scratch(configs):
     # #                phase 5: Making tf.dataset object
     # # ##################################################################
 
-    X_train, X_test, y_train, y_test = train_test_split(images, labels, test_size=configs['CNN']["test_split"], random_state=42, stratify=labels)
-    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=configs['CNN']["val_split"], random_state=42, stratify=y_train)
+    X_train, X_test, y_train, y_test = train_test_split(images, labels, test_size=configs['CNN']["test_split"], random_state=configs["Pipeline"]["random_state"], stratify=labels)
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=configs['CNN']["val_split"], random_state=configs["Pipeline"]["random_state"], stratify=y_train)
 
 
 
@@ -1377,9 +1525,9 @@ def from_scratch_binary(configs):
         # logger.info('Weight for class 1: {:.2f}'.format(weight_for_1))
 
         
-        X_train, X_test, y_train, y_test = train_test_split(images, labels[:, subject].numpy(), test_size=configs['CNN']["test_split"], random_state=42, stratify=labels[:, subject].numpy())
-        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=configs['CNN']["val_split"], random_state=42, stratify=y_train)
-        _, X_train, _, y_train= train_test_split(X_train, y_train, test_size=configs['CNN']["train_split"], random_state=42, stratify=y_train)
+        X_train, X_test, y_train, y_test = train_test_split(images, labels[:, subject].numpy(), test_size=configs['CNN']["test_split"], random_state=configs["Pipeline"]["random_state"], stratify=labels[:, subject].numpy())
+        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=configs['CNN']["val_split"], random_state=configs["Pipeline"]["random_state"], stratify=y_train)
+        _, X_train, _, y_train= train_test_split(X_train, y_train, test_size=configs['CNN']["train_split"], random_state=configs["Pipeline"]["random_state"], stratify=y_train)
 
 
 
@@ -1661,9 +1809,9 @@ def from_scratch_binary_3(configs):
         # logger.info('Weight for class 1: {:.2f}'.format(weight_for_1))
 
         
-        X_train, X_test, y_train, y_test = train_test_split(images, labels[:, subject].numpy(), test_size=configs['CNN']["test_split"], random_state=42, stratify=labels[:, subject].numpy())
-        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=configs['CNN']["val_split"], random_state=42, stratify=y_train)
-        _, X_train, _, y_train = train_test_split(X_train, y_train, test_size=configs['CNN']["train_split"], random_state=42, stratify=y_train)
+        X_train, X_test, y_train, y_test = train_test_split(images, labels[:, subject].numpy(), test_size=configs['CNN']["test_split"], random_state=configs["Pipeline"]["random_state"], stratify=labels[:, subject].numpy())
+        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=configs['CNN']["val_split"], random_state=configs["Pipeline"]["random_state"], stratify=y_train)
+        _, X_train, _, y_train = train_test_split(X_train, y_train, test_size=configs['CNN']["train_split"], random_state=configs["Pipeline"]["random_state"], stratify=y_train)
 
 
 
@@ -1855,7 +2003,7 @@ def from_scratch_binary_3(configs):
 
 
 def plot_cm(labels, predictions, p=0.5, path=os.getcwd()):
-    cm = confusion_matrix(labels, predictions > p)
+    cm = confusion_matrix(labels, predictions >= p)
     plt.figure(figsize=(5,5))
     sns.heatmap(cm, annot=True, fmt="d")
     plt.title('Confusion matrix @{:.2f}'.format(p))
@@ -1966,7 +2114,7 @@ def collect_results(result):
     except:
         Results_DF.to_excel(os.path.join(excel_path, 'Results'+str(time)+'.xlsx'), columns=columnsname_result_DF)
 
-  
+
 def main():
     configs = cfg.configs
     # configs["Pipeline"]["classifier"] = "knn_classifier"

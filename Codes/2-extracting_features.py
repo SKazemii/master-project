@@ -82,8 +82,12 @@ logger.info("Metadata shape: {}".format(metadata.shape))
 features = list()
 prefeatures = list()
 
-
 for sample, label in zip(data, metadata):
+    
+    if cfg.configs["features"]["combination"]==True and label[1]==0:
+        sample = np.fliplr(sample)
+
+
     
     COA = feat.computeCOATimeSeries(sample, Binarize = "simple", Threshold = 0)
 
@@ -112,26 +116,29 @@ for sample, label in zip(data, metadata):
     wt_COA_AP = feat.wt_feature(COA[1,:], waveletname="coif1", pywt_mode="constant", wavelet_level=4)
     wt_COA_ML = feat.wt_feature(COA[2,:], waveletname="coif1", pywt_mode="constant", wavelet_level=4)
 
-
-
-    features.append( np.concatenate((COAs, handcraft_COAfeatures, GRF, handcraft_GRFfeatures, wt_COA_RD, wt_COA_AP, wt_COA_ML, wt_GRF, label[0:2]), axis=0)  )
+    if cfg.configs["features"]["combination"]==True:
+        features.append( np.concatenate((COAs, handcraft_COAfeatures, GRF, handcraft_GRFfeatures, wt_COA_RD, wt_COA_AP, wt_COA_ML, wt_GRF, [label[0], 2]), axis=0)  )
+    else:
+        features.append( np.concatenate((COAs, handcraft_COAfeatures, GRF, handcraft_GRFfeatures, wt_COA_RD, wt_COA_AP, wt_COA_ML, wt_GRF, label[0:2]), axis=0)  )
     prefeatures.append(feat.prefeatures(sample))
     # break
     
 
 
 columnsName = cfg.COA_RD + cfg.COA_AP + cfg.COA_ML + cfg.COA_HC + cfg.GRF + cfg.GRF_HC + cfg.wt_COA_RD + cfg.wt_COA_AP + cfg.wt_COA_ML + cfg.wt_GRF + cfg.label
-pd.DataFrame(features, columns=columnsName).to_excel(cfg.configs["paths"]["casia_all_feature.xlsx"])
-np.save(cfg.configs["paths"]["casia_image_feature.npy"], prefeatures)
+if cfg.configs["features"]["combination"]==True:
+    pd.DataFrame(features, columns=columnsName).to_excel(cfg.configs["paths"]["casia_all_Cfeature.xlsx"])
+    np.save(cfg.configs["paths"]["casia_image_Cfeature.npy"], prefeatures)
+else:
+    pd.DataFrame(features, columns=columnsName).to_excel(cfg.configs["paths"]["casia_all_feature.xlsx"])
+    np.save(cfg.configs["paths"]["casia_image_feature.npy"], prefeatures)
+
+# DF_features_all = pd.read_excel(cfg.configs["paths"]["casia_all_feature.xlsx"], index_col = 0)
 
 
-
-DF_features_all = pd.read_excel(cfg.configs["paths"]["casia_all_feature.xlsx"], index_col = 0)
-
-
-data  = DF_features_all.values
-features  = np.asarray(data[:, 0:-2])
-label = np.asarray(data[:, -2])
+# data  = DF_features_all.values
+# features  = np.asarray(data[:, 0:-2])
+# label = np.asarray(data[:, -2])
 
 
 

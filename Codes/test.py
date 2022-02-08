@@ -14,29 +14,16 @@ from sklearn.metrics import accuracy_score
 import itertools, multiprocessing
 
 
+import seaborn as sns
 
 
-import sklearn as sk
-import tensorflow as tf
-from tensorflow import keras
-
-from sklearn.decomposition import PCA
-from sklearn.decomposition import IncrementalPCA
-from sklearn.decomposition import KernelPCA
-from sklearn.decomposition import SparsePCA
-from sklearn.decomposition import TruncatedSVD
-from sklearn.decomposition import FastICA
-from sklearn.decomposition import MiniBatchDictionaryLearning
 
 
-from sklearn.manifold import Isomap
-from sklearn.manifold import TSNE
-from sklearn.manifold import LocallyLinearEmbedding
-
-from sklearn.random_projection import GaussianRandomProjection
-from sklearn.random_projection import SparseRandomProjection
-
-
+penguins = sns.load_dataset("penguins")
+print(penguins)
+sns.histplot(data=penguins, x="flipper_length_mm", hue="species")
+plt.show()
+sys.exit()
 
 
 

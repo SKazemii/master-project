@@ -5,7 +5,8 @@ from pathlib import Path as Pathlb
 
 configs = {
     "features": {
-        "category": "hand_crafted", # deep, image, hand_crafted
+        "combination": True, #0->left, 1->right, 2->both
+        "category": "image", # deep, image, hand_crafted
 
         "image_feature_name": "P100", # CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100, tile, fusion
         "Handcrafted_feature_name": "all", # "all", "GRF_HC", "COA_HC", "GRF", "COA", "wt_COA",  ## todo: "wt_GRF"
@@ -19,16 +20,19 @@ configs = {
     },
 
     "Pipeline": {
-        "classifier": "svm_classifier", # knn_classifier   svm_classifier   Template_Matching_classifier
+        "classifier": "Template_Matching_classifier", # knn_classifier   svm_classifier   Template_Matching_classifier
         "persentage": 0.95,
         "normilizing": "z-score",
-        "test_ratio": 0.30,
-        "train_ratio": 0.30,
+        "test_ratio": 5,
+        "train_ratio": 5,
         "THRESHOLDs": np.linspace(0, 1, 100),
-        
+
+        "random_state": 42,
         "verbose": False,
+
         "Debug": True,
-        "Debug_N": 2,
+        "Debug_N": 20,
+        "min_number_of_sample": 30
     },
     "CNN": {
         "CNN_type": "PT", # FT, FS, PT (pretrain)
@@ -49,18 +53,18 @@ configs = {
         "Template_Matching": {
             "mode": "dist",
             "criteria": "min",
-            "random_runs": 50,
+            "random_runs": 10,
             "score": "A", # A = np.power(distance+1, -1) or B = 1/np.exp(distance)
             "verbose": True,
         },
         "SVM": {
             "kernel": "linear",
-            "random_runs": 50,
+            "random_runs": 10,
             "verbose": True,
         },
         "KNN": {
-            "n_neighbors": 5,
-            "random_runs": 50,
+            "n_neighbors": 3,
+            "random_runs": 10,
             "metric": "euclidean",
             "weights": "uniform",
             "verbose": True,
@@ -92,6 +96,9 @@ configs = {
 
         "casia_all_feature.xlsx": os.path.join(os.getcwd(), "Datasets", "Casia-D", "casia_feature_all.xlsx"),
         "casia_image_feature.npy": os.path.join(os.getcwd(), "Datasets", "Casia-D", "casia_image_feature.npy"),
+
+        "casia_all_Cfeature.xlsx": os.path.join(os.getcwd(), "Datasets", "Casia-D", "casia_all_Combine_feature.xlsx"),
+        "casia_image_Cfeature.npy": os.path.join(os.getcwd(), "Datasets", "Casia-D", "casia_image_Combine_feature.npy"),
 
         "casia_deep_feature": os.path.join(os.getcwd(), "Datasets", "Casia-D", "deep_features"),
 
