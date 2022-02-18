@@ -11,7 +11,7 @@ configs = {
         "image_feature_name": "P100", # CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100, tile, fusion
         "Handcrafted_feature_name": "all", # "all", "GRF_HC", "COA_HC", "GRF", "COA", "wt_COA",  ## todo: "wt_GRF"
         
-        "template_selection_method": "DEND", # None, DEND, MDIST, Random
+        "template_selection_method": "None", # None, DEND, MDIST, Random
         "template_selection_k_cluster": 200,
     },
 
@@ -20,7 +20,7 @@ configs = {
     },
 
     "Pipeline": {
-        "classifier": "Template_Matching_classifier", # knn_classifier   svm_classifier   Template_Matching_classifier
+        "classifier": "KNN", # knn_classifier   svm_classifier   Template_Matching_classifier
         "persentage": 0.95,
         "normilizing": "z-score",
         "test_ratio": 5,
@@ -30,8 +30,16 @@ configs = {
         "random_state": 42,
         "verbose": False,
 
-        "Debug": True,
-        "Debug_N": 20,
+        "balance_training": True,
+        "training_ratio": 100,
+
+
+        # "Debug": True,
+        "known_imposter": 60,
+
+        "unknown_imposter": 0,
+        "imposter_samples": 0,
+
         "min_number_of_sample": 30
     },
     "CNN": {
@@ -50,21 +58,23 @@ configs = {
         "verbose": True,
     },
     "classifier":{
-        "Template_Matching": {
+        "TM": {
             "mode": "dist",
             "criteria": "min",
-            "random_runs": 10,
+            "metric": "euclidean",
+            "weights": "uniform",
+            "random_runs": 25,
             "score": "A", # A = np.power(distance+1, -1) or B = 1/np.exp(distance)
             "verbose": True,
         },
         "SVM": {
             "kernel": "linear",
-            "random_runs": 10,
+            "random_runs": 25,
             "verbose": True,
         },
         "KNN": {
             "n_neighbors": 3,
-            "random_runs": 10,
+            "random_runs": 25,
             "metric": "euclidean",
             "weights": "uniform",
             "verbose": True,

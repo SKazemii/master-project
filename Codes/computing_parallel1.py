@@ -45,7 +45,7 @@ from tensorflow import keras
 
 SLURM_JOBID = str(os.environ.get('SLURM_JOBID', default=os.getpid()))
 
-import extracting_deep_featrues as extract
+# import extracting_deep_featrues as extract
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))    
 from MLPackage import config as cfg
 from MLPackage import Utilities as util
@@ -128,95 +128,98 @@ def main():
 
 
     test = os.environ.get('SLURM_JOB_NAME',default="Mode_11")
-    for test in ["Mode_11", "Mode_12", "Mode_13"]:
+    for test in ["Mode_2"]:#["Mode_1", "Mode_2", "Mode_3"]:
         logger.info(f"test name: {test}")
 
 
-        if test=="Mode_11": # image features second pipeline
-            # p0 = [(5,5), (5,20), (5,15), (5,10), (10,5), (15,5), (20,5), (10,15), (15,10), (10,10)]
+        if test=="Mode_1": # image features second pipeline
             p0 = [(i,j) for i in range(3,30,3) for j in range(3,30,3) if i+j<=30]
-          
-            p1 = ["Template_Matching_classifier", "knn_classifier", "svm_classifier"]
+            p1 = ["TM", "KNN"]
             p2 = ["P100"]
+            p3 = [10]
+            space = list(product(p0, p1, p2, p3))
+
+        elif test=="Mode_2": # handcrafted features first pipeline
+            p0 = [(i,9) for i in range(3,22,3) ]
+            p1 = ["TM", "KNN"]
+            p2 = [1, 2, 5, 10, 50, 100]
             space = list(product(p0, p1, p2))
 
-        elif test=="Mode_12": # handcrafted features first pipeline
-            # p0 = [(5,5), (5,20), (5,15), (5,10), (10,5), (15,5), (20,5), (10,15), (15,10), (10,10)]
+        elif test=="Mode_3": # PT features third pipeline
             p0 = [(i,j) for i in range(3,30,3) for j in range(3,30,3) if i+j<=30]
-
-            p1 = ["svm_classifier", "Template_Matching_classifier", "knn_classifier", ]
-            space = list(product(p0, p1))
-
-        elif test=="Mode_13": # PT features third pipeline
-            # p0 = [(5,5), (5,20), (5,15), (5,10), (10,5), (15,5), (20,5), (10,15), (15,10), (10,10)]
-            p0 = [(i,j) for i in range(3,30,3) for j in range(3,30,3) if i+j<=30]
-
-            p1 = ["Template_Matching_classifier", "knn_classifier", "svm_classifier"]
+            p1 = ["TM", "KNN"]
             p2 = ["resnet50.ResNet50"]#, "vgg16.VGG16", "efficientnet.EfficientNetB0", "mobilenet.MobileNet"] # , "resnet50.ResNet50"
+            p3 = [10]
+            space = list(product(p0, p1, p2, p3))
+
+        elif test=="Mode_4": 
+            p0 = [(i,j) for i in range(2,30,9) for j in range(2,30,9)]
+            p1 = ["SVM", "KNN"]
+            p2 = [10]
             space = list(product(p0, p1, p2))
+
+        elif test=="Mode_5": 
+            pass
+
+        elif test=="Mode_6": 
+            pass
 
         for idx, parameters in enumerate(space):
             logger.info(f"[step {idx+1} out of {len(space)}], parameters: {parameters}")
             configs = copy.deepcopy(cfg.configs)
 
-            if test=="Mode_13": # PT features third pipeline
+            if test=="Mode_4": # handcrafted features first pipeline
+                configs["Pipeline"]["classifier"] = parameters[1]
+                configs["Pipeline"]["test_ratio"] = 9 #parameters[0][1]
+                configs["Pipeline"]["balance_training"] = True
+                configs["Pipeline"]["training_ratio"] = parameters[2]
+                configs["Pipeline"]["known_imposter"] = parameters[0][1]
+                configs["Pipeline"]["unknown_imposter"] = parameters[0][0]
+                configs["features"]["category"] = "hand_crafted"
+                configs["features"]["combination"] = True
+                configs['dataset']["dataset_name"] = "casia"
+                configs["Pipeline"]["train_ratio"] = 12 #parameters[0][0]
+                collect_results(util.pipeline(configs))
+            
+            if test=="Mode_3": # PT features third pipeline
                 configs["CNN"]["CNN_type"] = "PT"
                 configs["CNN"]["base_model"] = parameters[2]
                 configs["Pipeline"]["classifier"] = parameters[1]
                 configs["Pipeline"]["test_ratio"] =  parameters[0][1]
                 configs["Pipeline"]["train_ratio"] = parameters[0][0]
+                configs["Pipeline"]["balance_training"] = True
+                configs["Pipeline"]["training_ratio"] = parameters[3]
                 configs["features"]["category"] = "deep"
                 configs["features"]["image_feature_name"] = "P100"
                 configs["features"]["combination"] = True
                 configs["dataset"]["dataset_name"] = "casia"
-
                 collect_results(util.pipeline(configs))
 
-            if test=="Mode_12": # handcrafted features first pipeline
+            if test=="Mode_2": # handcrafted features first pipeline
+                # breakpoint()
                 configs["Pipeline"]["classifier"] = parameters[1]
                 configs["Pipeline"]["test_ratio"] = parameters[0][1]
+                configs["Pipeline"]["balance_training"] = True
+                configs["Pipeline"]["training_ratio"] = parameters[2]
                 configs["features"]["category"] = "hand_crafted"
                 configs["features"]["combination"] = True
                 configs['dataset']["dataset_name"] = "casia"
                 configs["Pipeline"]["train_ratio"] = parameters[0][0]
                 collect_results(util.pipeline(configs))
 
-            if test=="Mode_11": # image features second pipeline
+            if test=="Mode_1": # image features second pipeline
                 configs["features"]["image_feature_name"] = parameters[2]
                 configs["features"]["combination"] = True
                 configs["Pipeline"]["classifier"] = parameters[1]
                 configs["Pipeline"]["test_ratio"] = parameters[0][1]
+                configs["Pipeline"]["balance_training"] = True
+                configs["Pipeline"]["training_ratio"] = parameters[3]
                 configs["features"]["category"] = "image"
                 configs['dataset']["dataset_name"] = "casia"
                 configs["Pipeline"]["train_ratio"] = parameters[0][0]
                 collect_results(util.pipeline(configs))
 
-            if test=="Mode_1":
-                configs["CNN"]["image_feature"] = parameters
-                configs['CNN']["dataset"] = "stepscan"
-                util.from_scratch(configs)
-
-            elif test=="Mode_2":
-                configs["CNN"]["base_model"] = parameters[0]
-                configs["CNN"]["image_feature"] = parameters[1]
-                configs["CNN"]["image_size"] =  (60, 40, 3)
-                extract.FS_deep_features(configs)
-
-            elif test=="Mode_3":
-                configs["Pipeline"]["classifier"] = parameters[0]
-                configs["CNN"]["image_feature"] = parameters[1]
-                configs["Pipeline"]["category"] = "deep"
-                configs["Pipeline"]["type"] = "FS"
-                collect_results(util.pipeline(configs))
-
-            elif test=="Mode_4":
-                configs['CNN']["dataset"] = "casia"
-                configs["CNN"]["image_feature"] = parameters[0]
-                configs["CNN"]["test_split"] = parameters[1]
-                a = util.from_scratch_binary(configs)
-                i=i+1
-                a.to_excel(os.path.join(cfg.configs["paths"]["results_dir"], str(i)+'_Mode_4.xlsx'))
-
+            
             elif test=="Mode_5":
                 configs['CNN']["dataset"] = "casia"
                 configs["CNN"]["test_split"] = parameters

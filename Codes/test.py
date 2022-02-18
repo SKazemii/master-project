@@ -19,10 +19,12 @@ import seaborn as sns
 
 
 
-penguins = sns.load_dataset("penguins")
-print(penguins)
-sns.histplot(data=penguins, x="flipper_length_mm", hue="species")
-plt.show()
+# dd = np.load('C:\project\master-project\Datasets\stepscan\Data-barefoot.npy')
+d = {"d":1, "b":2}
+print(d)
+d.b=44
+print(d)
+
 sys.exit()
 
 

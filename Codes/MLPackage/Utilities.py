@@ -1,6 +1,6 @@
 
 from calendar import c
-import logging
+import logging, itertools
 import multiprocessing
 import os
 import pprint
@@ -33,6 +33,7 @@ from sklearn.neighbors import KNeighborsClassifier as knn
 from sklearn.metrics import confusion_matrix
 
 import seaborn as sns
+
 if __name__ != "__main__":
     from MLPackage import config as cfg
     from MLPackage import Features as feat
@@ -40,8 +41,13 @@ elif __name__ == "__main__":
     import config as cfg
                     
 # num_pc = 0
-columnsname_result_DF = ["testID", "subject ID", "direction", "clasifier", "PCA", "num_pc", "classifier_parameters", "normilizing", "feature_type", "test_ratio", "mean(EER)", "Th", 
-                        "mean(acc)", "mean(f1)", "ACC%", "BACC%", "FAR(FPR)", "FRR(FNR)", "CM", "# positive samples training", "# positive samples test", "# negative samples test", "len(FAR)", "len(FRR)"] + ["FAR_" + str(i) for i in range(100)] + ["FRR_" + str(i) for i in range(100)] 
+#    results.append([training_mode, EER, TH, ACC_bd, BACC_bd, CM_bd, FAR_bd, FRR_bd, pos_samples, pos_samples_shape, neg_samples_shape, ACC_ud, BACC_ud, CM_ud, FAR_ud, FRR_ud,])
+
+columnsname_result_DF = ["testID", "subject ID", "direction", "clasifier", "PCA", "num_pc", "classifier_parameters", "normilizing", "feature_type", "test_ratio",
+                        "training_mode", "EER", "TH", "ACC_bd", "BACC_bd", "CM_bd", "FAR_bd", "FRR_bd", "pos_tr_samples", "neg_tr_ratio", "pos_te_samples", "neg_te_samples",  
+                        "ACC_ud", "BACC_ud", "CM_ud", "FAR_ud", "FRR_ud", "known_imposter", "unknown_imposter", "unknown_imposter_samples"]
+                        #  "mean(EER)", "Th", "mean(acc)", "mean(f1)", "ACC%", "BACC%", "FAR(FPR)", "FRR(FNR)", "CM",
+                        #  "# positive samples training", "# positive samples test", "# negative samples test", "len(FAR)", "len(FRR)"] #+ ["FAR_" + str(i) for i in range(100)] + ["FRR_" + str(i) for i in range(100)] 
 time = int(timeit.default_timer() * 1_000_000)
 
 
@@ -84,84 +90,122 @@ logger = create_logger(logging.DEBUG)
 
 
 
-def knn_classifier(**kwargs):
+def ML_classifier(**kwargs):
     global time
     num_pc = kwargs["num_pc"]
     configs = kwargs["configs"]
     x_train = kwargs["x_train"]
+    x_test = kwargs["x_test"]
+    CLS = kwargs["CLS"]
+
+    if CLS=="KNN":
+        classifier = knn(n_neighbors=configs["classifier"]["KNN"]["n_neighbors"], metric=configs["classifier"]["KNN"]["metric"], weights=configs["classifier"]["KNN"]["weights"])
+    elif CLS=="TM":
+        classifier = knn(n_neighbors=1, metric=configs["classifier"]["TM"]["metric"], weights=configs["classifier"]["TM"]["weights"])
+    elif CLS=="SVM":
+        classifier = svm.SVC(kernel=configs["classifier"]["SVM"]["kernel"] , probability=True, random_state=configs["Pipeline"]["random_state"], )
 
 
+    if configs["Pipeline"]["balance_training"] == True:
+        """balanced training"""
+        training_mode = "balanced"
 
+        # FAR = list()
+        # FRR = list()
+        EER = list()
+        TH  = list()
+        for _ in range(configs["classifier"][CLS]["random_runs"]):
+            # breakpoint()
+            DF_temp, pos_number = balancer(x_train, method="Random", ratio=configs["Pipeline"]["training_ratio"])
+            best_model = classifier.fit(DF_temp.iloc[:, :-1].values, DF_temp.iloc[:, -1].values)
+            y_pred_tr = best_model.predict_proba(DF_temp.iloc[:, :-1].values)[:, 1]
 
-    classifier = knn(n_neighbors=configs["classifier"]["KNN"]["n_neighbors"], metric=configs["classifier"]["KNN"]["metric"], weights=configs["classifier"]["KNN"]["weights"])
+            FRR_t, FAR_t = FAR_cal(configs, x_train, y_pred_tr)
+            EER_t, t_idx = compute_eer(FRR_t, FAR_t)
 
+            # FAR.append(FAR_t)
+            # FRR.append(FRR_t)
+            EER.append(EER_t)
+            TH.append(configs["Pipeline"]["THRESHOLDs"][t_idx])
 
-    best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
-    y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
+        # FAR = np.mean(FAR, axis=0)
+        # FRR = np.mean(FRR, axis=0)
+        EER = np.mean(EER)
+        TH  = np.mean(TH)          
 
-    FRR, FAR = FAR_cal(configs, x_train, y_pred_tr)
-    EER, t_idx = compute_eer(FAR, FRR)
+    else:
+        """unbalanced training"""
+        training_mode = "unbalanced"
+        best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
+        y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
+
+        FRR, FAR = FAR_cal(configs, x_train, y_pred_tr)
+        EER, t_idx = compute_eer(FAR, FRR)
+        TH = configs["Pipeline"]["THRESHOLDs"][t_idx]
+
     # plt.plot(np.linspace(0, 1, 100), FRR )
     # plt.plot(np.linspace(0, 1, 100), FAR)
     # plt.show()
     
     # print(best_model.predict_proba(x_train.iloc[:, :-1].values))
 
+
     acc = list()
-    f1 = list()
+    # f1 = list()
     CMM = list()
     BACC = list()
-
-
-    for _ in range(configs["classifier"]["KNN"]["random_runs"]):
-        DF_temp, pos_number = balancer(kwargs["x_test"])
+    for _ in range(configs["classifier"][CLS]["random_runs"]):
+        DF_temp, pos_number = balancer(x_test, method="Random")
 
         y_pred = best_model.predict_proba(DF_temp.iloc[:, :-1].values)[:, 1]
-        y_pred[y_pred >= configs["Pipeline"]["THRESHOLDs"][t_idx]] = 1
-        y_pred[y_pred < configs["Pipeline"]["THRESHOLDs"][t_idx]] = 0
-
-        # print(best_model.predict_proba(DF_temp.iloc[:, :-1].values))
-        # # 
-        # breakpoint()
+        y_pred[y_pred >= TH ] = 1
+        y_pred[y_pred <  TH ] = 0
 
         acc.append( accuracy_score(DF_temp.iloc[:,-1].values, y_pred)*100 )
-        f1.append(  f1_score(DF_temp.iloc[:,-1].values, y_pred)*100 )
+        # f1.append(  f1_score(DF_temp.iloc[:,-1].values, y_pred)*100 )
         CM = confusion_matrix(DF_temp.iloc[:,-1].values, y_pred)
         spec = (CM[0,0]/(CM[0,1]+CM[0,0]+1e-33))*100
         sens = (CM[1,1]/(CM[1,0]+CM[1,1]+1e-33))*100
         BACC.append( (spec + sens)/2 )
         CMM.append(CM)
-    CM = np.array(CMM).sum(axis=0) 
     
-    # breakpoint()
-
-    y_pred = best_model.predict_proba(kwargs["x_test"].iloc[:, :-1].values)[:, 1]
-    y_pred[y_pred >= configs["Pipeline"]["THRESHOLDs"][t_idx]] = 1
-    y_pred[y_pred < configs["Pipeline"]["THRESHOLDs"][t_idx]] = 0
-
-    ACC = accuracy_score(kwargs["x_test"].iloc[:,-1].values, y_pred)*100
-
-    breakpoint()
-    scorehist(kwargs, configs, x_train, y_pred_tr, t_idx, y_pred)
-    # metrices = {"ACC%": ACC,
-    #             "BACC%": BACC,
-    #             "FAR": CM[0,1]/CM[0,:].sum(),
-    #             "FRR": CM[1,0]/CM[1,:].sum(),
-    #             "CM": CM }
+    ACC_bd = np.mean(acc)
+    CM_bd = np.array(CMM).sum(axis=0) 
+    BACC_bd = np.mean(BACC)
+    FAR_bd = CM_bd[0,1]/CM_bd[0,:].sum()
+    FRR_bd = CM_bd[1,0]/CM_bd[1,:].sum()
     
+    
+    pos_te_samples = x_test[x_test["binary_labels"]==1].shape[0]
+    neg_te_samples = x_test[x_test["binary_labels"]==0].shape[0]
+    pos_tr_samples = x_train[x_train["binary_labels"]==1].shape[0]
+    neg_tr_ratio = configs["Pipeline"]["training_ratio"]
+
+    y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
+    # plot_cm(kwargs["x_test"].iloc[:,-1], y_pred, p=configs["Pipeline"]["THRESHOLDs"][t_idx], path=os.path.join(os.getcwd(), "temp", "CM", str(int(kwargs["sub"]))+f"-{pos_samples}({pos_samples_shape}).png"))
+    # plt.figure()
+    # scorehist(kwargs, configs, x_train, y_pred_tr, t_idx, y_pred)
+
+    y_pred[y_pred >= TH ] = 1
+    y_pred[y_pred <  TH ] = 0
+
+    ACC_ud = accuracy_score(x_test.iloc[:,-1].values, y_pred)*100 
+    CM_ud = confusion_matrix(x_test.iloc[:,-1].values, y_pred)
+    spec = (CM_ud[0,0]/(CM_ud[0,1]+CM_ud[0,0]+1e-33))*100
+    sens = (CM_ud[1,1]/(CM_ud[1,0]+CM_ud[1,1]+1e-33))*100
+    BACC_ud = (spec + sens)/2 
+    FAR_ud = CM_ud[0,1]/CM_ud[0,:].sum()
+    FRR_ud = CM_ud[1,0]/CM_ud[1,:].sum()
+
 
     results = list()
 
-    results.append([time, kwargs["sub"], kwargs["dir"], "KNN", configs["Pipeline"]["persentage"], num_pc, configs["classifier"]["KNN"], configs["Pipeline"]["normilizing"], kwargs["feature_type"], configs["Pipeline"]["test_ratio"]])
-    x_test = kwargs["x_test"]
-    pos_samples_shape = x_test[x_test["binary_labels"]==1].shape[0]
-    neg_samples_shape = x_test[x_test["binary_labels"]==0].shape[0]
-    x_train = kwargs["x_train"]
-    pos_samples = x_train[x_train["binary_labels"]==1].shape[0]
-    results.append([EER, configs["Pipeline"]["THRESHOLDs"][t_idx], np.mean(acc), np.mean(f1), ACC, np.mean(BACC), CM[0,1]/CM[0,:].sum(), CM[1,0]/CM[1,:].sum(), CM, pos_samples, pos_samples_shape, neg_samples_shape, len(FAR), len(FRR)])
-
-    results.append(FAR)
-    results.append(FRR)
+    results.append([time, kwargs["sub"], kwargs["dir"], CLS, configs["Pipeline"]["persentage"], num_pc, configs["classifier"][CLS], configs["Pipeline"]["normilizing"], kwargs["feature_type"], configs["Pipeline"]["test_ratio"]])
+    results.append([training_mode, EER, TH, ACC_bd, BACC_bd, CM_bd, FAR_bd, FRR_bd, pos_tr_samples, neg_tr_ratio, pos_te_samples, neg_te_samples, ACC_ud, BACC_ud, CM_ud, FAR_ud, FRR_ud,])
+    results.append([configs["Pipeline"]["known_imposter"], configs["Pipeline"]["unknown_imposter"], configs["Pipeline"]["imposter_samples"]])
+    # results.append([len(FAR), len(FRR)])
+    # results.append(FAR)
+    # results.append(FRR)
 
     results = [val for sublist in results for val in sublist]
     return results
@@ -238,13 +282,16 @@ def svm_classifier(**kwargs):
     
     #breakpoint()
     y_pred = classifier.predict_proba(kwargs["x_test"].iloc[:, :-1].values)[:, 1]
+    
+    scorehist(kwargs, configs, x_train, y_pred_tr, t_idx, y_pred)
+    breakpoint()
+
     y_pred[y_pred >= configs["Pipeline"]["THRESHOLDs"][t_idx]] = 1
     y_pred[y_pred < configs["Pipeline"]["THRESHOLDs"][t_idx]] = 0
     ACC = accuracy_score(kwargs["x_test"].iloc[:,-1].values, y_pred)*100
     # breakpoint()
 
-    breakpoint()
-    scorehist(kwargs, configs, x_train, y_pred_tr, t_idx, y_pred)
+    
 
 
     results = list()
@@ -262,16 +309,17 @@ def svm_classifier(**kwargs):
     results = [val for sublist in results for val in sublist]
     return results
 
+
 def scorehist(kwargs, configs, x_train, y_pred_tr, t_idx, y_pred):
+
     train_scores = pd.DataFrame([x_train.iloc[:, -1].map(lambda x: "training - Imposter" if x==0 else "training - claimed").values, y_pred_tr], index=["y_true", "y_pred"]).T
-    
     test_scores = pd.DataFrame([kwargs["x_test"].iloc[:, -1].map(lambda x: "test - Imposter" if x==0 else "test - claimed").values, y_pred], index=["y_true", "y_pred"]).T
 
     scores = pd.concat((train_scores,test_scores), axis=0).reset_index()
-    sns.color_palette("Paired")
+    sns.color_palette("Paired", 4)
 
-    sns.histplot(data=scores, x="y_pred", hue="y_true", bins=50, stat="percent", multiple="dodge", palette="Paired")
-    plt.plot([configs["Pipeline"]["THRESHOLDs"][t_idx], configs["Pipeline"]["THRESHOLDs"][t_idx]], [0,33] , 'b--')
+    sns.histplot(data=scores, x="y_pred", hue="y_true", bins=100, stat="percent", multiple="dodge", element="step")
+    plt.plot([configs["Pipeline"]["THRESHOLDs"][t_idx], configs["Pipeline"]["THRESHOLDs"][t_idx]], [0,33] , 'k--')
     plt.text(configs["Pipeline"]["THRESHOLDs"][t_idx], 33 , f'Threshold = {round(configs["Pipeline"]["THRESHOLDs"][t_idx], 2)}')#Marker="*", color="red")
 
     plt.show()
@@ -349,29 +397,30 @@ def Template_Matching_classifier(**kwargs):
     distModel1 , distModel2 = compute_score_matrix(pos_samples.iloc[:, :-1].values, kwargs["x_test"].iloc[:, :-1].values, mode=configs["classifier"]["Template_Matching"]["mode"], score=configs["classifier"]["Template_Matching"]["score"])
     Model_client, Model_test = model(distModel1, distModel2, criteria=configs["classifier"]["Template_Matching"]["criteria"], score=configs["classifier"]["Template_Matching"]["score"])
     y_pred = np.zeros((Model_test.shape))
-    y_pred[y_pred >= configs["Pipeline"]["THRESHOLDs"][t_idx]] = 1
+    y_pred[Model_test >= configs["Pipeline"]["THRESHOLDs"][t_idx]] = 1
     ACC = accuracy_score(kwargs["x_test"].iloc[:,-1].values, y_pred)*100
+
+
 
 
     breakpoint()
     distModel1 , distModel2 = compute_score_matrix(pos_samples.iloc[:, :-1].values, kwargs["x_train"].iloc[:, :-1].values, mode=configs["classifier"]["Template_Matching"]["mode"], score=configs["classifier"]["Template_Matching"]["score"])
     Model_client_tr, Model_test_tr = model(distModel1, distModel2, criteria=configs["classifier"]["Template_Matching"]["criteria"], score=configs["classifier"]["Template_Matching"]["score"])
-    y_pred_tr = np.zeros((Model_test_tr.shape))
-    y_pred_tr[y_pred_tr >= configs["Pipeline"]["THRESHOLDs"][t_idx]] = 1
-    
-    train_scores = pd.DataFrame([kwargs["x_train"].iloc[:, -1].map(lambda x: "training - Imposter" if x==0 else "training - claimed").values, y_pred_tr], index=["y_true", "y_pred"]).T
-    
-    test_scores = pd.DataFrame([kwargs["x_test"].iloc[:, -1].map(lambda x: "test - Imposter" if x==0 else "test - claimed").values, y_pred], index=["y_true", "y_pred"]).T
-
-    scores = pd.concat((train_scores, test_scores), axis=0).reset_index()
-    sns.color_palette("Paired")
-
-    sns.histplot(data=scores, x="y_pred", hue="y_true", bins=50, stat="percent", multiple="dodge", palette="Paired")
-    plt.plot([configs["Pipeline"]["THRESHOLDs"][t_idx], configs["Pipeline"]["THRESHOLDs"][t_idx]], [0,33] , 'b--')
+    train_scores = pd.DataFrame([kwargs["x_train"].iloc[:, -1].map(lambda x: "training - Imposter" if x==0 else "training - claimed").values, Model_test_tr], index=["y_true", "y_pred"]).T
+    test_scores = pd.DataFrame([kwargs["x_test"].iloc[:, -1].map(lambda x: "test - Imposter" if x==0 else "test - claimed").values, Model_test], index=["y_true", "y_pred"]).T
+    scores = pd.concat((train_scores, test_scores), axis=0).reset_index().drop("index", axis=1)
+    scores["y_pred"] = scores["y_pred"].map(lambda x: x[0])
+    sns.color_palette("Paired", 4)
+    sns.histplot(data=scores, x="y_pred", hue="y_true", bins=100, stat="percent", multiple="dodge", element="step")
+    plt.plot([configs["Pipeline"]["THRESHOLDs"][t_idx], configs["Pipeline"]["THRESHOLDs"][t_idx]], [0,33] , 'k--')
     plt.text(configs["Pipeline"]["THRESHOLDs"][t_idx], 33 , f'Threshold = {round(configs["Pipeline"]["THRESHOLDs"][t_idx], 2)}')#Marker="*", color="red")
-
     plt.show()
-    
+
+
+
+
+
+
     results = list()
 
     results.append([time, kwargs["sub"], kwargs["dir"], "Template_Matching", configs["Pipeline"]["persentage"], num_pc, configs["classifier"]["Template_Matching"], configs["Pipeline"]["normilizing"], kwargs["feature_type"], configs["Pipeline"]["test_ratio"]])
@@ -406,9 +455,14 @@ def plot_eer(FAR, FRR, path=os.getcwd()):
     # return eer, min_index
 
 
-def balancer(DF):
+def balancer(DF, method="random", ratio=1): # None, DEND, MDIST, Random
     pos_samples = DF[DF["binary_labels"]==1]
-    neg_samples = DF[DF["binary_labels"]==0].sample(n = pos_samples.shape[0])#, random_state=cfg.config["Pipeline"]["random_state"])
+    n = pos_samples.shape[0]
+    neg_samples = DF[DF["binary_labels"]==0]#.sample()#, random_state=cfg.config["Pipeline"]["random_state"])
+    neg_samples = template_selection(neg_samples, 
+                                    method=method, 
+                                    k_cluster=n*ratio, 
+                                    verbose=False)
     DF_balanced = pd.concat([pos_samples, neg_samples])
     return DF_balanced, pos_samples.shape[0]
 
@@ -495,23 +549,31 @@ def pipeline(configs):
             DF_features_all["left(0)/right(1)"]=2
 
 
+    # if configs["Pipeline"]["Debug"]==True: 
+    # Deviding into unknown imposter and known imposters
+    subjects, samples = np.unique(DF_features_all["subject ID"].values, return_counts=True)
 
-    if configs["Pipeline"]["Debug"]==True: 
-        subjects, samples = np.unique(DF_features_all["subject ID"].values, return_counts=True)
+    ss = [a[0] for a in list(zip(subjects, samples)) if a[1]>=configs["Pipeline"]["min_number_of_sample"]]
 
-        s = [a[0] for a in list(zip(subjects, samples)) if a[1]>=configs["Pipeline"]["min_number_of_sample"]]
-        subjects = s[:configs["Pipeline"]["Debug_N"]] 
+    known_imposter = ss[:configs["Pipeline"]["known_imposter"]] 
+    unknown_imposter = ss[configs["Pipeline"]["known_imposter"]:configs["Pipeline"]["known_imposter"]+configs["Pipeline"]["unknown_imposter"]] 
 
-        DF_features_all =  DF_features_all[DF_features_all["subject ID"].isin(subjects)]
+    DF_features_all_unknown_imposter =  DF_features_all[DF_features_all["subject ID"].isin(unknown_imposter)]
+    DF_features_all =  DF_features_all[DF_features_all["subject ID"].isin(known_imposter)]
         
-    DF_features = extracting_features(DF_features_all, feature_type)
+    
+    
+    
+    
+    DF_features, DF_features_unknown_imposter = extracting_features(DF_features_all, DF_features_all_unknown_imposter, feature_type)
 
     results = list()
     
 
-    for idx_s, subject in enumerate(subjects):
-        if subject in [86, 12]: continue
-        
+    for idx_s, subject in enumerate(known_imposter):
+        # if subject in [86, 12]: continue
+        # if subject != 4: continue
+
         
         if (idx_s % 10) == 0:
             logger.info("--------------->> Subject Number: {} [out of {}]".format(idx_s, len(subjects)))
@@ -529,8 +591,11 @@ def pipeline(configs):
 
             if configs["features"]["combination"]==False:
                 DF_side = DF_features[DF_features["left(0)/right(1)"] == idx]
+                DF_side_im = DF_features_unknown_imposter[DF_features_unknown_imposter["left(0)/right(1)"] == idx]
             else:
                 DF_side = DF_features[DF_features["left(0)/right(1)"] == 2]
+                DF_side_im = DF_features_unknown_imposter[DF_features_unknown_imposter["left(0)/right(1)"] == 2]
+
         
             DF_positive_samples = DF_side[DF_side["subject ID"] == subject]
             DF_negative_samples = DF_side[DF_side["subject ID"] != subject]
@@ -540,36 +605,23 @@ def pipeline(configs):
             DF_positive_samples = DF_positive_samples.drop(DF_positive_samples_train.index)
             DF_positive_samples_test  = DF_positive_samples.sample(n = test_ratio, replace = False, random_state=configs["Pipeline"]["random_state"])
 
-            DF_negative_samples_test  = DF_negative_samples.sample(frac = .5, replace = False, random_state=configs["Pipeline"]["random_state"])
+            DF_negative_samples_test  = DF_negative_samples.sample(frac = .75, replace = False, random_state=configs["Pipeline"]["random_state"])
             DF_negative_samples_train = DF_negative_samples.drop(DF_negative_samples_test.index)
             DF_negative_samples_train = DF_negative_samples_train.sample(frac = 1, replace = False, random_state=configs["Pipeline"]["random_state"])
             
-            
-            # DF_positive_samples_test  = DF_positive_samples.sample(n = test_ratio, replace = False, random_state=configs["Pipeline"]["random_state"])
-            # DF_positive_samples_train = DF_positive_samples.drop(DF_positive_samples_test.index)
-            # DF_positive_samples_train = DF_positive_samples_train.sample(n = train_ratio, replace = False, random_state=configs["Pipeline"]["random_state"])
-
-            # DF_negative_samples_test  = DF_negative_samples.sample(frac = .5, replace = False, random_state=configs["Pipeline"]["random_state"])
-            # DF_negative_samples_train = DF_negative_samples.drop(DF_negative_samples_test.index)
-            # DF_negative_samples_train = DF_negative_samples_train.sample(frac = 1, replace = False, random_state=configs["Pipeline"]["random_state"])
 
 
-            # print(DF_positive_samples_train.sort_index().head(10))
-            # # print(DF_negative_samples_train.sort_index().head(10))
-            # logger.info("Done!!")
-            # sys.exit()
-
+            DF_unknown_imposter = DF_side_im.groupby('subject ID', group_keys=False).apply(lambda x: x.sample(configs["Pipeline"]["imposter_samples"]))
             
             df_train = pd.concat([DF_positive_samples_train, DF_negative_samples_train])
-            df_test = pd.concat([DF_positive_samples_test, DF_negative_samples_test])
+            df_test = pd.concat([DF_positive_samples_test, DF_negative_samples_test, DF_unknown_imposter])
+
 
             Scaled_train, Scaled_test = scaler(normilizing, df_train, df_test)
         
 
-            (DF_features_PCA_train, DF_features_PCA_test, num_pc) = projector(persentage, 
-                                                                            feature_type, 
-                                                                            Scaled_train, 
-                                                                            Scaled_test)
+            (DF_features_PCA_train, DF_features_PCA_test, num_pc) = projector(persentage, feature_type, Scaled_train, Scaled_test)
+
 
             DF_positive_samples_train = DF_features_PCA_train[DF_features_PCA_train["subject ID"] == subject]
             DF_negative_samples_train = DF_features_PCA_train[DF_features_PCA_train["subject ID"] != subject]
@@ -581,10 +633,10 @@ def pipeline(configs):
             
 
             
-            DF_negative_samples_train = template_selection(DF_negative_samples_train, 
-                                                           method=configs["features"]["template_selection_method"], 
-                                                           k_cluster=configs["features"]["template_selection_k_cluster"], 
-                                                           verbose=False)
+            # DF_negative_samples_train = template_selection(DF_negative_samples_train, 
+            #                                                method=configs["features"]["template_selection_method"], 
+            #                                                k_cluster=configs["features"]["template_selection_k_cluster"], 
+            #                                                verbose=False)
 
             DF_positive_samples_train["binary_labels"] = 1
             DF_negative_samples_train["binary_labels"] = 0
@@ -616,8 +668,9 @@ def pipeline(configs):
             else:
                 temp1=feature_type
 
-
-            result = eval(classifier)(x_train=x_train, 
+            
+            result = ML_classifier(CLS=configs["Pipeline"]["classifier"],
+                                x_train=x_train, 
                                 x_test=x_test, 
                                 sub=subject, 
                                 dir=direction,
@@ -637,26 +690,33 @@ def pipeline(configs):
     return pd.DataFrame(results, columns=columnsname_result_DF)
 
 
-def extracting_features(DF_features_all, feature_type):
+def extracting_features(DF_features_all, DF_features_all_unknown_imposter, feature_type):
     if feature_type in ["deep", "image"]:
-        return DF_features_all
+        return DF_features_all, DF_features_all_unknown_imposter
     elif feature_type == "all": #"all", "GRF_HC", "COA_HC", "GRF", "COA", "wt_GRF", "wt_COA"
         DF_features = DF_features_all.drop(columns=cfg.wt_GRF).copy() #todo  wt_GRF is not working why?
+        DF_features_unknown_imposter = DF_features_all_unknown_imposter.drop(columns=cfg.wt_GRF).copy() #todo  wt_GRF is not working why?
     elif feature_type == "GRF_HC":
         DF_features = DF_features_all.loc[:, cfg.GRF_HC + cfg.label]
+        DF_features_unknown_imposter = DF_features_all_unknown_imposter.loc[:, cfg.GRF_HC + cfg.label]
     elif feature_type == "COA_HC":
         DF_features = DF_features_all.loc[:, cfg.COA_HC + cfg.label]
+        DF_features_unknown_imposter = DF_features_all_unknown_imposter.loc[:, cfg.COA_HC + cfg.label]
     elif feature_type == "GRF":
         DF_features = DF_features_all.loc[:, cfg.GRF + cfg.label]
+        DF_features_unknown_imposter = DF_features_all_unknown_imposter.loc[:, cfg.GRF + cfg.label]
     elif feature_type == "COA":
         DF_features = DF_features_all.loc[:, cfg.COA_RD + cfg.COA_AP + cfg.COA_ML + cfg.label]
+        DF_features_unknown_imposter = DF_features_all_unknown_imposter.loc[:, cfg.COA_RD + cfg.COA_AP + cfg.COA_ML + cfg.label]
     elif feature_type == "wt_GRF":
         DF_features = DF_features_all.loc[:, cfg.wt_GRF + cfg.label]
+        DF_features_unknown_imposter = DF_features_all_unknown_imposter.loc[:, cfg.wt_GRF + cfg.label]
     elif feature_type == "wt_COA":
         DF_features = DF_features_all.loc[:, cfg.wt_COA_RD + cfg.wt_COA_AP + cfg.wt_COA_ML + cfg.label]
+        DF_features_unknown_imposter = DF_features_all_unknown_imposter.loc[:, cfg.wt_COA_RD + cfg.wt_COA_AP + cfg.wt_COA_ML + cfg.label]
     else:
         raise("Could not find the feature_type")
-    return DF_features
+    return DF_features, DF_features_unknown_imposter
 
 
 def projector(persentage, feature_type, Scaled_train, Scaled_test):
@@ -2116,10 +2176,24 @@ def collect_results(result):
 
 
 def main():
-    configs = cfg.configs
-    # configs["Pipeline"]["classifier"] = "knn_classifier"
-    configs = copy.deepcopy(cfg.configs)
-    collect_results(pipeline(configs))
+    
+
+    p0 = [(i,j) for i in range(3,30,3) for j in range(3,30,3) if i+j<=30]
+    p0 = [(i,3) for i in range(3,30,3)]
+
+    p1 = ["KNN", "SVM" ]
+    space = list(itertools.product(p0, p1))
+    for idx, parameters in enumerate(space):
+            logger.info(f"[step {idx+1} out of {len(space)}], parameters: {parameters}")
+            configs = copy.deepcopy(cfg.configs)
+
+            configs["Pipeline"]["classifier"] = parameters[1]
+            configs["Pipeline"]["test_ratio"] = parameters[0][1]
+            configs["features"]["category"] = "hand_crafted"
+            configs["features"]["combination"] = True
+            configs['dataset']["dataset_name"] = "casia"
+            configs["Pipeline"]["train_ratio"] = parameters[0][0]
+            collect_results(pipeline(configs))
     # configs["Pipeline"]["classifier"] = parameters[0]
     
     # configs["CNN"]["test_split"] = parameters[0]

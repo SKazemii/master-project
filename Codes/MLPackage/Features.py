@@ -2,15 +2,75 @@ import numpy as np
 import pandas as pd
 from scipy import ndimage, signal
 import matplotlib.pyplot as plt
-import sys, os, math
+import sys, os, copy, logging, timeit, itertools
 from scipy.spatial.distance import cdist
 
-import pywt
+import pywt, glob
+from pathlib import Path as Pathlb
+import seaborn as sns
+
+import tensorflow as tf
 
 
-from MLPackage import Butterworth
-from MLPackage import convertGS2BW
+from tensorflow.keras import preprocessing, callbacks 
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Dense, GlobalAveragePooling2D, Flatten
 
+
+
+
+if __name__ != "__main__":
+    from MLPackage import config as cfg
+    from MLPackage import Butterworth 
+    from MLPackage import convertGS2BW 
+elif __name__ == "__main__":
+    import Butterworth
+    import convertGS2BW
+    import config as cfg
+
+sns.set()
+
+# sys.path.insert(0, os.path.abspath(os.path.join('..')))
+
+
+project_dir = cfg.configs["paths"]["project_dir"]
+log_path = os.path.join(project_dir, "logs")
+temp_dir = os.path.join(project_dir, "temp")
+
+Pathlb(log_path).mkdir(parents=True, exist_ok=True)
+
+
+
+def create_logger(level):
+    loggerName = Pathlb(__file__).stem
+    Pathlb(log_path).mkdir(parents=True, exist_ok=True)
+    grey = '\x1b[38;21m'
+    blue = '\x1b[38;5;39m'
+    yellow = '\x1b[38;5;226m'
+    red = '\x1b[38;5;196m'
+    bold_red = '\x1b[31;1m'
+    reset = '\x1b[0m'
+
+    logger = logging.getLogger(loggerName)
+    logger.setLevel(level)
+    formatter_colored = logging.Formatter(blue + '[%(asctime)s]-' + yellow + '[%(name)s @%(lineno)d]' + reset + blue + '-[%(levelname)s]' + reset + bold_red + '\t\t%(message)s' + reset, datefmt='%m/%d/%Y %I:%M:%S %p ')
+    formatter = logging.Formatter('[%(asctime)s]-[%(name)s @%(lineno)d]-[%(levelname)s]\t\t%(message)s', datefmt='%m/%d/%Y %I:%M:%S %p ')
+    file_handler = logging.FileHandler( os.path.join(log_path, f"{os.getpid()}_" + loggerName + '_loger.log'), mode = 'w')
+    file_handler.setLevel(level)
+    file_handler.setFormatter(formatter)
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(logging.INFO)
+
+    stream_handler.setFormatter(formatter_colored)
+
+    logger.addHandler(file_handler)
+    logger.addHandler(stream_handler)
+    return logger
+
+logger = create_logger(logging.DEBUG)
+
+
+logger.info("Importing libraries....")
 
 def computeCOPTimeSeries(Footprint3D):
     """
@@ -43,7 +103,7 @@ def computeCOPTimeSeries(Footprint3D):
     return COPTS
 
 
-def computeCOATimeSeries(Footprint3D, Binarize = "otsu", Threshold = 1):
+def computeCOATimeSeries(Footprint3D, Binarize="otsu", Threshold=1):
 
     """
     computeCOATimeSeries(Footprint3D)
@@ -141,7 +201,7 @@ def computeRANGE(COPTS):
     return RANGE
 
 
-def computeMVELO(COPTS, T = 1):
+def computeMVELO(COPTS, T=1):
     """
     computeMVELO(COPTS,varargin)
     MVELO : Mean Velocity
@@ -193,7 +253,7 @@ def computeAREACE(COPTS):
     return AREACE
 
 
-def computeAREASW(COPTS,T = 1):
+def computeAREASW(COPTS, T=1):
     """
     computeAREASW(COPTS, T)
     AREA-SW : Sway area
@@ -210,7 +270,7 @@ def computeAREASW(COPTS,T = 1):
     return AREASW
 
 
-def computeMFREQ(COPTS, T = 1):
+def computeMFREQ(COPTS, T=1):
     """
     computeMFREQ(COPTS, T)
     MFREQ : Mean Frequency
@@ -407,3 +467,391 @@ def prefeatures(Footprint3D, eps=5):
     prefeatures = np.stack((CD, PTI, Tmin, Tmax, P50, P60, P70, P80, P90, P100), axis = -1)
 
     return prefeatures
+
+
+def deep_features(configs):
+    try:
+        logger.info(f"Loading { configs['CNN']['base_model'] } model...")
+        base_model = eval("tf.keras.applications." + configs["CNN"]["base_model"] + "(weights=configs['CNN']['weights'], include_top=configs['CNN']['include_top'])")
+        logger.info("Successfully loaded base model and model...")
+
+    except Exception as e: 
+        base_model = None
+        logger.error("The base model could NOT be loaded correctly!!!")
+        print(e)
+
+
+    base_model.trainable = False
+
+    CNN_name = configs['CNN']["base_model"].split(".")[0]
+    logger.info("MaduleName: {}\n".format(CNN_name))
+    
+    
+    input = tf.keras.layers.Input(shape= (60, 40, 3), dtype = tf.float64, name="original_img") # todo image size
+    x = tf.cast(input, tf.float32)
+    x = eval("tf.keras.applications." + CNN_name + ".preprocess_input(x)")
+    x = base_model(x)
+    output = tf.keras.layers.GlobalMaxPool2D()(x)
+    # output = tf.keras.layers.Flatten()(x)
+
+
+
+    model = tf.keras.Model(input, output, name=CNN_name)
+    tf.keras.utils.plot_model(model, to_file=CNN_name + ".png", show_shapes=True)
+
+    if configs['CNN']["verbose"]==True:
+        model.summary() 
+
+
+
+
+    # AUTOTUNE = tf.data.AUTOTUNE
+
+    # train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
+    # val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+
+
+    # # Image Preprocessing and Loading
+    # ## Loading Images
+
+    if configs['features']["combination"]==True:
+        prefeatures = np.load(configs['paths']["casia_image_Cfeature.npy"]) # todo
+    else:
+        prefeatures = np.load(configs['paths']["casia_image_feature.npy"]) # todo
+
+    logger.info("prefeature shape: {}".format(prefeatures.shape))
+
+
+    maxvalues = [np.max(prefeatures[...,ind]) for ind in range(len(cfg.image_feature_name))]
+
+    for i in range(len(cfg.image_feature_name)):
+        prefeatures[..., i] = prefeatures[..., i]/maxvalues[i]
+
+
+    metadata = np.load(configs['paths']["casia_dataset-meta.npy"])
+    logger.info("metadata shape: {}".format(metadata.shape))
+
+
+    # #CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100
+    logger.info("batch_size: {}".format(configs['CNN']["batch_size"]))
+
+
+    # # Extracting features
+
+
+
+    Deep_features = np.zeros((1, model.layers[-1].output_shape[1]))
+
+    train_ds = tf.data.Dataset.from_tensor_slices((prefeatures, metadata[:,0]))
+    train_ds = train_ds.batch(configs['CNN']["batch_size"])
+
+
+
+
+
+    for image_batch, labels_batch in train_ds:
+
+        if configs['features']["image_feature_name"]=="tile":
+            pass
+            # tile_images = util.tile(image_batch)
+            # feature = model(tile_images)
+            # Deep_features = np.append(Deep_features, feature, axis=0)
+            # if (Deep_features.shape[0]-1) % 256 == 0:
+            #     logger.info(f" ->>> ({os.getpid()}) completed images: " + str(Deep_features.shape[0]))
+        
+        
+        else:
+            image_feature_name = dict(zip(cfg.image_feature_name, range(len(cfg.image_feature_name))))
+            ind = image_feature_name[configs['features']["image_feature_name"]]
+            
+            images = image_batch[...,ind]
+            images = images[...,tf.newaxis]
+            images = np.concatenate((images, images, images), axis=-1)
+
+            feature = model(images)
+            Deep_features = np.append(Deep_features, feature, axis=0)
+            # print(Deep_features.shape[0]-1)
+            if (Deep_features.shape[0]-1) % 256 == 0:
+                logger.info(f" ->>> ({os.getpid()}) completed images: " + str(Deep_features.shape[0]))
+
+
+    Deep_features = Deep_features[1:, :]
+    logger.info(f"Deep features shape: {Deep_features.shape}")
+
+
+
+    
+    # # Saving Featurs
+
+
+    time = int(timeit.default_timer() * 1_000_000)
+
+
+    if configs['features']["combination"]==True:
+        file_name =  "PT_" + CNN_name + '_' + configs['features']["image_feature_name"] +'_Cfeatures.xlsx'
+        saving_path = os.path.join(configs['paths']["casia_deep_feature"], file_name)
+        columnsName = [CNN_name+"_"+str(i) for i in range(Deep_features.shape[1])]  + cfg.label
+        Deep_features = np.concatenate((Deep_features, metadata[:Deep_features.shape[0], 0:2]), axis=1)
+
+        try:
+            df = pd.DataFrame(Deep_features, columns=columnsName)
+            df["left(0)/right(1)"] = 2
+            df.to_excel(saving_path)
+        except Exception as e:
+            print(e)
+            df = pd.DataFrame(Deep_features, columns=columnsName)
+            df["left(0)/right(1)"] = 2
+            df.to_excel(os.path.join(temp_dir, file_name+str(time)+'.xlsx'))
+
+
+    else:   
+        file_name =  "PT_" + CNN_name + '_' + configs['features']["image_feature_name"] +'_features.xlsx'
+        saving_path = os.path.join(configs['paths']["casia_deep_feature"], file_name)
+        columnsName = [CNN_name+"_"+str(i) for i in range(Deep_features.shape[1])]  + cfg.label
+        Deep_features = np.concatenate((Deep_features, metadata[:Deep_features.shape[0], 0:2]), axis=1)
+
+        try:
+            pd.DataFrame(Deep_features, columns=columnsName).to_excel(saving_path)
+        except Exception as e:
+            print(e)
+            pd.DataFrame(Deep_features, columns=columnsName).to_excel(os.path.join(temp_dir, file_name+str(time)+'.xlsx'))
+
+
+def FT_deep_features(configs):
+    a = configs["CNN"]["image_feature"]
+    g = glob.glob(configs["CNN"]["saving_path"]+f"FT*{a}*%.h5", recursive=True)
+    logger.info(g)
+
+    try:
+        logger.info(f"Loading model...")
+        model = tf.keras.models.load_model(g[0])
+        logger.info("Successfully loaded base model and model...")
+
+    except Exception as e: 
+        model = None
+        logger.error("The base model could NOT be loaded correctly!!!")
+        print(e)
+
+    # tf.keras.utils.plot_model(model, to_file=CNN_name + ".png", show_shapes=True)
+
+    if configs['CNN']["verbose"]==True:
+        model.summary() 
+
+
+
+
+    prefeatures = np.load(configs['paths']["casia_image_feature.npy"])
+    logger.info("prefeature shape: {}".format(prefeatures.shape))
+
+
+    maxvalues = [np.max(prefeatures[...,ind]) for ind in range(len(cfg.image_feature_name))]
+
+    for i in range(len(cfg.image_feature_name)):
+        prefeatures[..., i] = prefeatures[..., i]/maxvalues[i]
+
+
+    metadata = np.load(configs['paths']["casia_dataset-meta.npy"])
+    logger.info("metadata shape: {}".format(metadata.shape))
+
+
+    # #CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100
+    logger.info("batch_size: {}".format(configs['CNN']["batch_size"]))
+
+
+    # # Extracting features
+    Deep_features = np.zeros((1, model.layers[-1].output_shape[1]))
+
+    
+
+    AUTOTUNE = tf.data.AUTOTUNE
+
+    train_ds = tf.data.Dataset.from_tensor_slices((prefeatures, metadata[:,0]))
+    train_ds = train_ds.batch(configs['CNN']["batch_size"])
+    train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+
+
+    for image_batch, labels_batch in train_ds:
+
+        if configs['CNN']["image_feature"]=="tile":
+            pass
+            # tile_images = util.tile(image_batch)
+            # feature = model(tile_images)
+            # Deep_features = np.append(Deep_features, feature, axis=0)
+            # if (Deep_features.shape[0]-1) % 256 == 0:
+            #     logger.info(f" ->>> ({os.getpid()}) completed images: " + str(Deep_features.shape[0]))
+        
+        
+        else:
+            image_feature_name = dict(zip(cfg.image_feature_name, range(len(cfg.image_feature_name))))
+            ind = image_feature_name[configs['CNN']["image_feature"]]
+            
+            images = image_batch[...,ind]
+            images = images[...,tf.newaxis]
+            images = np.concatenate((images, images, images), axis=-1)
+
+            feature = model(images)
+            Deep_features = np.append(Deep_features, feature, axis=0)
+            # print(Deep_features.shape[0]-1)
+            if (Deep_features.shape[0]-1) % 256 == 0:
+                logger.info(f" ->>> ({os.getpid()}) completed images: " + str(Deep_features.shape[0]))
+
+
+    Deep_features = Deep_features[1:, :]
+    logger.info(f"Deep features shape: {Deep_features.shape}")
+
+
+
+    
+    # # Saving Featurs
+
+
+    time = int(timeit.default_timer() * 1_000_000)
+
+    file_name =  f'FT_resnet50_{configs["CNN"]["image_feature"]}_features.xlsx'
+    saving_path = os.path.join(configs['paths']["casia_deep_feature"], file_name)
+    columnsName = ["feat_"+str(i) for i in range(Deep_features.shape[1])]  + cfg.label
+    Deep_features = np.concatenate((Deep_features, metadata[:Deep_features.shape[0], 0:2]), axis=1)
+
+    try:
+        pd.DataFrame(Deep_features, columns=columnsName).to_excel(saving_path)
+    except Exception as e:
+        print(e)
+        pd.DataFrame(Deep_features, columns=columnsName).to_excel(os.path.join(temp_dir, file_name+str(time)+'.xlsx'))
+
+
+def FS_deep_features(configs):
+    a = configs["CNN"]["image_feature"]
+    g = glob.glob(configs["CNN"]["saving_path"]+f"/FS_{a}*_best.h5", recursive=True)
+    logger.info(g)
+
+    try:
+        logger.info(f"Loading model...")
+        model = tf.keras.models.load_model(g[0])
+        logger.info("Successfully loaded base model and model...")
+
+    except Exception as e: 
+        model = None
+        logger.error("The base model could NOT be loaded correctly!!!")
+        print(e)
+
+    # tf.keras.utils.plot_model(model, to_file=CNN_name + ".png", show_shapes=True)
+
+    if configs['CNN']["verbose"]==True:
+        model.summary() 
+
+
+
+
+    prefeatures = np.load(configs['paths']["casia_image_feature.npy"])
+    logger.info("prefeature shape: {}".format(prefeatures.shape))
+
+
+    maxvalues = [np.max(prefeatures[...,ind]) for ind in range(len(cfg.image_feature_name))]
+
+    for i in range(len(cfg.image_feature_name)):
+        prefeatures[..., i] = prefeatures[..., i]/maxvalues[i]
+
+
+    metadata = np.load(configs['paths']["casia_dataset-meta.npy"])
+    logger.info("metadata shape: {}".format(metadata.shape))
+
+
+    # #CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100
+    logger.info("batch_size: {}".format(configs['CNN']["batch_size"]))
+
+
+    # # Extracting features
+    Deep_features = np.zeros((1, model.layers[-1].output_shape[1]))
+
+    
+
+    AUTOTUNE = tf.data.AUTOTUNE
+
+    train_ds = tf.data.Dataset.from_tensor_slices((prefeatures, metadata[:,0]))
+    train_ds = train_ds.batch(configs['CNN']["batch_size"])
+    train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+
+
+    for image_batch, labels_batch in train_ds:
+
+        if configs['CNN']["image_feature"]!="tile":
+            
+            image_feature_name = dict(zip(cfg.image_feature_name, range(len(cfg.image_feature_name))))
+            ind = image_feature_name[configs['CNN']["image_feature"]]
+            
+            images = image_batch[...,ind]
+            images = images[...,tf.newaxis]
+            images = np.concatenate((images, images, images), axis=-1)
+
+            feature = model(images)
+            Deep_features = np.append(Deep_features, feature, axis=0)
+            # print(Deep_features.shape[0]-1)
+            if (Deep_features.shape[0]-1) % 256 == 0:
+                logger.info(f" ->>> ({os.getpid()}) completed images: " + str(Deep_features.shape[0]))
+
+
+    Deep_features = Deep_features[1:, :]
+    logger.info(f"Deep features shape: {Deep_features.shape}")
+
+
+
+    
+    # # Saving Featurs
+
+
+    time = int(timeit.default_timer() * 1_000_000)
+
+    file_name =  f'FS_{configs["CNN"]["image_feature"]}_features.xlsx'
+    saving_path = os.path.join(configs['paths']["casia_deep_feature"], file_name)
+    columnsName = ["feat_"+str(i) for i in range(Deep_features.shape[1])]  + cfg.label
+    Deep_features = np.concatenate((Deep_features, metadata[:Deep_features.shape[0], 0:2]), axis=1)
+
+    try:
+        pd.DataFrame(Deep_features, columns=columnsName).to_excel(saving_path)
+    except Exception as e:
+        print(e)
+        pd.DataFrame(Deep_features, columns=columnsName).to_excel(os.path.join(temp_dir, file_name+str(time)+'.xlsx'))
+
+
+def main():
+
+
+    p0  = ["resnet50.ResNet50"] # "vgg16.VGG16", "efficientnet.EfficientNetB0", "mobilenet.MobileNet", 
+    p1 = ["P100"]
+    space = list(itertools.product(p0,p1))
+    
+    ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK', default=4))
+    # ncpus = 4
+
+    # pool = multiprocessing.Pool(processes=ncpus)
+    logger.info(f"CPU count: {ncpus}")
+    for parameters in space:
+        configs = copy.deepcopy(cfg.configs)
+        configs["CNN"]["base_model"] = parameters[0]
+        configs["features"]["image_feature_name"] = parameters[1]
+        # pprint.pprint(configs)
+        # breakpoint()
+        # pool.apply_async(deep_features, args=(configs,))
+        # FT_deep_features(configs)
+        deep_features(configs)
+        
+    # pool.close()
+    # pool.join()
+
+
+
+    logger.info("Done!!!")
+
+
+
+if __name__ == "__main__":
+    logger.info("Starting !!!")
+    tic = timeit.default_timer()
+    main()
+    toc = timeit.default_timer()
+    logger.info("Done ({:2.2f} process time)!!!\n\n\n".format(toc-tic))
+
+
