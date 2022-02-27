@@ -140,9 +140,9 @@ def main():
             space = list(product(p0, p1, p2, p3))
 
         elif test=="Mode_2": # handcrafted features first pipeline
-            p0 = [(i,9) for i in range(3,22,3) ]
+            p0 = [i for i in range(3,27,3)]
             p1 = ["TM", "KNN"]
-            p2 = [1, 2, 5, 10, 50, 100]
+            p2 = [1, 2, 5, 10, 20, 50, 100]
             space = list(product(p0, p1, p2))
 
         elif test=="Mode_3": # PT features third pipeline
@@ -153,13 +153,16 @@ def main():
             space = list(product(p0, p1, p2, p3))
 
         elif test=="Mode_4": 
-            p0 = [(i,j) for i in range(2,30,9) for j in range(2,30,9)]
+            p0 = [(i,j) for i in range(3,30,3) for j in range(2,30,9)]
             p1 = ["SVM", "KNN"]
             p2 = [10]
             space = list(product(p0, p1, p2))
 
         elif test=="Mode_5": 
-            pass
+            p0 = [(i,j) for i in range(3,30,3) for j in range(3,30,3) if i+j<=30]
+            p1 = ["TM", "KNN"]
+            p2 = [10]
+            space = list(product(p0, p1, p2))
 
         elif test=="Mode_6": 
             pass
@@ -168,6 +171,18 @@ def main():
             logger.info(f"[step {idx+1} out of {len(space)}], parameters: {parameters}")
             configs = copy.deepcopy(cfg.configs)
 
+            if test=="Mode_5": # handcrafted features first pipeline
+                # breakpoint()
+                configs["Pipeline"]["classifier"] = parameters[1]
+                configs["Pipeline"]["test_ratio"] = parameters[0][1]
+                configs["Pipeline"]["balance_training"] = True
+                configs["Pipeline"]["training_ratio"] = parameters[2]
+                configs["features"]["category"] = "hand_crafted"
+                configs["features"]["combination"] = True
+                configs['dataset']["dataset_name"] = "casia"
+                configs["Pipeline"]["train_ratio"] = parameters[0][0]
+                collect_results(util.pipeline(configs))
+                
             if test=="Mode_4": # handcrafted features first pipeline
                 configs["Pipeline"]["classifier"] = parameters[1]
                 configs["Pipeline"]["test_ratio"] = 9 #parameters[0][1]
@@ -198,13 +213,13 @@ def main():
             if test=="Mode_2": # handcrafted features first pipeline
                 # breakpoint()
                 configs["Pipeline"]["classifier"] = parameters[1]
-                configs["Pipeline"]["test_ratio"] = parameters[0][1]
-                configs["Pipeline"]["balance_training"] = True
+                # configs["Pipeline"]["test_ratio"] = parameters[0][1]
+                # configs["Pipeline"]["balance_training"] = False
                 configs["Pipeline"]["training_ratio"] = parameters[2]
                 configs["features"]["category"] = "hand_crafted"
                 configs["features"]["combination"] = True
                 configs['dataset']["dataset_name"] = "casia"
-                configs["Pipeline"]["train_ratio"] = parameters[0][0]
+                configs["Pipeline"]["train_ratio"] = parameters[0]
                 collect_results(util.pipeline(configs))
 
             if test=="Mode_1": # image features second pipeline
@@ -220,7 +235,7 @@ def main():
                 collect_results(util.pipeline(configs))
 
             
-            elif test=="Mode_5":
+            elif test=="Mode_55":
                 configs['CNN']["dataset"] = "casia"
                 configs["CNN"]["test_split"] = parameters
                 a = util.from_scratch_binary_3(configs)

@@ -20,10 +20,8 @@ import seaborn as sns
 
 
 # dd = np.load('C:\project\master-project\Datasets\stepscan\Data-barefoot.npy')
-d = {"d":1, "b":2}
-print(d)
-d.b=44
-print(d)
+a=[i for i in range(10)]
+print(a)
 
 sys.exit()
 

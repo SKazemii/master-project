@@ -31,11 +31,11 @@ configs = {
         "verbose": False,
 
         "balance_training": True,
-        "training_ratio": 100,
+        "training_ratio": 2,
 
 
         # "Debug": True,
-        "known_imposter": 60,
+        "known_imposter": 30,
 
         "unknown_imposter": 0,
         "imposter_samples": 0,
@@ -58,23 +58,24 @@ configs = {
         "verbose": True,
     },
     "classifier":{
+        "KFold": 10,
         "TM": {
             "mode": "dist",
             "criteria": "min",
             "metric": "euclidean",
             "weights": "uniform",
-            "random_runs": 25,
+            "random_runs": 10,
             "score": "A", # A = np.power(distance+1, -1) or B = 1/np.exp(distance)
             "verbose": True,
         },
         "SVM": {
             "kernel": "linear",
-            "random_runs": 25,
+            "random_runs": 10,
             "verbose": True,
         },
         "KNN": {
             "n_neighbors": 3,
-            "random_runs": 25,
+            "random_runs": 10,
             "metric": "euclidean",
             "weights": "uniform",
             "verbose": True,
