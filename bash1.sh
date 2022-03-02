@@ -1,14 +1,14 @@
 #!/bin/bash
-#SBATCH --job-name=Mode_8
+#SBATCH --job-name=Mode_2D
 #SBATCH --account=def-escheme
-#SBATCH --mem=12G                                         # increase as needed
+#SBATCH --mem=32G                                         # increase as needed
 #SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=4
-#SBATCH --time=0:09:20                                              # walltime in d-hh:mm or hh:mm:ss format
+#SBATCH --time=5:09:20                                              # walltime in d-hh:mm or hh:mm:ss format
 #SBATCH --output=%x-%J.out
 #SBATCH --mail-user=saeed.kazemi@unb.ca
 #SBATCH --mail-type=ALL
-#SBATCH --gres=gpu:p100:1
+## SBATCH --gres=gpu:p100:1
 
 
 module load python/3.8

@@ -101,11 +101,11 @@ def ML_classifier(**kwargs):
 
 
     if CLS=="KNN":
-        classifier = knn(n_neighbors=configs["classifier"]["KNN"]["n_neighbors"], metric=configs["classifier"]["KNN"]["metric"], weights=configs["classifier"]["KNN"]["weights"])
+        classifier = knn(n_neighbors=configs["classifier"]["KNN"]["n_neighbors"], metric=configs["classifier"]["KNN"]["metric"], weights=configs["classifier"]["KNN"]["weights"], n_jobs=-1)
     elif CLS=="TM":
-        classifier = knn(n_neighbors=1, metric=configs["classifier"]["TM"]["metric"], weights=configs["classifier"]["TM"]["weights"])
+        classifier = knn(n_neighbors=1, metric=configs["classifier"]["TM"]["metric"], weights=configs["classifier"]["TM"]["weights"], n_jobs=-1)
     elif CLS=="SVM":
-        classifier = svm.SVC(kernel=configs["classifier"]["SVM"]["kernel"] , probability=True, random_state=configs["Pipeline"]["random_state"], )
+        classifier = svm.SVC(kernel=configs["classifier"]["SVM"]["kernel"] , probability=True, random_state=configs["Pipeline"]["random_state"], n_jobs=-1)
 
 
     best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
@@ -361,11 +361,20 @@ def pipeline(configs):
                               
                 train = X.iloc[train_index, :]
                 
+
+
                 if train[ train["binary_labels"]== 0.0].shape[0] < (configs["Pipeline"]["training_ratio"]*train_ratio):
                     neg_samples = int(train[ train["binary_labels"]== 0.0].shape[0])
                 else:
                     neg_samples = int(configs["Pipeline"]["training_ratio"]*train_ratio)
                 
+                if train[ train["binary_labels"]== 0.0].shape[0] < test_ratio:
+                    neg_samples = int(train[ train["binary_labels"]== 0.0].shape[0])
+                else:
+                    neg_samples = test_ratio
+
+
+
                 DF_positive_samples_train = train[ train["binary_labels"]== 1.0].sample(n = train_ratio, replace = False, random_state=configs["Pipeline"]["random_state"])
                 DF_negative_samples_train = train[ train["binary_labels"]== 0.0].sample(n = neg_samples, replace = False, random_state=configs["Pipeline"]["random_state"])
                 

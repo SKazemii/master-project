@@ -20,7 +20,7 @@ configs = {
     },
 
     "Pipeline": {
-        "classifier": "KNN", # knn_classifier   svm_classifier   Template_Matching_classifier
+        "classifier": "KNN", # SVM TM
         "persentage": 0.95,
         "normilizing": "z-score",
         "test_ratio": 5,
@@ -30,7 +30,6 @@ configs = {
         "random_state": 42,
         "verbose": False,
 
-        "balance_training": True,
         "training_ratio": 2,
 
 
