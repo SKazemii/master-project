@@ -5,9 +5,54 @@ from scipy.spatial.distance import cdist
 
 from pathlib import Path as Pathlb
 import pywt
-import os
+import os, logging, timeit
+
+# keras imports
+import tensorflow as tf
+
+
+from tensorflow.keras import preprocessing, callbacks 
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Dense, GlobalAveragePooling2D, Flatten
+
+
 import Butterworth
 import convertGS2BW 
+
+project_dir = os.getcwd()
+log_path = os.path.join(project_dir, 'logs')
+
+
+
+def create_logger(level):
+    loggerName = Pathlb(__file__).stem
+    Pathlb(log_path).mkdir(parents=True, exist_ok=True)
+    grey = '\x1b[38;21m'
+    blue = '\x1b[38;5;39m'
+    yellow = '\x1b[38;5;226m'
+    red = '\x1b[38;5;196m'
+    bold_red = '\x1b[31;1m'
+    reset = '\x1b[0m'
+
+    logger = logging.getLogger(loggerName)
+    logger.setLevel(level)
+    formatter_colored = logging.Formatter(blue + '[%(asctime)s]-' + yellow + '[%(name)s @%(lineno)d]' + reset + blue + '-[%(levelname)s]' + reset + bold_red + '\t\t%(message)s' + reset, datefmt='%m/%d/%Y %I:%M:%S %p ')
+    formatter = logging.Formatter('[%(asctime)s]-[%(name)s @%(lineno)d]-[%(levelname)s]\t\t%(message)s', datefmt='%m/%d/%Y %I:%M:%S %p ')
+    file_handler = logging.FileHandler( os.path.join(log_path, loggerName + '_loger.log'), mode = 'w')
+    file_handler.setLevel(level)
+    file_handler.setFormatter(formatter)
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(logging.INFO)
+
+    stream_handler.setFormatter(formatter_colored)
+
+
+    logger.addHandler(file_handler)
+    logger.addHandler(stream_handler)
+    return logger
+logger = create_logger(logging.DEBUG)
+
+
 
 
 class Pipeline:
@@ -158,9 +203,9 @@ class PreFeatures(Pipeline):
         return prefeaturesl
     
     def print_paths(cls):
-        print(cls._h5_path)
-        print(cls._data_path)
-        print(cls._meta_path)
+        logger.info(cls._h5_path)
+        logger.info(cls._data_path)
+        logger.info(cls._meta_path)
 
     def set_dataset_path(cls):
         if cls.dataset_name == "casia":
@@ -179,7 +224,7 @@ class PreFeatures(Pipeline):
             cls._features_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "features")
 
         else:
-            print("The name is not valid!!")
+            logger.error("The name is not valid!!")
         Pathlb(cls._pre_features_path).mkdir(parents=True, exist_ok=True)
         Pathlb(cls._features_path).mkdir(parents=True, exist_ok=True)
 
@@ -194,11 +239,11 @@ class PreFeatures(Pipeline):
 
 
         else:
-            print("The name is not valid!!")
+            logger.error("The name is not valid!!")
 
     def print_dataset(cls):
-        print("Data shape: {}".format(cls._data.shape))
-        print("Metadata shape: {}".format(cls._meta.shape))
+        logger.info("Data shape: {}".format(cls._data.shape))
+        logger.info("Metadata shape: {}".format(cls._meta.shape))
 
     def loaddataset(cls):
         
@@ -234,7 +279,7 @@ class PreFeatures(Pipeline):
             COAs.append(COA)
             GRFs.append(GRF)
             pre_images.append(pre_image)
-        breakpoint()
+
         cls._GRFs = pd.DataFrame(np.array(GRFs), columns=["GRF_"+str(i) for i in range(np.array(GRFs).shape[1])])
         cls._COPs = pd.DataFrame(np.array(COPs), columns=["COP_"+str(i) for i in range(np.array(COPs).shape[1])]) 
         cls._COAs = pd.DataFrame(np.array(COAs), columns=["COA_"+str(i) for i in range(np.array(COAs).shape[1])]) 
@@ -260,7 +305,7 @@ class PreFeatures(Pipeline):
         cls.loaddataset()
 
         try:
-            print("loading pre features!!!")
+            logger.info("loading pre features!!!")
 
             cls._labels = pd.read_excel(os.path.join(cls._pre_features_path, "label.xlsx"), index_col = 0)
 
@@ -269,14 +314,14 @@ class PreFeatures(Pipeline):
             else:
                 cls._COPs = pd.read_excel(os.path.join(cls._pre_features_path, "COP.xlsx"), index_col = 0)
         except:
-            print("extraxting pre features!!!")
+            logger.info("extraxting pre features!!!")
             cls.extracting_pre_features()
     
     def loading_pre_features_COA(cls):
         cls.loaddataset()
 
         try:
-            print("loading pre features!!!")
+            logger.info("loading pre features!!!")
 
             cls._labels = pd.read_excel(os.path.join(cls._pre_features_path, "label.xlsx"), index_col = 0)
 
@@ -287,14 +332,14 @@ class PreFeatures(Pipeline):
                 cls._COAs = pd.read_excel(os.path.join(cls._pre_features_path, "COA.xlsx"), index_col = 0)
                 
         except:
-            print("extraxting pre features!!!")
+            logger.info("extraxting pre features!!!")
             cls.extracting_pre_features()
 
     def loading_pre_features_GRF(cls):
         cls.loaddataset()
 
         try:
-            print("loading pre features!!!")
+            logger.info("loading pre features!!!")
 
             cls._labels = pd.read_excel(os.path.join(cls._pre_features_path, "label.xlsx"), index_col = 0)
 
@@ -305,14 +350,14 @@ class PreFeatures(Pipeline):
                 cls._GRFs = pd.read_excel(os.path.join(cls._pre_features_path, "GRF.xlsx"), index_col = 0)
                 
         except:
-            print("extraxting pre features!!!")
+            logger.info("extraxting pre features!!!")
             cls.extracting_pre_features()
 
     def loading_pre_features_image(cls):
         cls.loaddataset()
 
         try:
-            print("loading pre features!!!")
+            logger.info("loading pre features!!!")
 
             cls._labels = pd.read_excel(os.path.join(cls._pre_features_path, "label.xlsx"), index_col = 0)
 
@@ -321,14 +366,14 @@ class PreFeatures(Pipeline):
             else:
                 cls._pre_images = np.load(os.path.join(cls._pre_features_path, "pre_images.npy"))
         except:
-            print("extraxting pre features!!!")
+            logger.info("extraxting pre features!!!")
             cls.extracting_pre_features()
     
     def loading_pre_features(cls):
         cls.loaddataset()
 
         try:
-            print("loading pre features!!!")
+            logger.info("loading pre features!!!")
 
             cls._labels = pd.read_excel(os.path.join(cls._pre_features_path, "label.xlsx"), index_col = 0)
 
@@ -343,7 +388,7 @@ class PreFeatures(Pipeline):
                 cls._COPs = pd.read_excel(os.path.join(cls._pre_features_path, "COP.xlsx"), index_col = 0)
                 cls._pre_images = np.load(os.path.join(cls._pre_features_path, "pre_images.npy"))
         except:
-            print("extraxting pre features!!!")
+            logger.info("extraxting pre features!!!")
             cls.extracting_pre_features()
 
 
@@ -358,6 +403,12 @@ class Features(PreFeatures):
         "min_value", "min_value_ind", "mean_value", "std_value", "sum_value"]
 
     _pre_image_names = ["CD", "PTI", "Tmin", "Tmax", "P50", "P60", "P70", "P80", "P90", "P100"]
+
+    _CNN_weights = 'imagenet'
+    _CNN_include_top = False
+    _verbose = False
+    _CNN_batch_size = 32
+    _CNN_base_model = ""
 
     def __init__(cls, dataset_name, waveletname="coif1", pywt_mode="constant", wavelet_level=4):
         super().__init__(dataset_name)
@@ -668,7 +719,7 @@ class Features(PreFeatures):
             
     def loading_COA_handcrafted(cls):
         try:
-            print("loading COA features!!!")
+            logger.info("loading COA features!!!")
 
             cls._labels = pd.read_excel(os.path.join(cls._features_path, "label.xlsx"), index_col = 0)
 
@@ -679,7 +730,7 @@ class Features(PreFeatures):
                 cls._COA_handcrafted = pd.read_excel(os.path.join(cls._features_path, "COA_handcrafted.xlsx"), index_col = 0)
 
         except:
-            print("extraxting COA features!!!")
+            logger.info("extraxting COA features!!!")
             cls.extraxting_COA_handcrafted()
 
 
@@ -722,7 +773,7 @@ class Features(PreFeatures):
             
     def loading_COP_handcrafted(cls):
         try:
-            print("loading COP features!!!")
+            logger.info("loading COP features!!!")
 
             cls._labels = pd.read_excel(os.path.join(cls._features_path, "label.xlsx"), index_col = 0)
 
@@ -733,7 +784,7 @@ class Features(PreFeatures):
                 cls._COP_handcrafted = pd.read_excel(os.path.join(cls._features_path, "COP_handcrafted.xlsx"), index_col = 0)
 
         except:
-            print("extraxting COP features!!!")
+            logger.info("extraxting COP features!!!")
             cls.extraxting_COP_handcrafted()
         
 
@@ -759,7 +810,7 @@ class Features(PreFeatures):
             
     def loading_GRF_handcrafted(cls):
         try:
-            print("loading GRF features!!!")
+            logger.info("loading GRF features!!!")
 
             cls._labels = pd.read_excel(os.path.join(cls._features_path, "label.xlsx"), index_col = 0)
 
@@ -770,7 +821,7 @@ class Features(PreFeatures):
                 cls._GRF_handcrafted = pd.read_excel(os.path.join(cls._features_path, "GRF_handcrafted.xlsx"), index_col = 0)
 
         except:
-            print("extraxting GRF features!!!")
+            logger.info("extraxting GRF features!!!")
             cls.extraxting_GRF_handcrafted()
 
 
@@ -796,7 +847,7 @@ class Features(PreFeatures):
             
     def loading_GRF_WPT(cls):
         try:
-            print("loading GRF features!!!")
+            logger.info("loading GRF features!!!")
 
             cls._labels = pd.read_excel(os.path.join(cls._features_path, "label.xlsx"), index_col = 0)
 
@@ -807,7 +858,7 @@ class Features(PreFeatures):
                 cls._GRF_WPT = pd.read_excel(os.path.join(cls._features_path, "GRF_WPT.xlsx"), index_col = 0)
 
         except:
-            print("extraxting GRF features!!!")
+            logger.info("extraxting GRF features!!!")
             cls.extraxting_GRF_WPT()
 
 
@@ -837,7 +888,7 @@ class Features(PreFeatures):
             
     def loading_COP_WPT(cls):
         try:
-            print("loading COP features!!!")
+            logger.info("loading COP features!!!")
 
             cls._labels = pd.read_excel(os.path.join(cls._features_path, "label.xlsx"), index_col = 0)
 
@@ -848,7 +899,7 @@ class Features(PreFeatures):
                 cls._COP_WPT = pd.read_excel(os.path.join(cls._features_path, "COP_WPT.xlsx"), index_col = 0)
 
         except:
-            print("extraxting COP features!!!")
+            logger.info("extraxting COP features!!!")
             cls.extraxting_COP_WPT()
 
 
@@ -878,7 +929,7 @@ class Features(PreFeatures):
             
     def loading_COA_WPT(cls):
         try:
-            print("loading COA features!!!")
+            logger.info("loading COA features!!!")
 
             cls._labels = pd.read_excel(os.path.join(cls._features_path, "label.xlsx"), index_col = 0)
 
@@ -889,53 +940,112 @@ class Features(PreFeatures):
                 cls._COA_WPT = pd.read_excel(os.path.join(cls._features_path, "COA_WPT.xlsx"), index_col = 0)
 
         except:
-            print("extraxting COA features!!!")
+            logger.info("extraxting COA features!!!")
             cls.extraxting_COA_WPT()
 
 
     ## deep
-    def extraxting_pre_image(cls, pre_image_name):
+    def extraxting_deep_features(cls, pre_image_name, CNN_base_model="resnet50.ResNet50"):
+        cls._CNN_base_model = CNN_base_model
+        
+        try:
+            logger.info(f"Loading { CNN_base_model } model...")
+            base_model = eval(f"tf.keras.applications.{CNN_base_model}(weights='{cls._CNN_weights}', include_top={cls._CNN_include_top})")
+            logger.info("Successfully loaded base model and model...")
+
+        except Exception as e: 
+            base_model = None
+            logger.error("The base model could NOT be loaded correctly!!!")
+            print(e)
+
+
+        base_model.trainable = False
+
+        CNN_name = CNN_base_model.split(".")[0]
+        logger.info("MaduleName: {}\n".format(CNN_name))
+        
+        
+        input = tf.keras.layers.Input(shape= (60, 40, 3), dtype = tf.float64, name="original_img") # todo image size
+        x = tf.cast(input, tf.float32)
+        x = eval("tf.keras.applications." + CNN_name + ".preprocess_input(x)")
+        x = base_model(x)
+        output = tf.keras.layers.GlobalMaxPool2D()(x)
+
+        model = tf.keras.Model(input, output, name=CNN_name)
+
+        if cls._verbose==True:
+            model.summary() 
+            tf.keras.utils.plot_model(model, to_file=CNN_name + ".png", show_shapes=True)
+
+
+        logger.info("batch_size: {}".format(cls._CNN_batch_size))
+
+
         if not pre_image_name in cls._pre_image_names:
             raise Exception("Invalid pre image name!!!")
 
-        pre_image = list()
-        for idx in range(cls._pre_images.shape[0]):
 
-            sample = cls._pre_images[idx,..., cls._pre_image_names.index(pre_image_name)]
-            sample = sample.reshape(-1)
-            pre_image.append(sample)
-               
+        i = cls._pre_image_names.index(pre_image_name)
+        maxvalues = np.max(cls._pre_images[..., i])
+        cls._pre_images_norm = cls._pre_images[..., i]/maxvalues
+
+
+        train_ds = tf.data.Dataset.from_tensor_slices((cls._pre_images_norm, cls._labels["ID"] ))
+        train_ds = train_ds.batch(cls._CNN_batch_size)
+
+        Deep_features = np.zeros((1, model.layers[-1].output_shape[1]))
+
+        deep_features = list()
+
+        for image_batch, labels_batch in train_ds:
+           
+            images = image_batch[...,tf.newaxis]
+            images = np.concatenate((images, images, images), axis=-1)
+
+            feature = model(images)
+            Deep_features = np.append(Deep_features, feature, axis=0)
+
+            if (Deep_features.shape[0]-1) % 256 == 0:
+                logger.info(f" ->>> ({os.getpid()}) completed images: " + str(Deep_features.shape[0]))
+
+
+        Deep_features = Deep_features[1:, :]
+        logger.info(f"Deep features shape: {Deep_features.shape}")
+
+        time = int(timeit.default_timer() * 1_000_000)
+        cls._deep_features = pd.DataFrame(Deep_features, columns=['deep_'+str(i) for i in range(Deep_features.shape[1])])
+
+
+        cls.saving_deep_features()
+
+    def saving_deep_features(cls):
         
-        exec(f"cls._{pre_image_name} = pd.DataFrame(np.array(pre_image), columns=['Pixel_'+str(i) for i in range(pre_image[0].shape[0])]) ")
-        cls.saving_pre_image(pre_image_name)
-
-    def saving_pre_image(cls, pre_image_name):
         Pathlb(cls._features_path).mkdir(parents=True, exist_ok=True)
         pd.DataFrame(cls._labels, columns=["ID", "side",]).to_excel(os.path.join(cls._features_path, "label.xlsx"))
 
         if cls._combination==True:
-            exec(f"cls._{pre_image_name}.to_excel(os.path.join(cls._features_path, '{pre_image_name}_c.xlsx'))")
+            cls._deep_features.to_excel(os.path.join(cls._features_path, 'deep_features_c.xlsx'))
             
         else:
-            exec(f"cls._{pre_image_name}.to_excel(os.path.join(cls._features_path, '{pre_image_name}.xlsx'))")
+            cls._deep_features.to_excel(os.path.join(cls._features_path, 'deep_features.xlsx'))
             
-    def loading_pre_image(cls, pre_image_name):
+    def loading_deep_features(cls, pre_image_name, CNN_base_model="resnet50.ResNet50"):
         if not pre_image_name in cls._pre_image_names:
             raise Exception("Invalid pre image name!!!")
         try:
-            print("loading COA features!!!")
+            logger.info("loading COA features!!!")
 
             cls._labels = pd.read_excel(os.path.join(cls._features_path, "label.xlsx"), index_col = 0)
 
             if cls._combination==True:
-                exec(f"cls._{pre_image_name}= pd.read_excel(os.path.join(cls._features_path, '{pre_image_name}_c.xlsx'), index_col = 0)")
+                cls._deep_features = pd.read_excel(os.path.join(cls._features_path, 'deep_features_c.xlsx'), index_col = 0)
 
             else:
-                exec(f"cls._{pre_image_name}= pd.read_excel(os.path.join(cls._features_path, '{pre_image_name}.xlsx'), index_col = 0)")
+                cls._deep_features = pd.read_excel(os.path.join(cls._features_path, 'deep_features.xlsx'), index_col = 0)
 
         except:
-            print("extraxting COA features!!!")
-            cls.extraxting_COA_WPT()
+            logger.info("extraxting COA features!!!")
+            cls.extraxting_deep_features(pre_image_name, CNN_base_model)
 
 
     
@@ -953,7 +1063,7 @@ class Features(PreFeatures):
             pre_image.append(sample)
                
         
-        exec(f"cls._{pre_image_name} = pd.DataFrame(np.array(pre_image), columns=['Pixel_'+str(i) for i in range(pre_image[0].shape[0])]) ")
+        exec(f"cls._{pre_image_name} = pd.DataFrame(np.array(pre_image), columns=['pixel_'+str(i) for i in range(np.array(pre_image).shape[1])]) ")
         cls.saving_pre_image(pre_image_name)
 
     def saving_pre_image(cls, pre_image_name):
@@ -970,7 +1080,7 @@ class Features(PreFeatures):
         if not pre_image_name in cls._pre_image_names:
             raise Exception("Invalid pre image name!!!")
         try:
-            print("loading COA features!!!")
+            logger.info("loading COA features!!!")
 
             cls._labels = pd.read_excel(os.path.join(cls._features_path, "label.xlsx"), index_col = 0)
 
@@ -981,8 +1091,8 @@ class Features(PreFeatures):
                 exec(f"cls._{pre_image_name}= pd.read_excel(os.path.join(cls._features_path, '{pre_image_name}.xlsx'), index_col = 0)")
 
         except:
-            print("extraxting COA features!!!")
-            cls.extraxting_COA_WPT()
+            logger.info("extraxting COA features!!!")
+            cls.extraxting_pre_image(pre_image_name)
 
 
     def pack(cls, list_features):
@@ -996,21 +1106,15 @@ class Features(PreFeatures):
 # D.loading()
 
 F = Features("casia")
-F.loading_pre_features()
-F.extraxting_pre_image("P100")
-breakpoint()
+F.loading_pre_features_image()
 
-F.loading_COA_WPT()
-F.loading_COP_WPT()
-F.loading_GRF_WPT()
-F.loading_GRF_handcrafted()
-F.loading_COP_handcrafted()
-F.loading_COA_handcrafted()
+F.loading_deep_features("P100")
 # F._COA_handcrafted, F._COAs, F._COA_WPT,     
 # F._COP_handcrafted, F._COPs, F._COP_WPT,    
 # F._GRF_handcrafted, F._GRFs, F._GRF_WPT,
 # F._P100, F._CD, F._PTI, F._Tmin, F._Tmax, F._P50, F._P60, F._P70, F._P80, F._P90, F._P100
-X = F.pack([F._COA_handcrafted, F._COAs, F._COA_WPT, F._COP_handcrafted, F._COPs, F._COP_WPT, F._GRF_handcrafted, F._GRFs, F._GRF_WPT,])   
+# F._deep_features
+X = F.pack([F._deep_features,])   
 
 print(X)
 breakpoint()
