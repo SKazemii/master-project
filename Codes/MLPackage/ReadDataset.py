@@ -180,6 +180,9 @@ class PreFeatures(Pipeline):
 
         else:
             print("The name is not valid!!")
+        Pathlb(cls._pre_features_path).mkdir(parents=True, exist_ok=True)
+        Pathlb(cls._features_path).mkdir(parents=True, exist_ok=True)
+
 
     def extracting_labels(cls):
         if cls.dataset_name == "casia":
@@ -231,16 +234,15 @@ class PreFeatures(Pipeline):
             COAs.append(COA)
             GRFs.append(GRF)
             pre_images.append(pre_image)
-
-        cls._GRFs = pd.DataFrame(np.array(GRFs), columns=["GRF_"+str(i) for i in range(cls._GRFs[0].shape[1])])
-        cls._COPs = pd.DataFrame(np.array(COPs), columns=["COP_"+str(i) for i in range(cls._COPs[0].shape[1])]) 
-        cls._COAs = pd.DataFrame(np.array(COAs), columns=["COA_"+str(i) for i in range(cls._COAs[0].shape[1])]) 
+        breakpoint()
+        cls._GRFs = pd.DataFrame(np.array(GRFs), columns=["GRF_"+str(i) for i in range(np.array(GRFs).shape[1])])
+        cls._COPs = pd.DataFrame(np.array(COPs), columns=["COP_"+str(i) for i in range(np.array(COPs).shape[1])]) 
+        cls._COAs = pd.DataFrame(np.array(COAs), columns=["COA_"+str(i) for i in range(np.array(COAs).shape[1])]) 
         cls._pre_images = np.array(pre_images)
 
         cls.saving_pre_features()
 
     def saving_pre_features(cls):
-        Pathlb(cls._pre_features_path).mkdir(parents=True, exist_ok=True)
         pd.DataFrame(cls._labels, columns=["ID", "side",]).to_excel(os.path.join(cls._pre_features_path, "label.xlsx"))
 
         if cls._combination==True:
@@ -254,6 +256,74 @@ class PreFeatures(Pipeline):
             cls._COPs.to_excel(os.path.join(cls._pre_features_path, "COP.xlsx"))
             np.save(os.path.join(cls._pre_features_path, "pre_images.npy"), cls._pre_images)
 
+    def loading_pre_features_COP(cls):
+        cls.loaddataset()
+
+        try:
+            print("loading pre features!!!")
+
+            cls._labels = pd.read_excel(os.path.join(cls._pre_features_path, "label.xlsx"), index_col = 0)
+
+            if cls._combination==True:
+                cls._COPs = pd.read_excel(os.path.join(cls._pre_features_path, "COP_c.xlsx"), index_col = 0)
+            else:
+                cls._COPs = pd.read_excel(os.path.join(cls._pre_features_path, "COP.xlsx"), index_col = 0)
+        except:
+            print("extraxting pre features!!!")
+            cls.extracting_pre_features()
+    
+    def loading_pre_features_COA(cls):
+        cls.loaddataset()
+
+        try:
+            print("loading pre features!!!")
+
+            cls._labels = pd.read_excel(os.path.join(cls._pre_features_path, "label.xlsx"), index_col = 0)
+
+            if cls._combination==True:
+                cls._COAs = pd.read_excel(os.path.join(cls._pre_features_path, "COA_c.xlsx"), index_col = 0)
+                
+            else:
+                cls._COAs = pd.read_excel(os.path.join(cls._pre_features_path, "COA.xlsx"), index_col = 0)
+                
+        except:
+            print("extraxting pre features!!!")
+            cls.extracting_pre_features()
+
+    def loading_pre_features_GRF(cls):
+        cls.loaddataset()
+
+        try:
+            print("loading pre features!!!")
+
+            cls._labels = pd.read_excel(os.path.join(cls._pre_features_path, "label.xlsx"), index_col = 0)
+
+            if cls._combination==True:
+                cls._GRFs = pd.read_excel(os.path.join(cls._pre_features_path, "GRF_c.xlsx"), index_col = 0)
+                
+            else:
+                cls._GRFs = pd.read_excel(os.path.join(cls._pre_features_path, "GRF.xlsx"), index_col = 0)
+                
+        except:
+            print("extraxting pre features!!!")
+            cls.extracting_pre_features()
+
+    def loading_pre_features_image(cls):
+        cls.loaddataset()
+
+        try:
+            print("loading pre features!!!")
+
+            cls._labels = pd.read_excel(os.path.join(cls._pre_features_path, "label.xlsx"), index_col = 0)
+
+            if cls._combination==True:
+                cls._pre_images = np.load(os.path.join(cls._pre_features_path, "pre_images_c.npy"))
+            else:
+                cls._pre_images = np.load(os.path.join(cls._pre_features_path, "pre_images.npy"))
+        except:
+            print("extraxting pre features!!!")
+            cls.extracting_pre_features()
+    
     def loading_pre_features(cls):
         cls.loaddataset()
 
@@ -711,7 +781,7 @@ class Features(PreFeatures):
         for idx, sample in cls._GRFs.iterrows():
             GRF_WPT.append(cls.wt_feature(sample))
                
-        cls._GRF_WPT = pd.DataFrame(np.array(GRF_WPT), columns=["GRF_WPT_"+str(i) for i in range(cls._GRF_WPT.shape[1])]) 
+        cls._GRF_WPT = pd.DataFrame(np.array(GRF_WPT), columns=["GRF_WPT_"+str(i) for i in range(np.array(GRF_WPT).shape[1])]) 
         cls.saving_GRF_WPT()
 
     def saving_GRF_WPT(cls):
@@ -752,7 +822,7 @@ class Features(PreFeatures):
             wt_COA_ML = cls.wt_feature(sample[2,:])
             COP_WPT.append(np.concatenate((wt_COA_RD, wt_COA_AP, wt_COA_ML), axis = 0))
                
-        cls._COP_WPT = pd.DataFrame(np.array(COP_WPT), columns=["COP_WPT_"+str(i) for i in range(cls._COP_WPT.shape[1])])  
+        cls._COP_WPT = pd.DataFrame(np.array(COP_WPT), columns=["COP_WPT_"+str(i) for i in range(np.array(COP_WPT).shape[1])])  
         cls.saving_COP_WPT()
 
     def saving_COP_WPT(cls):
@@ -793,7 +863,7 @@ class Features(PreFeatures):
             wt_COA_ML = cls.wt_feature(sample[2,:])
             COA_WPT.append(np.concatenate((wt_COA_RD, wt_COA_AP, wt_COA_ML), axis = 0))
                
-        cls._COA_WPT = pd.DataFrame(np.array(COA_WPT), columns=["COA_WPT_"+str(i) for i in range(cls._COA_WPT.shape[1])]) 
+        cls._COA_WPT = pd.DataFrame(np.array(COA_WPT), columns=["COA_WPT_"+str(i) for i in range(np.array(COA_WPT).shape[1])]) 
         cls.saving_COA_WPT()
 
     def saving_COA_WPT(cls):
@@ -824,7 +894,52 @@ class Features(PreFeatures):
 
 
     ## deep
+    def extraxting_pre_image(cls, pre_image_name):
+        if not pre_image_name in cls._pre_image_names:
+            raise Exception("Invalid pre image name!!!")
 
+        pre_image = list()
+        for idx in range(cls._pre_images.shape[0]):
+
+            sample = cls._pre_images[idx,..., cls._pre_image_names.index(pre_image_name)]
+            sample = sample.reshape(-1)
+            pre_image.append(sample)
+               
+        
+        exec(f"cls._{pre_image_name} = pd.DataFrame(np.array(pre_image), columns=['Pixel_'+str(i) for i in range(pre_image[0].shape[0])]) ")
+        cls.saving_pre_image(pre_image_name)
+
+    def saving_pre_image(cls, pre_image_name):
+        Pathlb(cls._features_path).mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(cls._labels, columns=["ID", "side",]).to_excel(os.path.join(cls._features_path, "label.xlsx"))
+
+        if cls._combination==True:
+            exec(f"cls._{pre_image_name}.to_excel(os.path.join(cls._features_path, '{pre_image_name}_c.xlsx'))")
+            
+        else:
+            exec(f"cls._{pre_image_name}.to_excel(os.path.join(cls._features_path, '{pre_image_name}.xlsx'))")
+            
+    def loading_pre_image(cls, pre_image_name):
+        if not pre_image_name in cls._pre_image_names:
+            raise Exception("Invalid pre image name!!!")
+        try:
+            print("loading COA features!!!")
+
+            cls._labels = pd.read_excel(os.path.join(cls._features_path, "label.xlsx"), index_col = 0)
+
+            if cls._combination==True:
+                exec(f"cls._{pre_image_name}= pd.read_excel(os.path.join(cls._features_path, '{pre_image_name}_c.xlsx'), index_col = 0)")
+
+            else:
+                exec(f"cls._{pre_image_name}= pd.read_excel(os.path.join(cls._features_path, '{pre_image_name}.xlsx'), index_col = 0)")
+
+        except:
+            print("extraxting COA features!!!")
+            cls.extraxting_COA_WPT()
+
+
+    
+    
     ## images
     def extraxting_pre_image(cls, pre_image_name):
         if not pre_image_name in cls._pre_image_names:
@@ -882,7 +997,7 @@ class Features(PreFeatures):
 
 F = Features("casia")
 F.loading_pre_features()
-F.extraxting_pre_image("CD")
+F.extraxting_pre_image("P100")
 breakpoint()
 
 F.loading_COA_WPT()
@@ -891,7 +1006,12 @@ F.loading_GRF_WPT()
 F.loading_GRF_handcrafted()
 F.loading_COP_handcrafted()
 F.loading_COA_handcrafted()
-X = F.pack([F._COP_handcrafted, F._COPs, F._COP_WPT, F._GRF_handcrafted, F._GRFs, F._GRF_WPT])   # F._COA_handcrafted, F._COAs, F._COA_WPT,     F._COP_handcrafted, F._COPs, F._COP_WPT,    F._GRF_handcrafted, F._GRFs, F._GRF_WPT,
+# F._COA_handcrafted, F._COAs, F._COA_WPT,     
+# F._COP_handcrafted, F._COPs, F._COP_WPT,    
+# F._GRF_handcrafted, F._GRFs, F._GRF_WPT,
+# F._P100, F._CD, F._PTI, F._Tmin, F._Tmax, F._P50, F._P60, F._P70, F._P80, F._P90, F._P100
+X = F.pack([F._COA_handcrafted, F._COAs, F._COA_WPT, F._COP_handcrafted, F._COPs, F._COP_WPT, F._GRF_handcrafted, F._GRFs, F._GRF_WPT,])   
+
 print(X)
 breakpoint()
 
