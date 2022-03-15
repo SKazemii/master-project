@@ -246,8 +246,8 @@ class PreFeatures(object):
 
     def loaddataset(self):
         
-        self._data = np.load(self._data_path)
-        self._meta = np.load(self._meta_path)
+        self._data = np.load(self._data_path, allow_pickle=True)
+        self._meta = np.load(self._meta_path, allow_pickle=True)
         self._image_size = self._data.shape[1:]
         self._samples = self._data.shape[0]
         self.extracting_labels()
@@ -1700,7 +1700,7 @@ class Pipeline(Classifier):
         ###############
         ##  block 1  ##
         ###############
-        if self._GRFs == 0 or self._COPs == 0:
+        if self._GRFs.empty or self._COPs.empty:
             self.loading_pre_features_GRF()
             self.loading_pre_features_COP()
 
@@ -1708,11 +1708,11 @@ class Pipeline(Classifier):
         ###############
         ##  block 2  ##
         ###############
-        if self._GRF_handcrafted == 0 or self._GRF_WPT == 0:
+        if self._GRF_handcrafted.empty or self._GRF_WPT.empty:
             self.loading_GRF_handcrafted()
             self.loading_GRF_WPT()
 
-        if self._COP_handcrafted == 0 or self._COP_WPT == 0:
+        if self._COP_handcrafted.empty or self._COP_WPT.empty:
             self.loading_COP_handcrafted()
             self.loading_COP_WPT()
 
@@ -1730,7 +1730,7 @@ class Pipeline(Classifier):
         ###############
         ##  block 1  ##
         ###############
-        if self._pre_images == 0 or eval(f'self._{Image_feature_name}') == 0:
+        if self._pre_images.empty or eval(f'self._{Image_feature_name}.empty'):
             self.loading_pre_features_image()
 
 
@@ -1849,8 +1849,9 @@ class Pipeline(Classifier):
 
 
 def collect_results(result, col):
+    global t
     time = int(timeit.default_timer() * 1_000)
-    test = os.environ.get('SLURM_JOB_NAME', default="Test_1")
+    test = os.environ.get('SLURM_JOB_NAME', default=t)
 
     excel_path = os.path.join(os.getcwd(), "results", f"Result__{test}.xlsx")
 
@@ -1866,7 +1867,7 @@ def collect_results(result, col):
         Results_DF.to_excel(excel_path[:-5]+str(time)+'.xlsx')
 
 
-
+t = 'P1'
 def main():
 
     P = Pipeline("casia", "knn")
@@ -1912,7 +1913,7 @@ def main():
 
     ######################################################################################################################
     ######################################################################################################################
-    test = os.environ.get('SLURM_JOB_NAME', default='test_1')
+    test = os.environ.get('SLURM_JOB_NAME', default=t)
     logger.info(f'test name: {test}')
 
     ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK', default=4))
@@ -1927,17 +1928,19 @@ def main():
     space = space[:]
 
     for idx, parameters in enumerate(space):
-        logger.info(f'[step {idx+1} out of {len(space)}], parameters: {parameters}')
 
         P._p_training_samples = parameters[0]
         P._train_ratio        = parameters[1]
         P._unknown_imposter   = parameters[2]
 
-        collect_results(P.pipeline_test(), P._col)
-        # collect_results(P.pipeline_1(), P._col) 
+        # collect_results(P.pipeline_test(), P._col)
+        collect_results(P.pipeline_1(), P._col) 
         # collect_results(P.pipeline_2(), P._col)
         # collect_results(P.pipeline_3(), P._col)
         # collect_results(P.pipeline_4(), P._col)
+
+        toc = timeit.default_timer()
+        logger.info(f'[step {idx+1} out of {len(space)}], parameters: {parameters},  process time: {round(toc-tic, 2)}')
 
 
         
