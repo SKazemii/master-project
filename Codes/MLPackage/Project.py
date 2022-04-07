@@ -3,10 +3,11 @@ import numpy as np
 import pandas as pd
 from scipy import ndimage
 from scipy.spatial import distance
+import scipy.io
 
 from pathlib import Path as Pathlb
-import pywt
-import os, logging, timeit, pprint, copy, multiprocessing
+import pywt, sys
+import os, logging, timeit, pprint, copy, multiprocessing, glob
 from itertools import product
 
 # keras imports
@@ -20,10 +21,9 @@ from tensorflow.keras.layers import Input, Dense, GlobalAveragePooling2D, Flatte
 from sklearn.cluster import KMeans
 from sklearn import model_selection
 from sklearn.decomposition import PCA
-from sklearn import preprocessing as prprocessing
+from sklearn import preprocessing as sk_preprocessing
 from sklearn.neighbors import KNeighborsClassifier as knn
 from sklearn import svm
-
 
 from sklearn.metrics import (accuracy_score, confusion_matrix, f1_score,
                              roc_curve)
@@ -31,6 +31,7 @@ from sklearn.metrics import (accuracy_score, confusion_matrix, f1_score,
 
 import Butterworth
 import convertGS2BW 
+import matplotlib.pyplot as plt
 
 project_dir = os.getcwd()
 log_path = os.path.join(project_dir, 'logs')
@@ -69,17 +70,124 @@ logger = create_logger(logging.DEBUG)
 
 
 
-class PreFeatures(object):
-    def __init__( self, dataset_name, combination=True):
+class Database(object):
+    def __init__(self, dataset_name, combination=True):
         self.dataset_name = dataset_name
         self._combination = combination
-        self._test_id = int(timeit.default_timer() * 1_000_000)
         self.set_dataset_path()
-
 
     def load_H5():
         pass
-    
+
+    def print_paths(self):
+        logger.info(self._h5_path)
+        logger.info(self._data_path)
+        logger.info(self._meta_path)
+
+    def set_dataset_path(self):
+        if self.dataset_name == "casia":
+            self._h5_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "footpressures_align.h5")
+            self._data_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "Data-barefoot.npy")
+            self._meta_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "Metadata-barefoot.npy")
+            self._pre_features_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "pre_features")
+            self._features_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "features")
+
+
+        elif self.dataset_name == "stepscan":
+            self._h5_path = os.path.join(os.getcwd(), "Datasets", "stepscan", "footpressures_align.h5")
+            self._data_path = os.path.join(os.getcwd(), "Datasets", "stepscan", "Data-barefoot.npy")
+            self._meta_path = os.path.join(os.getcwd(), "Datasets", "stepscan", "Metadata-barefoot.npy")
+            self._pre_features_path = os.path.join(os.getcwd(), "Datasets", "stepscan", "pre_features")
+            self._features_path = os.path.join(os.getcwd(), "Datasets", "stepscan", "features")
+
+        elif self.dataset_name == "sfootbd":
+            self._h5_path = os.path.join(os.getcwd(), "Datasets", "sfootbd", ".h5")
+            self._mat_path = os.path.join(os.getcwd(), "Datasets", "sfootbd", "SFootBD")
+            self._txt_path = os.path.join(os.getcwd(), "Datasets", "sfootbd", "IndexFiles")
+            self._data_path = os.path.join(os.getcwd(), "Datasets", "sfootbd", "SFootBD", "Data.npy")
+            self._meta_path = os.path.join(os.getcwd(), "Datasets", "sfootbd", "SFootBD", "Meta.npy")
+            self._pre_features_path = os.path.join(os.getcwd(), "Datasets", "sfootbd", "pre_features")
+            self._features_path = os.path.join(os.getcwd(), "Datasets", "sfootbd", "features")
+            if not (os.path.isfile(self._data_path) and os.path.isfile(self._meta_path)):
+                self.mat_to_numpy()
+
+        else:
+            logger.error("The name is not valid!!")
+            sys.exit()
+
+        Pathlb(self._pre_features_path).mkdir(parents=True, exist_ok=True)
+        Pathlb(self._features_path).mkdir(parents=True, exist_ok=True)
+
+    def extracting_labels(self):
+        if self.dataset_name == "casia":
+            self._labels = self._meta[:,0:2]
+
+        elif self.dataset_name == "stepscan":
+            self._labels = self._meta[:,0:2]
+
+        elif self.dataset_name == "sfootbd":
+            g = glob.glob(self._txt_path + "\*.txt", recursive=True)
+            label = list()
+            label1 = list()
+            for i in g:
+                with open(i) as f:
+                    for line in f:
+                        label.append(line.split(" ")[0])
+                        label1.append(line.split(" ")[1][:-1])
+                        
+            file_name = np.load(self._meta_path)
+            lst = list()
+            for i in file_name:
+                ind = label1.index(i[0][:-4])
+                lst.append(int(label[ind]) )
+
+            self._labels = pd.DataFrame(lst, columns=["ID"])
+
+
+        else:
+            logger.error("The name is not valid!!")
+
+    def print_dataset(self):
+        logger.info("Data shape: {}".format(self._data.shape))
+        logger.info("Metadata shape: {}".format(self._meta.shape))
+
+    def mat_to_numpy(self):
+        g = glob.glob(self._mat_path + "\*.mat", recursive=True)
+        data = list()
+        label = list()
+        for i in g:
+            if i.endswith(".mat"):
+                print(i.split("\\")[-1] + " is loading...")
+                temp = scipy.io.loadmat(i)
+
+                X = 2200 - temp['dataL'].shape[0]
+                temp['dataL'] = np.pad(temp['dataL'], ((0,X),(0,0)), 'constant')
+                X = 2200 - temp['dataR'].shape[0]
+                temp['dataR'] = np.pad(temp['dataR'], ((0,X),(0,0)), 'constant')
+
+                temp = np.concatenate((temp['dataL'], temp['dataR']), axis=1)
+                data.append( temp )
+                label.append( i.split("\\")[-1] )
+
+        data = np.array(data)
+        label = np.array(label)
+        label = label[..., np.newaxis]
+        np.save(self._data_path, data)
+        np.save(self._meta_path, label)
+
+    def loaddataset(self):
+        self._data = np.load(self._data_path, allow_pickle=True)
+        self._meta = np.load(self._meta_path, allow_pickle=True)
+        self._sample_size = self._data.shape[1:]
+        self._samples = self._data.shape[0]
+        self.extracting_labels()
+
+
+class PreFeatures(Database):
+    def __init__( self, dataset_name):
+        super().__init__(dataset_name)
+        self._test_id = int(timeit.default_timer() * 1_000_000)
+        
     @staticmethod
     def computeCOPTimeSeries(Footprint3D):
         """
@@ -201,56 +309,6 @@ class PreFeatures(object):
         prefeaturesl = np.stack((CD, PTI, Tmin, Tmax, P50, P60, P70, P80, P90, P100), axis = -1)
 
         return prefeaturesl
-    
-    def print_paths(self):
-        logger.info(self._h5_path)
-        logger.info(self._data_path)
-        logger.info(self._meta_path)
-
-    def set_dataset_path(self):
-        if self.dataset_name == "casia":
-            self._h5_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "footpressures_align.h5")
-            self._data_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "Data-barefoot.npy")
-            self._meta_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "Metadata-barefoot.npy")
-            self._pre_features_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "pre_features")
-            self._features_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "features")
-
-
-        elif self.dataset_name == "stepscan":
-            self._h5_path = os.path.join(os.getcwd(), "Datasets", "stepscan", "footpressures_align.h5")
-            self._data_path = os.path.join(os.getcwd(), "Datasets", "stepscan", "Data-barefoot.npy")
-            self._meta_path = os.path.join(os.getcwd(), "Datasets", "stepscan", "Metadata-barefoot.npy")
-            self._pre_features_path = os.path.join(os.getcwd(), "Datasets", "stepscan", "pre_features")
-            self._features_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "features")
-
-        else:
-            logger.error("The name is not valid!!")
-        Pathlb(self._pre_features_path).mkdir(parents=True, exist_ok=True)
-        Pathlb(self._features_path).mkdir(parents=True, exist_ok=True)
-
-    def extracting_labels(self):
-        if self.dataset_name == "casia":
-            self._labels = self._meta[:,0:2]
-
-
-        elif self.dataset_name == "stepscan":
-            self._labels = self._meta[:,0:2]
-
-
-        else:
-            logger.error("The name is not valid!!")
-
-    def print_dataset(self):
-        logger.info("Data shape: {}".format(self._data.shape))
-        logger.info("Metadata shape: {}".format(self._meta.shape))
-
-    def loaddataset(self):
-        
-        self._data = np.load(self._data_path, allow_pickle=True)
-        self._meta = np.load(self._meta_path, allow_pickle=True)
-        self._image_size = self._data.shape[1:]
-        self._samples = self._data.shape[0]
-        self.extracting_labels()
     
     def extracting_pre_features(self):
         self.loaddataset()
@@ -424,8 +482,8 @@ class PreFeatures(object):
             "number_of_features": self._COPs.shape[1], 
             "number_of_samples": self._COPs.shape[0],           
         } 
-
-
+        self._CNN_image_size = self._pre_images.shape
+        
 
 class Features(PreFeatures):
 
@@ -1025,16 +1083,10 @@ class Features(PreFeatures):
         logger.info("batch_size: {}".format(self._CNN_batch_size))
 
 
-        if not pre_image_name in self._pre_image_names:
-            raise Exception("Invalid pre image name!!!")
+        pre_images_norm = self.normalizing_pre_image(pre_image_name)
 
 
-        i = self._pre_image_names.index(pre_image_name)
-        maxvalues = np.max(self._pre_images[..., i])
-        self._pre_images_norm = self._pre_images[..., i]/maxvalues
-
-
-        train_ds = tf.data.Dataset.from_tensor_slices((self._pre_images_norm, self._labels["ID"] ))
+        train_ds = tf.data.Dataset.from_tensor_slices((pre_images_norm, self._labels["ID"] ))
         train_ds = train_ds.batch(self._CNN_batch_size)
 
         Deep_features = np.zeros((1, model.layers[-1].output_shape[1]))
@@ -1061,6 +1113,15 @@ class Features(PreFeatures):
 
 
         self.saving_deep_features()
+
+    def normalizing_pre_image(self, pre_image_name):
+        if not pre_image_name in self._pre_image_names:
+            raise Exception("Invalid pre image name!!!")
+
+
+        i = self._pre_image_names.index(pre_image_name)
+        maxvalues = np.max(self._pre_images[..., i])
+        return self._pre_images[..., i]/maxvalues
 
     def saving_deep_features(self):
         
@@ -1148,30 +1209,19 @@ class Features(PreFeatures):
             "number_of_features": eval(f"self._{pre_image_name}.shape[1]"), 
             "number_of_samples": eval(f"self._{pre_image_name}.shape[0]"),           
         }
-
-        
-
-    # _feature_sets = ["COA_handcrafted", "COAs", "COA_WPT",     
-    #                 "COP_handcrafted", "COPs", "COP_WPT",    
-    #                 "GRF_handcrafted", "GRFs", "GRF_WPT",
-    #                 "P100", "CD", "PTI", "Tmin", "Tmax", "P50", "P60", "P70", "P80", "P90", "P100",
-    #                 "deep_features",]
-    
-    
+   
     def pack(self, list_features):
         """
         list of features=[
-            # F._COA_handcrafted, F._COAs, F._COA_WPT,     
-            # F._COP_handcrafted, F._COPs, F._COP_WPT,    
-            # F._GRF_handcrafted, F._GRFs, F._GRF_WPT,
-            # F._P100, F._CD, F._PTI, F._Tmin, F._Tmax, F._P50, F._P60, F._P70, F._P80, F._P90, F._P100
-            # F._deep_features
+            ["COA_handcrafted", "COAs", "COA_WPT",     
+             "COP_handcrafted", "COPs", "COP_WPT",    
+             "GRF_handcrafted", "GRFs", "GRF_WPT",
+             "P100", "CD", "PTI", "Tmin", "Tmax", "P50", "P60", "P70", "P80", "P90", "P100",
+             "deep_features",]
         # ]"""
         C = ["self._"+i for i in list_features]
         exec(f"DF_features_all = pd.concat({C} + [self._labels], axis=1)".replace("'", ""))
         return eval("DF_features_all")
-
-
 
     def filtering_subjects_and_samples(self, DF_features_all):
         subjects, samples = np.unique(DF_features_all["ID"].values, return_counts=True)
@@ -1191,7 +1241,6 @@ class Features(PreFeatures):
         DF_unknown_imposter = DF_unknown_imposter.groupby('ID', group_keys=False).apply(lambda x: x.sample(frac=self._number_of_unknown_imposter_samples, replace=False, random_state=self._random_state))
         
         return DF_known_imposter, DF_unknown_imposter
-
 
 
 class Classifier(Features):
@@ -1229,22 +1278,33 @@ class Classifier(Features):
 
         return pd.concat([DF_positive_samples_train, DF_negative_samples_train], axis=0)
     
-    def scaler(self, df_train, df_test):
+    def scaler(self, df_train, df_test, df_test_U):
+
         if self._normilizing == "minmax":
-            scaling = prprocessing.MinMaxScaler()
+            scaling = sk_preprocessing.MinMaxScaler()
 
         elif self._normilizing == "z-score":
-            scaling = prprocessing.StandardScaler()
+            scaling = sk_preprocessing.StandardScaler()
+
+        else:
+            raise KeyError(self._normilizing)
+
 
         Scaled_train = scaling.fit_transform(df_train.iloc[:, :-1])
-        Scaled_test = scaling.transform(df_test.iloc[:, :-1])
+        Scaled_test = scaling.transform(df_test.iloc[:, :-1])            
 
-        Scaled_train = pd.DataFrame(np.concatenate((Scaled_train, df_train.iloc[:, -1:].values), axis = 1), columns = df_train.columns)
-        Scaled_test  = pd.DataFrame(np.concatenate((Scaled_test,  df_test.iloc[:, -1:].values),  axis = 1), columns = df_train.columns)
-
-        return Scaled_train, Scaled_test
+        Scaled_train = pd.DataFrame(np.concatenate((Scaled_train, df_train.iloc[:, -1:].values), axis = 1), columns=df_train.columns)
+        Scaled_test  = pd.DataFrame(np.concatenate((Scaled_test,  df_test.iloc[:, -1:].values),  axis = 1), columns=df_test.columns)
         
-    def projector(self, df_train, df_test, listn):
+        Scaled_test_U = pd.DataFrame(columns=df_test_U.columns)
+       
+        if df_test_U.shape[0] != 0:
+            Scaled_test_U = scaling.transform(df_test_U.iloc[:, :-1])
+            Scaled_test_U  = pd.DataFrame(np.concatenate((Scaled_test_U,  df_test_U.iloc[:, -1:].values),  axis = 1), columns=df_test_U.columns)
+
+        return Scaled_train, Scaled_test, Scaled_test_U
+        
+    def projector(self, df_train, df_test, df_test_U, listn):
         # elif persentage != 1.0:
         #     principal = PCA(svd_solver="full")
         #     PCA_out_train = principal.fit_transform(df_train.iloc[:,:-1])
@@ -1271,10 +1331,11 @@ class Classifier(Features):
 
             df_train.columns = columnsName
             df_test.columns = columnsName
+            df_test_U.columns = columnsName
 
             self._num_pc = num_pc
 
-            return df_train, df_test
+            return df_train, df_test, df_test_U
 
         elif self._persentage != 1.0:
 
@@ -1285,7 +1346,7 @@ class Classifier(Features):
             
                 PCA_out_train = principal.fit_transform(df_train.loc[:, col])
                 PCA_out_test = principal.transform(df_test.loc[:, col])
-
+                
                 variance_ratio = np.cumsum(principal.explained_variance_ratio_)
                 high_var_PC = np.zeros(variance_ratio.shape)
                 high_var_PC[variance_ratio <= self._persentage] = 1
@@ -1295,14 +1356,24 @@ class Classifier(Features):
 
                 exec( f"df_train_pc_{ind} = pd.DataFrame(PCA_out_train[:,:N[ind]], columns = columnsName)" )
                 exec( f"df_test_pc_{ind} = pd.DataFrame(PCA_out_test[:,:N[ind]], columns = columnsName)" )
+                
+                if df_test_U.shape[0] != 0:
+                    PCA_out_test_U = principal.transform(df_test_U.loc[:, col])
+                    exec( f"df_test_U_pc_{ind} = pd.DataFrame(PCA_out_test_U[:,:N[ind]], columns = columnsName)" )
            
             tem = [("df_train_pc_"+str(i)) for i in range(len(listn))] + ['df_train["ID"]']
             exec( f"df_train_pc = pd.concat({tem}, axis=1)".replace("'",""))
             tem = [("df_test_pc_"+str(i)) for i in range(len(listn))] + ['df_test["ID"]']
             exec( f"df_test_pc = pd.concat({tem}, axis=1)".replace("'",""))
+
+            exec( f"df_test_U_pc = pd.DataFrame(columns = columnsName)".replace("'",""))
+            if df_test_U.shape[0] != 0:
+                tem = [("df_test_U_pc_"+str(i)) for i in range(len(listn))] + ['df_test_U["ID"]']
+                exec( f"df_test_U_pc = pd.concat({tem}, axis=1)".replace("'",""))
+
             self._num_pc = np.sum(N)
 
-            return eval("df_train_pc"), eval("df_test_pc")
+            return eval("df_train_pc"), eval("df_test_pc"), eval("df_test_U_pc")
 
     def FXR_calculater(self, x_train, y_pred):
         FRR = list()
@@ -1388,7 +1459,7 @@ class Classifier(Features):
 
         return DF_clustered
 
-    def ML_classifier(self, x_train, x_test):
+    def ML_classifier(self, x_train, x_test, x_test_U):
         
         if self._classifier_name=="knn":
             classifier = knn(n_neighbors=self._KNN_n_neighbors, metric=self._KNN_metric, weights=self._KNN_weights, n_jobs=-1)
@@ -1404,7 +1475,6 @@ class Classifier(Features):
         FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
         EER, t_idx = self.compute_eer(FRR_t, FAR_t)
         TH = self._THRESHOLDs[t_idx]
-
 
 
         acc = list()
@@ -1445,7 +1515,34 @@ class Classifier(Features):
         FAR_ud = CM_ud[0,1]/CM_ud[0,:].sum()
         FRR_ud = CM_ud[1,0]/CM_ud[1,:].sum()
 
-        results = [EER, TH, ACC_bd, BACC_bd, FAR_bd, FRR_bd, ACC_ud, BACC_ud, FAR_ud, FRR_ud,]
+        AUS, FAU = 100, 0
+        AUS_All, FAU_All = 100, 0
+
+
+        if x_test_U.shape[0] != 0:
+
+            AUS, FAU = [], []
+            for _ in range(self._random_runs):
+                numbers = x_test_U.shape[0] if x_test_U.shape[0]<60 else 60
+                temp = x_test_U.sample(n=numbers)
+                y_pred_U = best_model.predict_proba(temp.iloc[:, :-1].values)[:, 1]
+                y_pred_U[y_pred_U >= TH ] = 1.
+                y_pred_U[y_pred_U <  TH ] = 0.
+
+                AUS.append(accuracy_score(temp["ID"].values, y_pred_U)*100 )
+                FAU.append(np.where(y_pred_U==1)[0].shape[0])
+            AUS = np.mean(AUS)
+            FAU = np.mean(FAU)
+
+            y_pred_U = best_model.predict_proba(x_test_U.iloc[:, :-1].values)[:, 1]
+            y_pred_U[y_pred_U >= TH ] = 1.
+            y_pred_U[y_pred_U <  TH ] = 0.
+            AUS_All = accuracy_score(x_test_U["ID"].values, y_pred_U)*100 
+            FAU_All = np.where(y_pred_U==1)[0].shape[0]
+
+
+
+        results = [EER, TH, ACC_bd, BACC_bd, FAR_bd, FRR_bd, ACC_ud, BACC_ud, FAR_ud, FRR_ud, AUS, FAU, x_test_U.shape[0], AUS_All, FAU_All]
 
         return results, CM_bd, CM_ud      
 
@@ -1489,7 +1586,7 @@ class Classifier(Features):
             self._known_imposter, 
             self._unknown_imposter, 
             self._min_number_of_sample,
-            self._number_of_unknown_imposter_samples
+            self._number_of_unknown_imposter_samples,
         ])
 
 
@@ -1499,68 +1596,8 @@ class Classifier(Features):
         return result
 
 
-
 class Pipeline(Classifier):
-    dataset_name = "casia"
     _features_set = dict()
-    _combination = 0
-
-    _labels = 0
-
-    _GRFs = pd.DataFrame()
-    _COAs = pd.DataFrame()
-    _COPs = pd.DataFrame()
-    _pre_images = pd.DataFrame()
-
-    _COA_handcrafted = pd.DataFrame()
-    _COP_handcrafted = pd.DataFrame()
-    _GRF_handcrafted = pd.DataFrame()
-
-    _GRF_WPT = pd.DataFrame()
-    _COP_WPT = pd.DataFrame()
-    _COA_WPT = pd.DataFrame()
-
-    _deep_features = pd.DataFrame()
-
-    _CNN_base_model = ""
-
-    _CNN_weights = 'imagenet'
-    _CNN_include_top = False
-    _verbose = False
-    _CNN_batch_size = 32
-    _CNN_base_model = ""
-
-    _min_number_of_sample = 30
-    _known_imposter = 5
-    _unknown_imposter = 30
-    _number_of_unknown_imposter_samples = 1.0  # Must be less than 1
-
-
-    _waveletname = "coif1"
-    _pywt_mode = "constant"
-    _wavelet_level = 4
-
-
-    _KFold = 10
-    _random_state = 42
-
-    _p_training_samples = 11
-    _train_ratio = 4
-    _ratio = True
-
-    _classifier_name = ""
-
-    _KNN_n_neighbors = 5
-    _KNN_metric = "euclidean"
-    _KNN_weights = "uniform"
-    _SVM_kernel = "linear"
-    _random_runs = 10
-    _THRESHOLDs = np.linspace(0, 1, 100)
-    _persentage = 0.95
-    _normilizing = "z-score"
-
-    _num_pc = 0
-
 
     COX_feature_name = ['MDIST_RD', 'MDIST_AP', 'MDIST_ML', 'RDIST_RD', 'RDIST_AP', 'RDIST_ML', 
         'TOTEX_RD', 'TOTEX_AP', 'TOTEX_ML', 'MVELO_RD', 'MVELO_AP', 'MVELO_ML', 
@@ -1590,6 +1627,11 @@ class Pipeline(Classifier):
         "BACC_ud", 
         "FAR_ud", 
         "FRR_ud",
+        "AUS",
+        "FAU",
+        "unknown_imposter_samples",
+        "AUS_All",
+        "FAU_All",
         "CM_bd", 
         "CM_ud",
         "KFold",
@@ -1601,14 +1643,80 @@ class Pipeline(Classifier):
         "known_imposter", 
         "unknown_imposter", 
         "min_number_of_sample",
-        "number_of_unknown_imposter_samples"
+        "number_of_unknown_imposter_samples",
     ]
 
-
-    def __init__(self, dataset_name, classifier_name):
+    def __init__(self, dataset_name, classifier_name, kwargs):
         super().__init__(dataset_name, classifier_name)
+        
+        self._combination = 0
+
+        self._labels = 0
+
+        self._GRFs = pd.DataFrame()
+        self._COAs = pd.DataFrame()
+        self._COPs = pd.DataFrame()
+        self._pre_images = pd.DataFrame()
+
+        self._COA_handcrafted = pd.DataFrame()
+        self._COP_handcrafted = pd.DataFrame()
+        self._GRF_handcrafted = pd.DataFrame()
+
+        self._GRF_WPT = pd.DataFrame()
+        self._COP_WPT = pd.DataFrame()
+        self._COA_WPT = pd.DataFrame()
+
+        self._deep_features = pd.DataFrame()
+
+        self._CNN_base_model = ""
+
+        self._CNN_weights = 'imagenet'
+        self._CNN_include_top = False
+        self._verbose = False
+        self._CNN_batch_size = 32
+        self._CNN_base_model = ""
+        #####################################################
+        self._CNN_class_numbers = 97
+        self._CNN_epochs = 10
+        self._CNN_image_size = (60, 40, 3)
+
+        self._min_number_of_sample = 30
+        self._known_imposter = 5
+        self._unknown_imposter = 30
+        self._number_of_unknown_imposter_samples = 1.0  # Must be less than 1
 
 
+        self._waveletname = "coif1"
+        self._pywt_mode = "constant"
+        self._wavelet_level = 4
+
+
+        self._KFold = 10
+        self._random_state = 42
+
+        self._p_training_samples = 11
+        self._train_ratio = 4
+        self._ratio = True
+
+        self._classifier_name = ""
+
+        self._KNN_n_neighbors = 5
+        self._KNN_metric = "euclidean"
+        self._KNN_weights = "uniform"
+        self._SVM_kernel = "linear"
+        self._random_runs = 10
+        self._THRESHOLDs = np.linspace(0, 1, 100)
+        self._persentage = 0.95
+        self._normilizing = "z-score"
+
+        self._num_pc = 0
+
+        for (key, value) in kwargs.items():
+            if key in self.__dict__:
+                setattr(self, key, value)
+            else:
+                logger.error("key must be one of these:", self.__dict__.keys())
+                raise KeyError(key)
 
     def pipeline_tem(self, ):
         ###############
@@ -1697,24 +1805,25 @@ class Pipeline(Classifier):
 
     def pipeline_1(self, ):
         """GRF+COP"""
+        # self.t = "P1"
         ###############
         ##  block 1  ##
         ###############
-        if self._GRFs.empty or self._COPs.empty:
-            self.loading_pre_features_GRF()
-            self.loading_pre_features_COP()
+        # if self._GRFs.empty or self._COPs.empty:
+        #     self.loading_pre_features_GRF()
+        #     self.loading_pre_features_COP()
 
 
-        ###############
-        ##  block 2  ##
-        ###############
-        if self._GRF_handcrafted.empty or self._GRF_WPT.empty:
-            self.loading_GRF_handcrafted()
-            self.loading_GRF_WPT()
+        # ###############
+        # ##  block 2  ##
+        # ###############
+        # if self._GRF_handcrafted.empty or self._GRF_WPT.empty:
+        #     self.loading_GRF_handcrafted()
+        #     self.loading_GRF_WPT()
 
-        if self._COP_handcrafted.empty or self._COP_WPT.empty:
-            self.loading_COP_handcrafted()
-            self.loading_COP_WPT()
+        # if self._COP_handcrafted.empty or self._COP_WPT.empty:
+        #     self.loading_COP_handcrafted()
+        #     self.loading_COP_WPT()
 
 
         ###############
@@ -1727,17 +1836,19 @@ class Pipeline(Classifier):
         
     def pipeline_2(self, Image_feature_name):
         """image"""
+        # self.t = "P2"
+
         ###############
         ##  block 1  ##
         ###############
-        if self._pre_images.empty or eval(f'self._{Image_feature_name}.empty'):
-            self.loading_pre_features_image()
+        # if self._pre_images.empty or eval(f'self._{Image_feature_name}.empty'):
+        #     self.loading_pre_features_image()
 
 
-            ###############
-            ##  block 2  ##
-            ###############
-            self.loading_pre_image(Image_feature_name)
+        #     ###############
+        #     ##  block 2  ##
+        #     ###############
+        #     self.loading_pre_image(Image_feature_name)
 
 
         ###############
@@ -1750,21 +1861,26 @@ class Pipeline(Classifier):
 
     def pipeline_3(self, Image_feature_name):
         """deep features"""
+        # self.t = "P3"
+
         ###############
         ##  block 1  ##
         ###############
-        self.loading_pre_features_image()
+        # if self._pre_images.empty or eval(f'self._{Image_feature_name}.empty'):
+
+        #     self.loading_pre_features_image()
 
 
-        ###############
-        ##  block 2  ##
-        ###############
-        self.loading_deep_features(Image_feature_name)
+        #     ###############
+        #     ##  block 2  ##
+        #     ###############
+        #     self.loading_deep_features(Image_feature_name)
 
         
         ###############
         ##  block 2  ##
-        ###############          
+        ###############         
+ 
         listn = ["deep_features"]
         DF_features_all = self.pack(listn)     
 
@@ -1772,28 +1888,33 @@ class Pipeline(Classifier):
 
     def pipeline_4(self, Image_feature_name):
         """All Handcrafted"""
+        # self.t = "P4"
+
         ###############
         ##  block 1  ##
         ###############
-        self.loading_pre_features_GRF()
-        self.loading_pre_features_image()
-        self.loading_pre_features_COP()
-        self.loading_pre_features_COA()
+        # breakpoint()
+        # if self._pre_images.empty or eval(f'self._{Image_feature_name}.empty'):
+
+        #     self.loading_pre_features_GRF()
+        #     self.loading_pre_features_image()
+        #     self.loading_pre_features_COP()
+        #     # self.loading_pre_features_COA()
 
 
-        ###############
-        ##  block 2  ##
-        ###############
-        self.loading_pre_image(Image_feature_name)
+        #     ###############
+        #     ##  block 2  ##
+        #     ###############
+        #     self.loading_pre_image(Image_feature_name)
 
-        self.loading_COA_handcrafted()
-        self.loading_COA_WPT()
+        #     # self.loading_COA_handcrafted()
+        #     # self.loading_COA_WPT()
 
-        self.loading_GRF_handcrafted()
-        self.loading_GRF_WPT()
+        #     self.loading_GRF_handcrafted()
+        #     self.loading_GRF_WPT()
 
-        self.loading_COP_handcrafted()
-        self.loading_COP_WPT()
+        #     self.loading_COP_handcrafted()
+        #     self.loading_COP_WPT()
 
 
         ###############
@@ -1804,20 +1925,20 @@ class Pipeline(Classifier):
 
         return self.run(DF_features_all, listn)
 
-
-
     def run(self, DF_features_all, listn):
-
         # pool = multiprocessing.Pool(processes=ncpus)
         DF_known_imposter, DF_unknown_imposter = self.filtering_subjects_and_samples(DF_features_all)
 
 
         results = list()
         for subject in self._known_imposter_list:
+            if self._verbose == True:
+                print(f"Subject number: {subject} out of {len(self._known_imposter_list)} ")
             DF_known_imposter_binariezed, DF_unknown_imposter_binariezed = self.binarize_labels(DF_known_imposter, DF_unknown_imposter, subject)
 
             CV = model_selection.StratifiedKFold(n_splits=self._KFold, random_state=None, shuffle=False)
             X = DF_known_imposter_binariezed
+            U = DF_unknown_imposter_binariezed
 
 
             cv_results = list()
@@ -1826,16 +1947,16 @@ class Pipeline(Classifier):
             for train_index, test_index in CV.split(X.iloc[:,:-1], X.iloc[:,-1]):
 
                 df_train = X.iloc[train_index, :]
-
-                df_test = pd.concat([X.iloc[test_index, :], DF_unknown_imposter_binariezed])
+                df_test = X.iloc[test_index, :]
+                # df_test = pd.concat([X.iloc[test_index, :], DF_unknown_imposter_binariezed])
 
                 df_train = self.down_sampling(df_train)
 
-                df_train, df_test = self.scaler(df_train, df_test)
+                df_train, df_test, df_test_U = self.scaler(df_train, df_test, U)
 
-                df_train, df_test = self.projector(df_train, df_test, listn)
+                df_train, df_test, df_test_U = self.projector(df_train, df_test, df_test_U, listn)
 
-                result, CM_bd, CM_ud = self.ML_classifier(df_train, df_test)
+                result, CM_bd, CM_ud = self.ML_classifier(df_train, df_test, df_test_U)
 
                 cv_results.append(result)
                 cv_CM_u.append(CM_ud)
@@ -1846,110 +1967,375 @@ class Pipeline(Classifier):
 
         return pd.DataFrame(results, columns=self._col)
 
+    def collect_results(self, result: pd.DataFrame, pipeline_name: str) -> None:
+        result['pipeline'] = pipeline_name
+        test = os.environ.get('SLURM_JOB_NAME', default=self.t)
+        excel_path = os.path.join(os.getcwd(), "results", f"Result__{test}.xlsx")
+
+        if os.path.isfile(excel_path):
+            Results_DF = pd.read_excel(excel_path, index_col = 0)
+        else:
+            Results_DF = pd.DataFrame(columns=self._col)
+
+        Results_DF = Results_DF.append(result)
+        try:
+            Results_DF.to_excel(excel_path)
+        except:
+            Results_DF.to_excel(excel_path[:-5]+str(self._test_id)+'.xlsx') 
 
 
-def collect_results(result, col):
-    global t
-    time = int(timeit.default_timer() * 1_000)
-    test = os.environ.get('SLURM_JOB_NAME', default=t)
+class Deep_network(Pipeline):
 
-    excel_path = os.path.join(os.getcwd(), "results", f"Result__{test}.xlsx")
+    def __init__(self, dataset_name, classifier_name, kwargs):
+        super().__init__(dataset_name, classifier_name, kwargs)
+        
+    
+    def label_encoding(self):
 
-    if os.path.isfile(excel_path):
-        Results_DF = pd.read_excel(excel_path, index_col = 0)
-    else:
-        Results_DF = pd.DataFrame(columns=col)
+        indices = self._labels["ID"]
+        logger.info("metadata shape: {}".format(indices.shape))
 
-    Results_DF = Results_DF.append(result)
-    try:
-        Results_DF.to_excel(excel_path)
-    except:
-        Results_DF.to_excel(excel_path[:-5]+str(time)+'.xlsx')
+        indices = self._labels["ID"]
+        le = sk_preprocessing.LabelEncoder()
+        le.fit(indices)
+
+        logger.info(f"Number of subjects: {len(np.unique(indices))}")
+
+        return le.transform(indices)
 
 
-t = 'P1'
+    def deep_model_1(self, image_size):
+        CNN_name = "from_scratch"
+        Number_of_subjects = len(np.unique(self._labels["ID"]))
+
+        input = tf.keras.layers.Input(shape=image_size, dtype = tf.float64, name="original_img")
+        x = tf.cast(input, tf.float32)
+        x = tf.keras.layers.RandomFlip("horizontal_and_vertical")(x)
+        x = tf.keras.layers.RandomRotation(0.2)(x)
+        x = tf.keras.layers.RandomZoom(0.1)(x)
+        x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3), activation='relu')(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+        x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), activation='relu')(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+        x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
+        x = tf.keras.layers.Dropout(0.2)(x)
+        x = tf.keras.layers.Flatten()(x)
+        x = tf.keras.layers.Dense(128,  activation='relu', name="last_dense")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
+        x = tf.keras.layers.Dropout(0.2)(x)
+        output = tf.keras.layers.Dense(Number_of_subjects, name="prediction")(x) # activation='softmax',
+
+        ## The CNN Model
+        return tf.keras.models.Model(inputs=input, outputs=output, name=CNN_name)
+
+
+    def deep_training_1(self, pre_image_name):
+        encode_label = self.label_encoding()
+        pre_images_norm = self.normalizing_pre_image(pre_image_name)
+
+        pre_images_norm = pre_images_norm[...,tf.newaxis]
+        pre_images_norm = np.concatenate((pre_images_norm, pre_images_norm, pre_images_norm), axis=-1)
+
+        X_train, X_test, y_train, y_test = model_selection.train_test_split(pre_images_norm, encode_label, test_size=0.15, random_state=42, stratify=encode_label)
+        X_train, X_val, y_train, y_val = model_selection.train_test_split(X_train, y_train, test_size=0.1, random_state=42, stratify=y_train)
+
+        AUTOTUNE = tf.data.AUTOTUNE
+
+        train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(1000)
+        train_ds = train_ds.batch(self._CNN_batch_size)
+        train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)).shuffle(1000)
+        val_ds = val_ds.batch(self._CNN_batch_size)
+        val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        test_ds = tf.data.Dataset.from_tensor_slices((X_test, y_test))
+        test_ds = test_ds.batch(self._CNN_batch_size)
+        test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        image_size = X_train.shape[1:]
+        model = self.deep_model_1(image_size)
+
+        model.compile(
+            optimizer=tf.keras.optimizers.Adam(), #learning_rate=0.001
+            loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), 
+            metrics=["Accuracy"]
+            )
+
+        TensorBoard_logs =  os.path.join( os.getcwd(), "logs", "TensorBoard_logs", "_".join(("FS", str(os.getpid()), pre_image_name, str(self._test_id)) )  )
+        path = os.path.join( os.getcwd(), "results", "deep_model", "_".join( ("FS", str(os.getpid()), pre_image_name, "best.h5") ))
+
+        checkpoint = [
+                tf.keras.callbacks.ModelCheckpoint(    path, save_best_only=True, monitor="val_loss"),
+                tf.keras.callbacks.ReduceLROnPlateau(  monitor="val_loss", factor=0.5, patience=30, min_lr=0.00001),
+                tf.keras.callbacks.EarlyStopping(      monitor="val_loss", patience=90, verbose=1),
+                tf.keras.callbacks.TensorBoard(        log_dir=TensorBoard_logs+str(self._test_id))   
+            ]    
+
+        history = model.fit(
+            train_ds,    
+            batch_size=self._CNN_batch_size,
+            callbacks=[checkpoint],
+            epochs=self._CNN_epochs,
+            validation_data=val_ds,
+            verbose=self._verbose,
+        )
+
+        test_loss, test_acc = model.evaluate(test_ds, verbose=2)
+
+        path = os.path.join( os.getcwd(), "results", "deep_model", "_".join( ("FS", str(os.getpid()), pre_image_name, str(int(np.round(test_acc*100)))+"%.h5") ))
+        model.save(path)
+        
+        # plt.plot(history.history['accuracy'], label='accuracy')
+        # # plt.plot(history.history['val_accuracy'], label = 'val_accuracy')
+
+        # plt.xlabel('Epoch')
+        # plt.ylabel('Accuracy')
+        # plt.show()
+
+
+        logger.info(f"test_loss: {np.round(test_loss)}, test_acc: {int(np.round(test_acc*100))}%")
+
+
+    def deep_model_2(self, image_size):
+        CNN_name = "Omar-2017"
+        Number_of_subjects = len(np.unique(self._labels["ID"]))
+
+        input = tf.keras.layers.Input(shape=image_size, dtype = tf.float64, name="original_img")
+        x = tf.cast(input, tf.float32)
+
+        x = tf.keras.layers.RandomFlip("horizontal_and_vertical")(x)
+        x = tf.keras.layers.RandomRotation(0.2)(x)
+        x = tf.keras.layers.RandomZoom(0.1)(x)
+
+        x = tf.keras.layers.Conv2D(20, kernel_size=(7, 7), activation='relu')(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+        x = tf.keras.layers.Conv2D(20, kernel_size=(7, 7), activation='relu')(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+
+        x = tf.keras.layers.MaxPooling2D(pool_size=(4, 4))(x)
+        x = tf.keras.layers.AveragePooling2D(pool_size=(4, 4))(x)
+
+        # x = tf.keras.layers.Dropout(0.2)(x)
+        x = tf.keras.layers.Flatten()(x)
+        output = tf.keras.layers.Dense(127, activation='softmax', name="last_dense")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
+        # x = tf.keras.layers.Dropout(0.2)(x)
+        # output = tf.keras.layers.Dense(Number_of_subjects, activation='softmax', name="prediction")(x) # 
+
+        ## The CNN Model
+        return tf.keras.models.Model(inputs=input, outputs=output, name=CNN_name)
+
+
+    def deep_training_2(self, pre_image_name):
+        self._CNN_batch_size = 16
+        encode_label = self.label_encoding()
+        pre_images_norm = self.normalizing_pre_image(pre_image_name)
+
+        pre_images_norm = pre_images_norm[...,tf.newaxis]
+        pre_images_norm = np.concatenate((pre_images_norm, pre_images_norm, pre_images_norm), axis=-1)
+
+        X_train, X_test, y_train, y_test = model_selection.train_test_split(pre_images_norm, encode_label, test_size=0.15, random_state=42, stratify=encode_label)
+        X_train, X_val, y_train, y_val = model_selection.train_test_split(X_train, y_train, test_size=0.1, random_state=42, stratify=y_train)
+
+        AUTOTUNE = tf.data.AUTOTUNE
+
+        train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(1000)
+        train_ds = train_ds.batch(self._CNN_batch_size)
+        train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)).shuffle(1000)
+        val_ds = val_ds.batch(self._CNN_batch_size)
+        val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        test_ds = tf.data.Dataset.from_tensor_slices((X_test, y_test))
+        test_ds = test_ds.batch(self._CNN_batch_size)
+        test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        image_size = X_train.shape[1:]
+        model = self.deep_model_2(image_size)
+
+        model.compile(
+            optimizer=tf.keras.optimizers.RMSprop(learning_rate=0.001), #learning_rate=0.001
+            loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), 
+            metrics=["Accuracy"]
+            )
+
+        TensorBoard_logs =  os.path.join( os.getcwd(), "logs", "TensorBoard_logs", "_".join(("FS", str(os.getpid()), pre_image_name, str(self._test_id)) )  )
+        path = os.path.join( os.getcwd(), "results", "deep_model", "_".join( ("FS", str(os.getpid()), pre_image_name, "best.h5") ))
+
+        checkpoint = [
+                tf.keras.callbacks.ModelCheckpoint(    path, save_best_only=True, monitor="val_loss"),
+                tf.keras.callbacks.ReduceLROnPlateau(  monitor="val_loss", factor=0.5, patience=10, min_lr=0.00001),
+                tf.keras.callbacks.EarlyStopping(      monitor="val_loss", patience=10, verbose=1),
+                tf.keras.callbacks.TensorBoard(        log_dir=TensorBoard_logs+str(self._test_id))   
+            ]    
+
+        history = model.fit(
+            train_ds,    
+            batch_size=self._CNN_batch_size,
+            callbacks=[checkpoint],
+            epochs=self._CNN_epochs,
+            validation_data=val_ds,
+            verbose=self._verbose,
+        )
+
+        test_loss, test_acc = model.evaluate(test_ds, verbose=2)
+
+        path = os.path.join( os.getcwd(), "results", "deep_model", "_".join( ("FS", str(os.getpid()), pre_image_name, str(int(np.round(test_acc*100)))+"%.h5") ))
+        model.save(path)
+        breakpoint()
+        plt.plot(history.history['accuracy'], label='accuracy')
+        # plt.plot(history.history['val_accuracy'], label = 'val_accuracy')
+
+        plt.xlabel('Epoch')
+        plt.ylabel('Accuracy')
+        plt.show()
+
+
+        logger.info(f"test_loss: {np.round(test_loss)}, test_acc: {int(np.round(test_acc*100))}%")
+
+
+    def deep_testing(self):
+        pass
+
+
 def main():
 
-    P = Pipeline("casia", "knn")
+    setting = {
+        "_classifier_name": 'TM',
+        "_combination": True,
+
+        "_CNN_weights": 'imagenet',
+        "_verbose": True,
+        "_CNN_batch_size": 32,
+        "_CNN_base_model": '',
+
+        "_min_number_of_sample": 30,
+        "_known_imposter": 3,
+        "_unknown_imposter": 1,
+        "_number_of_unknown_imposter_samples": 1.0,  # Must be less than 1
+
+        "_waveletname": 'coif1',
+        "_pywt_mode": 'constant',
+        "_wavelet_level": 4,
+
+        "_p_training_samples": 27,
+        "_train_ratio": 300,
+        "_ratio": False,
+
+        "_KNN_n_neighbors": 5,
+        "_KNN_metric": 'euclidean',
+        "_KNN_weights": 'uniform',
+        "_SVM_kernel": 'linear',
+
+        "_KFold": 10,
+        "_random_runs": 10,
+        "_persentage": 0.95,
+        "_normilizing": 'z-score',
+    }
+    
+
+    P = Pipeline("casia", "TM", setting)
+    P.t = "Participant_Count"
+
+    P.loading_pre_features_GRF()
+    P.loading_pre_features_image()
+    P.loading_pre_features_COP()
+
+    P.loading_pre_image('P100')
+    P.loading_GRF_handcrafted()
+    P.loading_GRF_WPT()
+    P.loading_COP_handcrafted()
+    P.loading_COP_WPT()
+
+    P.loading_deep_features('P100')
+ 
 
     ######################################################################################################################
     ######################################################################################################################
-    P.dataset_name = 'casia'
-    P._classifier_name = 'TM'
-    P._combination = True
-
-    P._CNN_weights = 'imagenet'
-    P._verbose = False
-    P._CNN_batch_size = 32
-    P._CNN_base_model = ''
-
-    P._min_number_of_sample = 30
-    P._known_imposter = 30
-    P._unknown_imposter = 0
-    P._number_of_unknown_imposter_samples = 1.0  # Must be less than 1
-
-
-    P._waveletname = 'coif1'
-    P._pywt_mode = 'constant'
-    P._wavelet_level = 4
-
-
-    P._p_training_samples = 11
-    P._train_ratio = 4
-    P._ratio = False
-
-
-    P._KNN_n_neighbors = 5
-    P._KNN_metric = 'euclidean'
-    P._KNN_weights = 'uniform'
-    P._SVM_kernel = 'linear'
-
-
-    P._KFold = 10
-    P._random_runs = 20
-    P._persentage = 0.95
-    P._normilizing = 'z-score'
-
-
-    ######################################################################################################################
-    ######################################################################################################################
-    test = os.environ.get('SLURM_JOB_NAME', default=t)
+    test = os.environ.get('SLURM_JOB_NAME', default= P.t )
     logger.info(f'test name: {test}')
 
     ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK', default=4))
     pool = multiprocessing.Pool(processes=ncpus)
     logger.info(f'CPU count: {ncpus}')
 
-    p0 = [9, 10, 11, 12, 13, 14, 15, 18]
-    p1 = [15, 21, 27, 30, 45, 60, 90, 120, 150, 180, 210]
-    p2 = [0, 5, 10, 15, 20, 25]
+    # p0 = [9, 10, 11, 12, 13, 14, 15, 18]
+    # p1 = [3, 21, 27, 30, 45, 60, 90, 120, 150, 180, 210]
+    p0 = [5, 10, 15, 20, 25, 30]
+    p1 = [10, 0, 5, 15, 20, 25, 30]
 
-    space = list(product(p0, p1, p2))
+    space = list(product(p0, p1))
     space = space[:]
 
     for idx, parameters in enumerate(space):
 
-        P._p_training_samples = parameters[0]
-        P._train_ratio        = parameters[1]
-        P._unknown_imposter   = parameters[2]
+        # P._p_training_samples = parameters[0]
+        P._known_imposter     = parameters[0]
+        P._unknown_imposter   = parameters[1]
 
-        # collect_results(P.pipeline_test(), P._col)
-        collect_results(P.pipeline_1(), P._col) 
-        # collect_results(P.pipeline_2(), P._col)
-        # collect_results(P.pipeline_3(), P._col)
-        # collect_results(P.pipeline_4(), P._col)
+        # P.collect_results(P.pipeline_test())
+        P._classifier_name = 'TM'
+        P.collect_results(P.pipeline_1(), "Pipeline_1") 
+        P.collect_results(P.pipeline_2('P100'), "Pipeline_2") 
+        P.collect_results(P.pipeline_4('P100'), "Pipeline_4") 
+        P._classifier_name = 'svm'
+        P.collect_results(P.pipeline_3('P100'), "Pipeline_3") 
+
 
         toc = timeit.default_timer()
-        logger.info(f'[step {idx+1} out of {len(space)}], parameters: {parameters},  process time: {round(toc-tic, 2)}')
+        logger.info(f'[step {idx+1} out of {len(space)}], parameters: {parameters}, process time: {round(toc-tic, 2)}')
 
 
-        
+def main_test():
+    setting = {
+        "_classifier_name": 'TM',
+        "_combination": True,
+
+        "_CNN_weights": 'imagenet',
+        "_verbose": True,
+        "_CNN_batch_size": 32,
+        "_CNN_base_model": '',
+
+        "_min_number_of_sample": 30,
+        "_known_imposter": 3,
+        "_unknown_imposter": 1,
+        "_number_of_unknown_imposter_samples": 1.0,  # Must be less than 1
+
+
+        "_waveletname": 'coif1',
+        "_pywt_mode": 'constant',
+        "_wavelet_level": 4,
+
+
+        "_p_training_samples": 11,
+        "_train_ratio": 34,
+        "_ratio": False,
+
+
+        "_KNN_n_neighbors": 5,
+        "_KNN_metric": 'euclidean',
+        "_KNN_weights": 'uniform',
+        "_SVM_kernel": 'linear',
+
+
+        "_KFold": 10,
+        "_random_runs": 20,
+        "_persentage": 0.95,
+        "_normilizing": 'z-score',
+
+    }
+    A = Deep_network("casia", "TM", setting)
+    A.loading_pre_features_image()
+    A.deep_training_2("P100")
 
 
 if __name__ == "__main__":
     logger.info("Starting !!!")
     tic = timeit.default_timer()
     main()
+
+    # main_test()
+
     toc = timeit.default_timer()
     logger.info("Done ({:2.2f} process time)!!!\n\n\n".format(toc-tic))
 

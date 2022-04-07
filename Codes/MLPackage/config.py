@@ -20,7 +20,7 @@ configs = {
     },
 
     "Pipeline": {
-        "classifier": "KNN", # SVM TM
+        "classifier": "TM", # SVM TM
         "persentage": 0.95,
         "normilizing": "z-score",
         "test_ratio": 5,
@@ -34,7 +34,7 @@ configs = {
 
 
         # "Debug": True,
-        "known_imposter": 30,
+        "known_imposter": 60,
 
         "unknown_imposter": 0,
         "imposter_samples": 0,

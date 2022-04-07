@@ -171,6 +171,13 @@ def main():
             space = list(product(p0, p1, p2))
             space = space[-1:]
 
+        elif test=="Mode_4": 
+            p0 = [24, 27]#(i,j) for i in range(3,30,3) for j in range(3,30,3) if i+j<=30]
+            p1 = [5, 7, 9]
+            p2 = [1, 2, 5, 10, 20, 50, 100]
+            space = list(product(p0, p1, p2))
+            space = space[-1:]
+
 
         for idx, parameters in enumerate(space):
             logger.info(f"[step {idx+1} out of {len(space)}], parameters: {parameters}")

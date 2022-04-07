@@ -295,29 +295,22 @@ def pipeline(configs):
 
     DF_features_all_unknown_imposter =  DF_features_all[DF_features_all["subject ID"].isin(unknown_imposter)]
     DF_features_all =  DF_features_all[DF_features_all["subject ID"].isin(known_imposter)]
-        
-    
-    
-    
     
     DF_features, DF_features_unknown_imposter = extracting_features(DF_features_all, DF_features_all_unknown_imposter, feature_type)
 
     results = list()
     
 
+    
     for idx_s, subject in enumerate(known_imposter):
         # if subject in [86, 12]: continue
         # if subject != 4: continue
-
-        
         if (idx_s % 10) == 0:
             logger.info("--------------->> Subject Number: {} [out of {}]".format(idx_s, len(subjects)))   
         if configs["features"]["combination"]==False:
             directions = ["left_0", "right_1"]
         else:
             directions = ["both"]
-
-
 
         for idx, direction in enumerate(directions):#, "right_1"]):  configs["features"]["combination"]==True:
             if configs["Pipeline"]["verbose"] is True:
@@ -440,7 +433,7 @@ def pipeline(configs):
             
             # results.append([EER, TH, ACC_bd, BACC_bd, CM_bd, FAR_bd, FRR_bd,  ACC_ud, BACC_ud, CM_ud, FAR_ud, FRR_ud,])
             result.append([pos_tr_samples, neg_tr_ratio, pos_te_samples, neg_te_samples, configs["Pipeline"]["known_imposter"], configs["Pipeline"]["unknown_imposter"], configs["Pipeline"]["imposter_samples"]])
-            # breakpoint()
+
             result = [val for sublist in result for val in sublist]
             
             results.append(result)
