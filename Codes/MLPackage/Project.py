@@ -32,6 +32,7 @@ from sklearn.metrics import (accuracy_score, confusion_matrix, f1_score,
 import Butterworth
 import convertGS2BW 
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 project_dir = os.getcwd()
 log_path = os.path.join(project_dir, 'logs')
@@ -1075,9 +1076,9 @@ class Features(PreFeatures):
 
         model = tf.keras.Model(input, output, name=CNN_name)
 
-        if self._verbose==True:
-            model.summary() 
-            tf.keras.utils.plot_model(model, to_file=CNN_name + ".png", show_shapes=True)
+        # if self._verbose==True:
+        #     model.summary() 
+        #     tf.keras.utils.plot_model(model, to_file=CNN_name + ".png", show_shapes=True)
 
 
         logger.info("batch_size: {}".format(self._CNN_batch_size))
@@ -1380,7 +1381,6 @@ class Classifier(Features):
         FAR = list()
 
         for tx in self._THRESHOLDs:
-
             E1 = np.zeros((y_pred.shape))
             E1[y_pred >= tx] = 1
 
@@ -1395,8 +1395,7 @@ class Classifier(Features):
             FRR.append(a1['FRR']/P)
             FAR.append(a1['FAR']/N)
 
-
-        return FRR,FAR
+        return FRR, FAR
 
     def balancer(self, DF, method="random", ratio=1): # None, DEND, MDIST, Random
         pos_samples = DF[DF["ID"]==1]
@@ -1463,19 +1462,40 @@ class Classifier(Features):
         
         if self._classifier_name=="knn":
             classifier = knn(n_neighbors=self._KNN_n_neighbors, metric=self._KNN_metric, weights=self._KNN_weights, n_jobs=-1)
+
+            best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
+            y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
+            FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
+            EER, t_idx = self.compute_eer(FRR_t, FAR_t)
+            TH = self._THRESHOLDs[t_idx]
+
         elif self._classifier_name=="TM":
-            classifier = knn(n_neighbors=1, metric=self._KNN_metric, weights=self._KNN_weights, n_jobs=-1)
+            positives = x_train[x_train["ID"]== 1.0] 
+            negatives = x_train[x_train["ID"]== 0.0] 
+            similarity_matrix_positives, similarity_matrix_negatives = self.compute_score_matrix(positives, negatives)
+            client_scores, imposter_scores = self.compute_scores(similarity_matrix_positives, similarity_matrix_negatives, criteria="min")
+            y_pred_tr = np.append(client_scores.data, imposter_scores.data)
+
+            # classifier = knn(n_neighbors=1, metric=self._KNN_metric, weights=self._KNN_weights, n_jobs=-1)
+            # best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
+            # y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
+            FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
+            # self.plot_eer(FRR_t, FAR_t)
+            EER, t_idx = self.compute_eer(FRR_t, FAR_t)
+            TH = self._THRESHOLDs[t_idx]
+        
         elif self._classifier_name=="svm":
             classifier = svm.SVC(kernel=self._SVM_kernel , probability=True, random_state=self._random_state)
+
+            best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
+            y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
+            FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
+            EER, t_idx = self.compute_eer(FRR_t, FAR_t)
+            TH = self._THRESHOLDs[t_idx]
         else:
             raise Exception("_classifier_name is not valid!!")
 
-        best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
-        y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
-        FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
-        EER, t_idx = self.compute_eer(FRR_t, FAR_t)
-        TH = self._THRESHOLDs[t_idx]
-
+        
 
         acc = list()
         CMM = list()
@@ -1483,7 +1503,16 @@ class Classifier(Features):
         for _ in range(self._random_runs):
             DF_temp, pos_number = self.balancer(x_test, method="Random")
 
-            y_pred = best_model.predict_proba(DF_temp.iloc[:, :-1].values)[:, 1]
+            if self._classifier_name=="TM":
+                positives = x_train[x_train["ID"]== 1.0]
+                similarity_matrix_positives, similarity_matrix_negatives = self.compute_score_matrix(positives, DF_temp)
+                client_scores, imposter_scores = self.compute_scores(similarity_matrix_positives, similarity_matrix_negatives, criteria="min")
+                y_pred = imposter_scores.data
+
+            else:
+                y_pred = best_model.predict_proba(DF_temp.iloc[:, :-1].values)[:, 1]
+
+            
             y_pred[y_pred >= TH ] = 1.
             y_pred[y_pred <  TH ] = 0.
 
@@ -1502,7 +1531,16 @@ class Classifier(Features):
         
         
         
-        y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
+        if self._classifier_name=="TM":
+            positives = x_train[x_train["ID"]== 1.0]
+            similarity_matrix_positives, similarity_matrix_negatives = self.compute_score_matrix(positives, x_test)
+            client_scores, imposter_scores = self.compute_scores(similarity_matrix_positives, similarity_matrix_negatives, criteria="min")
+            y_pred = imposter_scores.data
+
+        else:
+            y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
+        
+        y_pred1 = y_pred.copy()
         y_pred[y_pred >= TH ] = 1
         y_pred[y_pred <  TH ] = 0
 
@@ -1525,7 +1563,17 @@ class Classifier(Features):
             for _ in range(self._random_runs):
                 numbers = x_test_U.shape[0] if x_test_U.shape[0]<60 else 60
                 temp = x_test_U.sample(n=numbers)
-                y_pred_U = best_model.predict_proba(temp.iloc[:, :-1].values)[:, 1]
+
+                if self._classifier_name=="TM":
+                    positives = x_train[x_train["ID"]== 1.0]
+                    similarity_matrix_positives, similarity_matrix_negatives = self.compute_score_matrix(positives, temp)
+                    client_scores, imposter_scores = self.compute_scores(similarity_matrix_positives, similarity_matrix_negatives, criteria="min")
+                    y_pred = imposter_scores.data
+
+                else:
+                    y_pred = best_model.predict_proba(temp.iloc[:, :-1].values)[:, 1]
+
+                y_pred_U = y_pred
                 y_pred_U[y_pred_U >= TH ] = 1.
                 y_pred_U[y_pred_U <  TH ] = 0.
 
@@ -1534,12 +1582,48 @@ class Classifier(Features):
             AUS = np.mean(AUS)
             FAU = np.mean(FAU)
 
-            y_pred_U = best_model.predict_proba(x_test_U.iloc[:, :-1].values)[:, 1]
+            
+            if self._classifier_name=="TM":
+                positives = x_train[x_train["ID"]== 1.0]
+                similarity_matrix_positives, similarity_matrix_negatives = self.compute_score_matrix(positives, x_test_U)
+                client_scores, imposter_scores = self.compute_scores(similarity_matrix_positives, similarity_matrix_negatives, criteria="min")
+                y_pred_U = imposter_scores.data
+
+            else:
+                y_pred_U = best_model.predict_proba(x_test_U.iloc[:, :-1].values)[:, 1]
+
+            y_pred_U1 = y_pred_U.copy()
+
             y_pred_U[y_pred_U >= TH ] = 1.
             y_pred_U[y_pred_U <  TH ] = 0.
             AUS_All = accuracy_score(x_test_U["ID"].values, y_pred_U)*100 
             FAU_All = np.where(y_pred_U==1)[0].shape[0]
 
+        # breakpoint()
+
+
+        # sns.histplot(data=pd.DataFrame(y_pred_tr,x_train['ID'].values).reset_index(),x=0, hue="index", bins=100)
+        # plt.plot([TH,TH],[0,13], 'r--', linewidth = 2)
+        # plt.title("train")
+
+        # plt.figure()
+        # sns.histplot(data=pd.DataFrame(y_pred1, x_test['ID'].values).reset_index(),x=0, hue="index", bins=100)
+        # plt.plot([TH,TH],[0,13], 'r--', linewidth = 2)
+        # plt.title("test")
+
+        # plt.figure()
+        # sns.histplot(y_pred_U1, bins=100)
+        # plt.plot([TH,TH],[0,13], 'r--', linewidth = 2)
+        # plt.title("test_U")
+
+        # plt.figure()
+        # plt.scatter(x_train.iloc[:, 0].values, x_train.iloc[:, 1].values, c ="red", marker ="s", label="train", s = x_train.iloc[:, -1].values*22+1)
+        # plt.scatter(x_test.iloc[:, 0].values, x_test.iloc[:, 1].values,  c ="blue", marker ="*", label="test", s = x_test.iloc[:, -1].values*22+1)
+        # plt.scatter(x_test_U.iloc[:, 0].values, x_test_U.iloc[:, 1].values, c ="green", marker ="o", label="u", s = 5)
+        # plt.xlabel("PC1")
+        # plt.ylabel("PC2")
+        # plt.legend()
+        # plt.show()
 
 
         results = [EER, TH, ACC_bd, BACC_bd, FAR_bd, FRR_bd, ACC_ud, BACC_ud, FAR_ud, FRR_ud, AUS, FAU, x_test_U.shape[0], AUS_All, FAU_All]
@@ -1595,6 +1679,61 @@ class Classifier(Features):
         # results.append(result)
         return result
 
+    @staticmethod
+    def compute_score_matrix(positive_samples, negative_samples):
+        """ Returns score matrix of trmplate matching"""
+        positive_model = np.zeros((positive_samples.shape[0], positive_samples.shape[0]))
+        negative_model = np.zeros((positive_samples.shape[0], negative_samples.shape[0]))
+
+        for i in range(positive_samples.shape[0]):
+            for j in range(positive_samples.shape[0]):
+                positive_model[i, j] = distance.euclidean(positive_samples.iloc[i, :-1], positive_samples.iloc[j, :-1])
+            for j in range(negative_samples.shape[0]):
+                negative_model[i, j] = distance.euclidean(positive_samples.iloc[i, :-1], negative_samples.iloc[j, :-1])
+        
+        return np.power(positive_model+1, -1), np.power(negative_model+1, -1), 
+
+    @staticmethod
+    def compute_scores(similarity_matrix_positives, similarity_matrix_negatives, criteria = "min"):
+        if criteria == "average":
+            client_scores = np.mean(np.ma.masked_where(similarity_matrix_positives==1,similarity_matrix_positives), axis = 0)
+            client_scores = np.expand_dims(client_scores,-1)
+            
+            imposter_scores = (np.sum(similarity_matrix_negatives, axis = 0))/(similarity_matrix_positives.shape[1])
+            imposter_scores = np.expand_dims(imposter_scores, -1)
+                
+        elif criteria == "min":
+            client_scores = np.max(np.ma.masked_where(similarity_matrix_positives==1,similarity_matrix_positives), axis = 0)
+            client_scores = np.expand_dims(client_scores,-1)
+            
+            imposter_scores = np.max(np.ma.masked_where(similarity_matrix_negatives==1,similarity_matrix_negatives), axis = 0)
+            imposter_scores = np.expand_dims(imposter_scores, -1)
+                    
+        elif criteria == "median":
+            client_scores = np.median(similarity_matrix_positives, axis = 0)
+            client_scores = np.expand_dims(client_scores,-1)            
+
+            imposter_scores = np.median(similarity_matrix_negatives, axis = 0)
+            imposter_scores = np.expand_dims(imposter_scores, -1)
+
+        return client_scores, imposter_scores
+
+    @staticmethod
+    def plot_eer(FAR, FRR):
+        """ Returns equal error rate (EER) and the corresponding threshold. """
+        abs_diffs = np.abs(np.subtract(FRR, FAR)) 
+        
+        min_index = np.argmin(abs_diffs)
+        # breakpoint()
+        min_index = 99 - np.argmin(abs_diffs[::-1])
+        plt.figure(figsize=(5,5))
+        eer = np.mean((FAR[min_index], FRR[min_index]))
+        plt.plot( np.linspace(0, 1, 100), FRR)
+        plt.plot( np.linspace(0, 1, 100), FAR)
+        plt.plot(np.linspace(0, 1, 100)[min_index], eer, "r*")
+        # plt.savefig(path, bbox_inches='tight')
+
+        plt.show()
 
 class Pipeline(Classifier):
     _features_set = dict()
@@ -2210,6 +2349,92 @@ def main():
         "_CNN_base_model": '',
 
         "_min_number_of_sample": 30,
+        "_known_imposter": 50,
+        "_unknown_imposter": 0,
+        "_number_of_unknown_imposter_samples": 1.0,  # Must be less than 1
+
+        "_waveletname": 'coif1',
+        "_pywt_mode": 'constant',
+        "_wavelet_level": 4,
+
+        "_p_training_samples": 27,
+        "_train_ratio": 300,
+        "_ratio": False,
+
+        "_KNN_n_neighbors": 5,
+        "_KNN_metric": 'euclidean',
+        "_KNN_weights": 'uniform',
+        "_SVM_kernel": 'linear',
+
+        "_KFold": 10,
+        "_random_runs": 10,
+        "_persentage": 0.95,
+        "_normilizing": 'z-score',
+    }
+    
+
+    P = Pipeline("casia", "TM", setting)
+    P.t = "Aim1_P1"
+
+    # P.loading_pre_features_image()
+    P.loading_pre_features_GRF()
+    P.loading_pre_features_COP()
+
+    # P.loading_pre_image('P100')
+    P.loading_GRF_handcrafted()
+    P.loading_GRF_WPT()
+    P.loading_COP_handcrafted()
+    P.loading_COP_WPT()
+
+    # P.loading_deep_features('P100')
+ 
+
+    ######################################################################################################################
+    ######################################################################################################################
+    test = os.environ.get('SLURM_JOB_NAME', default= P.t )
+    logger.info(f'test name: {test}')
+
+    ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK', default=4))
+    pool = multiprocessing.Pool(processes=ncpus)
+    logger.info(f'CPU count: {ncpus}')
+
+    # p0 = [9, 10, 11, 12, 13, 14, 15, 18]
+    # p1 = [3, 21, 27, 30, 45, 60, 90, 120, 150, 180, 210]
+    p0 = ["TM", "svm"]
+
+    space = list(product(p0))
+    space = space[:]
+
+    for idx, parameters in enumerate(space):
+
+
+        P._classifier_name = parameters[0]
+ 
+
+        # P.collect_results(P.pipeline_test())
+        # P._classifier_name = 'TM'
+        P.collect_results(P.pipeline_1(), "Pipeline_1") 
+        # P.collect_results(P.pipeline_2('P100'), "Pipeline_2") 
+        # P.collect_results(P.pipeline_4('P100'), "Pipeline_4") 
+        # P._classifier_name = 'svm'
+        # P.collect_results(P.pipeline_3('P100'), "Pipeline_3") 
+
+
+        toc = timeit.default_timer()
+        logger.info(f'[step {idx+1} out of {len(space)}], parameters: {parameters}, process time: {round(toc-tic, 2)}')
+
+def Participant_Count():
+
+    setting = {
+        "_classifier_name": 'TM',
+        "_combination": True,
+
+        "_CNN_weights": 'imagenet',
+        "_verbose": True,
+        "_CNN_batch_size": 32,
+        "_CNN_base_model": '',
+
+        "_min_number_of_sample": 30,
         "_known_imposter": 3,
         "_unknown_imposter": 1,
         "_number_of_unknown_imposter_samples": 1.0,  # Must be less than 1
@@ -2235,19 +2460,19 @@ def main():
     
 
     P = Pipeline("casia", "TM", setting)
-    P.t = "Participant_Count"
+    P.t = "Participant_Count_P1"
 
+    # P.loading_pre_features_image()
     P.loading_pre_features_GRF()
-    P.loading_pre_features_image()
     P.loading_pre_features_COP()
 
-    P.loading_pre_image('P100')
+    # P.loading_pre_image('P100')
     P.loading_GRF_handcrafted()
     P.loading_GRF_WPT()
     P.loading_COP_handcrafted()
     P.loading_COP_WPT()
 
-    P.loading_deep_features('P100')
+    # P.loading_deep_features('P100')
  
 
     ######################################################################################################################
@@ -2274,12 +2499,12 @@ def main():
         P._unknown_imposter   = parameters[1]
 
         # P.collect_results(P.pipeline_test())
-        P._classifier_name = 'TM'
+        # P._classifier_name = 'TM'
         P.collect_results(P.pipeline_1(), "Pipeline_1") 
-        P.collect_results(P.pipeline_2('P100'), "Pipeline_2") 
-        P.collect_results(P.pipeline_4('P100'), "Pipeline_4") 
-        P._classifier_name = 'svm'
-        P.collect_results(P.pipeline_3('P100'), "Pipeline_3") 
+        # P.collect_results(P.pipeline_2('P100'), "Pipeline_2") 
+        # P.collect_results(P.pipeline_4('P100'), "Pipeline_4") 
+        # P._classifier_name = 'svm'
+        # P.collect_results(P.pipeline_3('P100'), "Pipeline_3") 
 
 
         toc = timeit.default_timer()
@@ -2332,7 +2557,8 @@ def main_test():
 if __name__ == "__main__":
     logger.info("Starting !!!")
     tic = timeit.default_timer()
-    main()
+    # main()
+    Participant_Count()
 
     # main_test()
 
