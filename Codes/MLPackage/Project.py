@@ -1172,10 +1172,10 @@ class Features(PreFeatures):
             pre_image.append(sample)
                
         
-        exec(f"self._{pre_image_name} = pd.DataFrame(np.array(pre_image), columns=['pixel_'+str(i) for i in range(np.array(pre_image).shape[1])]) ")
+        exec(f"self._{pre_image_name} = pd.DataFrame(np.array(pre_image), columns=['{pre_image_name}_pixel_'+str(i) for i in range(np.array(pre_image).shape[1])]) ")
         self.saving_pre_image(pre_image_name)
 
-    def saving_pre_image(self, pre_image_name):
+    def saving_pre_image(self, pre_image_name:str) -> None:
         Pathlb(self._features_path).mkdir(parents=True, exist_ok=True)
         pd.DataFrame(self._labels, columns=["ID", "side",]).to_excel(os.path.join(self._features_path, "label.xlsx"))
 
@@ -1184,8 +1184,9 @@ class Features(PreFeatures):
             
         else:
             exec(f"self._{pre_image_name}.to_excel(os.path.join(self._features_path, '{pre_image_name}.xlsx'))")
-            
-    def loading_pre_image(self, pre_image_name):
+
+    def loading_pre_image(self, pre_image_name: str) -> None:
+        """loading a pre image from a excel file."""
         if not pre_image_name in self._pre_image_names:
             raise Exception("Invalid pre image name!!!")
         try:
@@ -1195,7 +1196,6 @@ class Features(PreFeatures):
 
             if self._combination==True:
                 exec(f"self._{pre_image_name}= pd.read_excel(os.path.join(self._features_path, '{pre_image_name}_c.xlsx'), index_col = 0)")
-
             else:
                 exec(f"self._{pre_image_name}= pd.read_excel(os.path.join(self._features_path, '{pre_image_name}.xlsx'), index_col = 0)")
     
@@ -1210,8 +1210,35 @@ class Features(PreFeatures):
             "number_of_features": eval(f"self._{pre_image_name}.shape[1]"), 
             "number_of_samples": eval(f"self._{pre_image_name}.shape[0]"),           
         }
-   
-    def pack(self, list_features):
+
+    def loading_pre_image_from_list(self, list:list) -> None:
+        """loading multiple pre image features from list"""
+        self._labels = pd.read_excel(os.path.join(self._features_path, "label.xlsx"), index_col = 0)
+
+        for pre_image_name in list:
+            if not pre_image_name in self._pre_image_names:
+                raise Exception("Invalid pre image name!!!")
+
+            try:
+                logger.info(f"loading {pre_image_name} features!!!")
+                if self._combination==True:
+                    exec(f"self._{pre_image_name}= pd.read_excel(os.path.join(self._features_path, '{pre_image_name}_c.xlsx'), index_col = 0)")
+                else:
+                    exec(f"self._{pre_image_name}= pd.read_excel(os.path.join(self._features_path, '{pre_image_name}.xlsx'), index_col = 0)")
+        
+                
+
+            except:
+                logger.info(f"extraxting {pre_image_name} features!!!")
+                self.extraxting_pre_image(pre_image_name)
+                
+            self._features_set[f"{pre_image_name}"] = {
+                "columns": eval(f"self._{pre_image_name}.columns"),
+                "number_of_features": eval(f"self._{pre_image_name}.shape[1]"), 
+                "number_of_samples": eval(f"self._{pre_image_name}.shape[0]"),           
+            }
+
+    def pack(self, list_features:list) -> pd.DataFrame:
         """
         list of features=[
             ["COA_handcrafted", "COAs", "COA_WPT",     
@@ -1224,7 +1251,7 @@ class Features(PreFeatures):
         exec(f"DF_features_all = pd.concat({C} + [self._labels], axis=1)".replace("'", ""))
         return eval("DF_features_all")
 
-    def filtering_subjects_and_samples(self, DF_features_all):
+    def filtering_subjects_and_samples(self, DF_features_all:pd.DataFrame) -> pd.DataFrame:
         subjects, samples = np.unique(DF_features_all["ID"].values, return_counts=True)
 
         ss = [a[0] for a in list(zip(subjects, samples)) if a[1]>=self._min_number_of_sample]
@@ -1599,7 +1626,6 @@ class Classifier(Features):
             AUS_All = accuracy_score(x_test_U["ID"].values, y_pred_U)*100 
             FAU_All = np.where(y_pred_U==1)[0].shape[0]
 
-        # breakpoint()
 
 
         # sns.histplot(data=pd.DataFrame(y_pred_tr,x_train['ID'].values).reset_index(),x=0, hue="index", bins=100)
@@ -1624,6 +1650,7 @@ class Classifier(Features):
         # plt.ylabel("PC2")
         # plt.legend()
         # plt.show()
+        # breakpoint()
 
 
         results = [EER, TH, ACC_bd, BACC_bd, FAR_bd, FRR_bd, ACC_ud, BACC_ud, FAR_ud, FRR_ud, AUS, FAU, x_test_U.shape[0], AUS_All, FAU_All]
@@ -1734,6 +1761,7 @@ class Classifier(Features):
         # plt.savefig(path, bbox_inches='tight')
 
         plt.show()
+
 
 class Pipeline(Classifier):
     _features_set = dict()
@@ -1973,7 +2001,7 @@ class Pipeline(Classifier):
 
         return self.run(DF_features_all, listn)
         
-    def pipeline_2(self, Image_feature_name):
+    def pipeline_2(self, Image_feature_name:list):
         """image"""
         # self.t = "P2"
 
@@ -1993,10 +2021,10 @@ class Pipeline(Classifier):
         ###############
         ##  block 2  ##
         ###############
-        listn = [Image_feature_name]
-        DF_features_all = self.pack(listn)     
+        # listn = [Image_feature_name]
+        DF_features_all = self.pack(Image_feature_name)     
 
-        return self.run(DF_features_all, listn)
+        return self.run(DF_features_all, Image_feature_name)
 
     def pipeline_3(self, Image_feature_name):
         """deep features"""
@@ -2374,17 +2402,17 @@ def main():
     
 
     P = Pipeline("casia", "TM", setting)
-    P.t = "Aim1_P1"
+    P.t = "Aim1_P2"
 
-    # P.loading_pre_features_image()
-    P.loading_pre_features_GRF()
-    P.loading_pre_features_COP()
+    P.loading_pre_features_image()
+    # P.loading_pre_features_GRF()
+    # P.loading_pre_features_COP()
 
-    # P.loading_pre_image('P100')
-    P.loading_GRF_handcrafted()
-    P.loading_GRF_WPT()
-    P.loading_COP_handcrafted()
-    P.loading_COP_WPT()
+    P.loading_pre_image_from_list(['P100', 'P80'])
+    # P.loading_GRF_handcrafted()
+    # P.loading_GRF_WPT()
+    # P.loading_COP_handcrafted()
+    # P.loading_COP_WPT()
 
     # P.loading_deep_features('P100')
  
@@ -2413,8 +2441,8 @@ def main():
 
         # P.collect_results(P.pipeline_test())
         # P._classifier_name = 'TM'
-        P.collect_results(P.pipeline_1(), "Pipeline_1") 
-        # P.collect_results(P.pipeline_2('P100'), "Pipeline_2") 
+        # P.collect_results(P.pipeline_1(), "Pipeline_1") 
+        P.collect_results(P.pipeline_2(['P100', 'P80']), "Pipeline_2") 
         # P.collect_results(P.pipeline_4('P100'), "Pipeline_4") 
         # P._classifier_name = 'svm'
         # P.collect_results(P.pipeline_3('P100'), "Pipeline_3") 
@@ -2422,6 +2450,7 @@ def main():
 
         toc = timeit.default_timer()
         logger.info(f'[step {idx+1} out of {len(space)}], parameters: {parameters}, process time: {round(toc-tic, 2)}')
+
 
 def Participant_Count():
 
@@ -2460,7 +2489,7 @@ def Participant_Count():
     
 
     P = Pipeline("casia", "TM", setting)
-    P.t = "Participant_Count_P1"
+    P.t = "Participant_Count_P1_test"
 
     # P.loading_pre_features_image()
     P.loading_pre_features_GRF()
@@ -2486,8 +2515,10 @@ def Participant_Count():
 
     # p0 = [9, 10, 11, 12, 13, 14, 15, 18]
     # p1 = [3, 21, 27, 30, 45, 60, 90, 120, 150, 180, 210]
-    p0 = [5, 10, 15, 20, 25, 30]
-    p1 = [10, 0, 5, 15, 20, 25, 30]
+    p0 = [25, 15, 25]
+    p1 = [25, 0, 15, 25]
+    # p0 = [5, 10, 15, 20, 25, 30]
+    # p1 = [10, 0, 5, 15, 20, 25, 30]
 
     space = list(product(p0, p1))
     space = space[:]
@@ -2557,8 +2588,8 @@ def main_test():
 if __name__ == "__main__":
     logger.info("Starting !!!")
     tic = timeit.default_timer()
-    # main()
-    Participant_Count()
+    main()
+    # Participant_Count()
 
     # main_test()
 
