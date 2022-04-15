@@ -1068,7 +1068,7 @@ class Features(PreFeatures):
         logger.info("MaduleName: {}\n".format(CNN_name))
         
         
-        input = tf.keras.layers.Input(shape= (60, 40, 3), dtype = tf.float64, name="original_img") # todo image size
+        input = tf.keras.layers.Input(shape= (224, 224, 3), dtype = tf.float64, name="original_img") # todo image size
         x = tf.cast(input, tf.float32)
         x = eval("tf.keras.applications." + CNN_name + ".preprocess_input(x)")
         x = base_model(x)
@@ -1083,23 +1083,32 @@ class Features(PreFeatures):
 
         logger.info("batch_size: {}".format(self._CNN_batch_size))
 
-
+        # breakpoint()
         pre_images_norm = self.normalizing_pre_image(pre_image_name)
 
 
         train_ds = tf.data.Dataset.from_tensor_slices((pre_images_norm, self._labels["ID"] ))
         train_ds = train_ds.batch(self._CNN_batch_size)
 
+        def resize_images(images, labels):
+            images = tf.image.grayscale_to_rgb(tf.expand_dims(images, -1))
+            images = tf.image.resize(images, (224, 224))
+            return images, labels
+
+        train_ds = train_ds.map(resize_images)
+
+        # [(x.shape, y.shape) for x,y in train_ds]
+
         Deep_features = np.zeros((1, model.layers[-1].output_shape[1]))
 
-        deep_features = list()
+        # deep_features = list()
 
-        for image_batch, labels_batch in train_ds:
+        for image_batch, _ in train_ds:
            
-            images = image_batch[...,tf.newaxis]
-            images = np.concatenate((images, images, images), axis=-1)
+            # images = image_batch[...,tf.newaxis]
+            # images = np.concatenate((images, images, images), axis=-1)
 
-            feature = model(images)
+            feature = model(image_batch)
             Deep_features = np.append(Deep_features, feature, axis=0)
 
             if (Deep_features.shape[0]-1) % 256 == 0:
@@ -1109,11 +1118,11 @@ class Features(PreFeatures):
         Deep_features = Deep_features[1:, :]
         logger.info(f"Deep features shape: {Deep_features.shape}")
 
-        time = int(timeit.default_timer() * 1_000_000)
-        self._deep_features = pd.DataFrame(Deep_features, columns=['deep_'+str(i) for i in range(Deep_features.shape[1])])
+        # time = int(timeit.default_timer() * 1_000_000)
+        exec(f"self._deep_{pre_image_name}_{CNN_base_model[:5]} = pd.DataFrame(Deep_features, columns=['deep_{pre_image_name}_{CNN_base_model[:5]}_'+str(i) for i in range(Deep_features.shape[1])])")
 
 
-        self.saving_deep_features()
+        self.saving_deep_features(pre_image_name, CNN_base_model)
 
     def normalizing_pre_image(self, pre_image_name):
         if not pre_image_name in self._pre_image_names:
@@ -1124,16 +1133,16 @@ class Features(PreFeatures):
         maxvalues = np.max(self._pre_images[..., i])
         return self._pre_images[..., i]/maxvalues
 
-    def saving_deep_features(self):
+    def saving_deep_features(self, pre_image_name, CNN_base_model):
         
         Pathlb(self._features_path).mkdir(parents=True, exist_ok=True)
         pd.DataFrame(self._labels, columns=["ID", "side",]).to_excel(os.path.join(self._features_path, "label.xlsx"))
 
         if self._combination==True:
-            self._deep_features.to_excel(os.path.join(self._features_path, 'deep_features_c.xlsx'))
+            exec(f"self._deep_{pre_image_name}_{CNN_base_model[:5]}.to_excel(os.path.join(self._features_path, f'deep_{pre_image_name}_{CNN_base_model[:5]}_c.xlsx'))")
             
         else:
-            self._deep_features.to_excel(os.path.join(self._features_path, 'deep_features.xlsx'))
+            exec(f"self._deep_{pre_image_name}_{CNN_base_model[:5]}.to_excel(os.path.join(self._features_path, f'deep_{pre_image_name}_{CNN_base_model[:5]}.xlsx'))")
             
     def loading_deep_features(self, pre_image_name, CNN_base_model="resnet50.ResNet50"):
         if not pre_image_name in self._pre_image_names:
@@ -1144,20 +1153,48 @@ class Features(PreFeatures):
             self._labels = pd.read_excel(os.path.join(self._features_path, "label.xlsx"), index_col = 0)
 
             if self._combination==True:
-                self._deep_features = pd.read_excel(os.path.join(self._features_path, 'deep_features_c.xlsx'), index_col = 0)
+                exec(f"self._deep_{pre_image_name}_{CNN_base_model[:5]} = pd.read_excel(os.path.join(self._features_path, f'deep_{pre_image_name}_{CNN_base_model[:5]}_c.xlsx'), index_col = 0)")
 
             else:
-                self._deep_features = pd.read_excel(os.path.join(self._features_path, 'deep_features.xlsx'), index_col = 0)        
+                exec(f"self._deep_{pre_image_name}_{CNN_base_model[:5]} = pd.read_excel(os.path.join(self._features_path, f'deep_{pre_image_name}_{CNN_base_model[:5]}.xlsx'), index_col = 0)")
 
         except:
             logger.info("extraxting COA features!!!")
             self.extraxting_deep_features(pre_image_name, CNN_base_model)
 
-        self._features_set["deep_features"] = {
-            "columns": self._deep_features.columns,
-            "number_of_features": self._deep_features.shape[1], 
-            "number_of_samples": self._deep_features.shape[0],           
+        self._features_set[f'deep_{pre_image_name}_{CNN_base_model[:5]}'] = {
+            "columns": eval(f"self._deep_{pre_image_name}_{CNN_base_model[:5]}.columns"),
+            "number_of_features": eval(f"self._deep_{pre_image_name}_{CNN_base_model[:5]}.shape[1]"), 
+            "number_of_samples": eval(f"self._deep_{pre_image_name}_{CNN_base_model[:5]}.shape[0]"),           
         }
+
+    def loading_deep_features_from_list(self, list:list, CNN_base_model="resnet50.ResNet50") -> None:
+        """loading deep features from a list of image features"""
+        self._labels = pd.read_excel(os.path.join(self._features_path, "label.xlsx"), index_col = 0)
+        self._CNN_base_model = CNN_base_model
+
+        for pre_image_name in list:
+            if not pre_image_name in self._pre_image_names:
+                raise Exception("Invalid pre image name!!!")
+            try:
+                if self._combination==True:
+                    exec(f"self._deep_{pre_image_name}_{CNN_base_model[:5]} = pd.read_excel(os.path.join(self._features_path, f'deep_{pre_image_name}_{CNN_base_model[:5]}_c.xlsx'), index_col = 0)")
+
+                else:
+                    exec(f"self._deep_{pre_image_name}_{CNN_base_model[:5]} = pd.read_excel(os.path.join(self._features_path, f'deep_{pre_image_name}_{CNN_base_model[:5]}.xlsx'), index_col = 0)")
+
+                logger.info("loading COA features!!!")
+
+            except:
+                logger.info("extraxting COA features!!!")
+                self.extraxting_deep_features(pre_image_name, CNN_base_model)
+
+            self._features_set[f'deep_{pre_image_name}_{CNN_base_model[:5]}'] = {
+                "columns": eval(f"self._deep_{pre_image_name}_{CNN_base_model[:5]}.columns"),
+                "number_of_features": eval(f"self._deep_{pre_image_name}_{CNN_base_model[:5]}.shape[1]"), 
+                "number_of_samples": eval(f"self._deep_{pre_image_name}_{CNN_base_model[:5]}.shape[0]"),           
+            }
+
 
     ## images
     def extraxting_pre_image(self, pre_image_name):
@@ -2047,8 +2084,8 @@ class Pipeline(Classifier):
         ###############
         ##  block 2  ##
         ###############         
- 
-        listn = ["deep_features"]
+
+        listn = [ f'deep_{pre_image_name}_{self._CNN_base_model[:5]}' for pre_image_name in Image_feature_name]
         DF_features_all = self.pack(listn)     
 
         return self.run(DF_features_all, listn)
@@ -2402,7 +2439,7 @@ def main():
     
 
     P = Pipeline("casia", "TM", setting)
-    P.t = "Aim1_P2"
+    P.t = "Aim1_P3-resnet50"
 
     P.loading_pre_features_image()
     # P.loading_pre_features_GRF()
@@ -2414,7 +2451,6 @@ def main():
     # P.loading_COP_handcrafted()
     # P.loading_COP_WPT()
 
-    # P.loading_deep_features('P100')
  
 
     ######################################################################################################################
@@ -2428,24 +2464,29 @@ def main():
 
     # p0 = [9, 10, 11, 12, 13, 14, 15, 18]
     # p1 = [3, 21, 27, 30, 45, 60, 90, 120, 150, 180, 210]
-    p0 = ["TM", "svm"]
+    p0 = ["svm"]
+    p1 = ["resnet50.ResNet50"]#["vgg16.VGG16", "resnet50.ResNet50", "efficientnet.EfficientNetB0", "mobilenet.MobileNet"]
 
-    space = list(product(p0))
+
+    space = list(product(p0, p1))
     space = space[:]
 
     for idx, parameters in enumerate(space):
 
 
         P._classifier_name = parameters[0]
+        P.loading_deep_features_from_list(['P100', 'P80'], CNN_base_model=parameters[1])
+ 
+
  
 
         # P.collect_results(P.pipeline_test())
         # P._classifier_name = 'TM'
         # P.collect_results(P.pipeline_1(), "Pipeline_1") 
-        P.collect_results(P.pipeline_2(['P100', 'P80']), "Pipeline_2") 
+        # P.collect_results(P.pipeline_2(['P100', 'P80']), "Pipeline_2") 
         # P.collect_results(P.pipeline_4('P100'), "Pipeline_4") 
         # P._classifier_name = 'svm'
-        # P.collect_results(P.pipeline_3('P100'), "Pipeline_3") 
+        P.collect_results(P.pipeline_3(['P100', 'P80']), "Pipeline_3") 
 
 
         toc = timeit.default_timer()
