@@ -1485,7 +1485,7 @@ class Classifier(Features):
 
         return DF_clustered
 
-    def ML_classifier(self, x_train, x_test, x_test_U):
+    def ML_classifier(self, x_train, x_test, x_test_U,a):
         
         if self._classifier_name=="knn":
             classifier = knn(n_neighbors=self._KNN_n_neighbors, metric=self._KNN_metric, weights=self._KNN_weights, n_jobs=-1)
@@ -1626,31 +1626,58 @@ class Classifier(Features):
             AUS_All = accuracy_score(x_test_U["ID"].values, y_pred_U)*100 
             FAU_All = np.where(y_pred_U==1)[0].shape[0]
 
+        # breakpoint()
+
+        # PP = f"./A/{self._classifier_name}/{str(a)}/{str(self._known_imposter)}/1/"
+        # PP1 = f"./A/{self._classifier_name}/{str(a)}/{str(self._known_imposter)}/2/"
+        # PP2 = f"./A/{self._classifier_name}/{str(a)}/{str(self._known_imposter)}/3/"
+        # PP3 = f"./A/{self._classifier_name}/{str(a)}/{str(self._known_imposter)}/4/"
+        # Pathlb(PP).mkdir(parents=True, exist_ok=True)
+        # Pathlb(PP1).mkdir(parents=True, exist_ok=True)
+        # Pathlb(PP2).mkdir(parents=True, exist_ok=True)
+        # Pathlb(PP3).mkdir(parents=True, exist_ok=True)
+        # # breakpoint()
 
 
-        # sns.histplot(data=pd.DataFrame(y_pred_tr,x_train['ID'].values).reset_index(),x=0, hue="index", bins=100)
+        # SS = pd.DataFrame(y_pred_tr,x_train['ID'].values).reset_index()
+        # SS.columns = ["Labels","train scores"]
+        # sns.histplot(data=SS, x="train scores", hue="Labels", bins=100)
         # plt.plot([TH,TH],[0,13], 'r--', linewidth = 2)
-        # plt.title("train")
+        # plt.title(f"Number of unknown Imposters: {str(self._unknown_imposter)} \n EER: {round(EER,2)}      Threshold: {round(TH,2)}")
+        # plt.savefig(PP+f"{str(self._unknown_imposter)}.png")
+
 
         # plt.figure()
-        # sns.histplot(data=pd.DataFrame(y_pred1, x_test['ID'].values).reset_index(),x=0, hue="index", bins=100)
+        # SS = pd.DataFrame(y_pred1,x_test['ID'].values).reset_index()
+        # SS.columns = ["Labels","test scores"]
+        # sns.histplot(data=SS, x="test scores", hue="Labels", bins=100)
         # plt.plot([TH,TH],[0,13], 'r--', linewidth = 2)
-        # plt.title("test")
+        # plt.title(f"unknown Imposters: {str(self._unknown_imposter)},   ACC: {round(ACC_ud,2)},    BACC: {round(BACC_ud,2)},   CM: {CM_ud}")
+        # plt.savefig(PP1+f"{str(self._unknown_imposter)}.png")
+
 
         # plt.figure()
         # sns.histplot(y_pred_U1, bins=100)
         # plt.plot([TH,TH],[0,13], 'r--', linewidth = 2)
-        # plt.title("test_U")
+        # plt.xlabel("unknown imposter scores")
+        # plt.title(f"Number of unknown Imposters: {str(self._unknown_imposter)},\n AUS: {round(AUS_All,2)},       FAU: {round(FAU_All,2)}")
+        # plt.savefig(PP2+f"{str(self._unknown_imposter)}.png")
 
         # plt.figure()
         # plt.scatter(x_train.iloc[:, 0].values, x_train.iloc[:, 1].values, c ="red", marker ="s", label="train", s = x_train.iloc[:, -1].values*22+1)
         # plt.scatter(x_test.iloc[:, 0].values, x_test.iloc[:, 1].values,  c ="blue", marker ="*", label="test", s = x_test.iloc[:, -1].values*22+1)
         # plt.scatter(x_test_U.iloc[:, 0].values, x_test_U.iloc[:, 1].values, c ="green", marker ="o", label="u", s = 5)
+        # plt.title(f'# training positives: {x_train[x_train["ID"]== 1.0].shape[0]},       # training negatives: {x_train[x_train["ID"]== 0.0].shape[0]} \n # test positives: {x_test[x_test["ID"]== 1.0].shape[0]},       # test negatives: {x_test[x_test["ID"]== 0.0].shape[0]}               # test_U : {x_test_U.shape[0]}')
+
         # plt.xlabel("PC1")
         # plt.ylabel("PC2")
         # plt.legend()
+        # plt.savefig(PP3+f"{str(self._unknown_imposter)}.png")
+        # plt.close('all')
+
+
         # plt.show()
-        # breakpoint()
+        # breakpoint()  
 
 
         results = [EER, TH, ACC_bd, BACC_bd, FAR_bd, FRR_bd, ACC_ud, BACC_ud, FAR_ud, FRR_ud, AUS, FAU, x_test_U.shape[0], AUS_All, FAU_All]
@@ -2099,6 +2126,10 @@ class Pipeline(Classifier):
 
         results = list()
         for subject in self._known_imposter_list:
+            # if subject not in [4, 5, 6, 7]:
+            #     break
+
+
             if self._verbose == True:
                 print(f"Subject number: {subject} out of {len(self._known_imposter_list)} ")
             DF_known_imposter_binariezed, DF_unknown_imposter_binariezed = self.binarize_labels(DF_known_imposter, DF_unknown_imposter, subject)
@@ -2123,11 +2154,12 @@ class Pipeline(Classifier):
 
                 df_train, df_test, df_test_U = self.projector(df_train, df_test, df_test_U, listn)
 
-                result, CM_bd, CM_ud = self.ML_classifier(df_train, df_test, df_test_U)
+                result, CM_bd, CM_ud = self.ML_classifier(df_train, df_test, df_test_U, subject) 
 
                 cv_results.append(result)
                 cv_CM_u.append(CM_ud)
                 cv_CM_b.append(CM_bd)
+                # break
 
             result = self.compacting_results(cv_results, cv_CM_b, cv_CM_u, subject)
             results.append(result)
@@ -2404,15 +2436,15 @@ def main():
     P = Pipeline("casia", "TM", setting)
     P.t = "Aim1_P2"
 
-    P.loading_pre_features_image()
-    # P.loading_pre_features_GRF()
-    # P.loading_pre_features_COP()
+    # P.loading_pre_features_image()
+    P.loading_pre_features_GRF()
+    P.loading_pre_features_COP()
 
-    P.loading_pre_image_from_list(['P100', 'P80'])
-    # P.loading_GRF_handcrafted()
-    # P.loading_GRF_WPT()
-    # P.loading_COP_handcrafted()
-    # P.loading_COP_WPT()
+    # P.loading_pre_image_from_list(['P100', 'P80'])
+    P.loading_GRF_handcrafted()
+    P.loading_GRF_WPT()
+    P.loading_COP_handcrafted()
+    P.loading_COP_WPT()
 
     # P.loading_deep_features('P100')
  
@@ -2441,8 +2473,8 @@ def main():
 
         # P.collect_results(P.pipeline_test())
         # P._classifier_name = 'TM'
-        # P.collect_results(P.pipeline_1(), "Pipeline_1") 
-        P.collect_results(P.pipeline_2(['P100', 'P80']), "Pipeline_2") 
+        P.collect_results(P.pipeline_1(), "Pipeline_1") 
+        # P.collect_results(P.pipeline_2(['P100', 'P80']), "Pipeline_2") 
         # P.collect_results(P.pipeline_4('P100'), "Pipeline_4") 
         # P._classifier_name = 'svm'
         # P.collect_results(P.pipeline_3('P100'), "Pipeline_3") 
@@ -2515,10 +2547,10 @@ def Participant_Count():
 
     # p0 = [9, 10, 11, 12, 13, 14, 15, 18]
     # p1 = [3, 21, 27, 30, 45, 60, 90, 120, 150, 180, 210]
-    p0 = [25, 15, 25]
-    p1 = [25, 0, 15, 25]
-    # p0 = [5, 10, 15, 20, 25, 30]
-    # p1 = [10, 0, 5, 15, 20, 25, 30]
+    # p0 = [5, 30]
+    # p1 = [5, 10, 15, 20, 25, 30]
+    p0 = [5, 10, 15, 20, 25, 30]
+    p1 = [10, 0, 5, 15, 20, 25, 30]
 
     space = list(product(p0, p1))
     space = space[:]
@@ -2530,7 +2562,7 @@ def Participant_Count():
         P._unknown_imposter   = parameters[1]
 
         # P.collect_results(P.pipeline_test())
-        # P._classifier_name = 'TM'
+        P._classifier_name = 'svm'
         P.collect_results(P.pipeline_1(), "Pipeline_1") 
         # P.collect_results(P.pipeline_2('P100'), "Pipeline_2") 
         # P.collect_results(P.pipeline_4('P100'), "Pipeline_4") 
@@ -2588,8 +2620,8 @@ def main_test():
 if __name__ == "__main__":
     logger.info("Starting !!!")
     tic = timeit.default_timer()
-    main()
-    # Participant_Count()
+    # main()
+    Participant_Count()
 
     # main_test()
 
