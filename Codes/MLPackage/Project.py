@@ -1,4 +1,3 @@
-from xml.sax.handler import feature_string_interning
 import numpy as np
 import pandas as pd
 from scipy import ndimage
@@ -51,8 +50,11 @@ def create_logger(level):
 
     logger = logging.getLogger(loggerName)
     logger.setLevel(level)
-    formatter_colored = logging.Formatter(blue + '[%(asctime)s]-' + yellow + '[%(name)s @%(lineno)d]' + reset + blue + '-[%(levelname)s]' + reset + bold_red + '\t\t%(message)s' + reset, datefmt='%m/%d/%Y %I:%M:%S %p ')
-    formatter = logging.Formatter('[%(asctime)s]-[%(name)s @%(lineno)d]-[%(levelname)s]\t\t%(message)s', datefmt='%m/%d/%Y %I:%M:%S %p ')
+    t1 = blue + '[%(asctime)s]-' + yellow + '[%(name)s @%(lineno)d]' + reset + blue + '-[%(levelname)s]' + reset + bold_red
+    t2 = ' %(message)s' + reset
+    # breakpoint()
+    formatter_colored = logging.Formatter( t1 + t2, datefmt='%m/%d/%Y %I:%M:%S %p ')
+    formatter = logging.Formatter('[%(asctime)s]-[%(name)s @%(lineno)d]-[%(levelname)s]      %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p ')
     file_handler = logging.FileHandler( os.path.join(log_path, loggerName + '_loger.log'), mode = 'w')
     file_handler.setLevel(level)
     file_handler.setFormatter(formatter)
@@ -68,14 +70,10 @@ def create_logger(level):
 logger = create_logger(logging.DEBUG)
 
 
-
-
-
 class Database(object):
-    def __init__(self, dataset_name, combination=True):
-        self.dataset_name = dataset_name
-        self._combination = combination
-        self.set_dataset_path()
+    def __init__(self, ):
+        super().__init__()
+
 
     def load_H5():
         pass
@@ -85,23 +83,23 @@ class Database(object):
         logger.info(self._data_path)
         logger.info(self._meta_path)
 
-    def set_dataset_path(self):
-        if self.dataset_name == "casia":
+    def set_dataset_path(self, dataset_name:str) -> None:
+        """setting path for dataset"""
+        if dataset_name == "casia":
             self._h5_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "footpressures_align.h5")
             self._data_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "Data-barefoot.npy")
             self._meta_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "Metadata-barefoot.npy")
             self._pre_features_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "pre_features")
             self._features_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "features")
 
-
-        elif self.dataset_name == "stepscan":
+        elif dataset_name == "stepscan":
             self._h5_path = os.path.join(os.getcwd(), "Datasets", "stepscan", "footpressures_align.h5")
             self._data_path = os.path.join(os.getcwd(), "Datasets", "stepscan", "Data-barefoot.npy")
             self._meta_path = os.path.join(os.getcwd(), "Datasets", "stepscan", "Metadata-barefoot.npy")
             self._pre_features_path = os.path.join(os.getcwd(), "Datasets", "stepscan", "pre_features")
             self._features_path = os.path.join(os.getcwd(), "Datasets", "stepscan", "features")
 
-        elif self.dataset_name == "sfootbd":
+        elif dataset_name == "sfootbd":
             self._h5_path = os.path.join(os.getcwd(), "Datasets", "sfootbd", ".h5")
             self._mat_path = os.path.join(os.getcwd(), "Datasets", "sfootbd", "SFootBD")
             self._txt_path = os.path.join(os.getcwd(), "Datasets", "sfootbd", "IndexFiles")
@@ -119,14 +117,14 @@ class Database(object):
         Pathlb(self._pre_features_path).mkdir(parents=True, exist_ok=True)
         Pathlb(self._features_path).mkdir(parents=True, exist_ok=True)
 
-    def extracting_labels(self):
-        if self.dataset_name == "casia":
-            self._labels = self._meta[:,0:2]
+    def extracting_labels(self, dataset_name:str) -> np.ndarray:
+        if dataset_name == "casia":
+            return self._meta[:,0:2]
 
-        elif self.dataset_name == "stepscan":
-            self._labels = self._meta[:,0:2]
+        elif dataset_name == "stepscan":
+            return self._meta[:-1,0:2]
 
-        elif self.dataset_name == "sfootbd":
+        elif dataset_name == "sfootbd":
             g = glob.glob(self._txt_path + "\*.txt", recursive=True)
             label = list()
             label1 = list()
@@ -142,15 +140,14 @@ class Database(object):
                 ind = label1.index(i[0][:-4])
                 lst.append(int(label[ind]) )
 
-            self._labels = pd.DataFrame(lst, columns=["ID"])
-
+            return np.array(lst)
 
         else:
             logger.error("The name is not valid!!")
 
     def print_dataset(self):
-        logger.info("Data shape: {}".format(self._data.shape))
-        logger.info("Metadata shape: {}".format(self._meta.shape))
+        logger.info(f"sample size: {self._sample_size}")
+        logger.info(f"samples: {self._samples}")
 
     def mat_to_numpy(self):
         g = glob.glob(self._mat_path + "\*.mat", recursive=True)
@@ -158,7 +155,7 @@ class Database(object):
         label = list()
         for i in g:
             if i.endswith(".mat"):
-                print(i.split("\\")[-1] + " is loading...")
+                logger.info(i.split("\\")[-1] + " is loading...")
                 temp = scipy.io.loadmat(i)
 
                 X = 2200 - temp['dataL'].shape[0]
@@ -176,18 +173,30 @@ class Database(object):
         np.save(self._data_path, data)
         np.save(self._meta_path, label)
 
-    def loaddataset(self):
-        self._data = np.load(self._data_path, allow_pickle=True)
+    def loaddataset(self, dataset_name:str) -> np.ndarray:
+        self.set_dataset_path(dataset_name)
+
+        data = np.load(self._data_path, allow_pickle=True)
+        if dataset_name == "stepscan":
+            data = data[:-1]
         self._meta = np.load(self._meta_path, allow_pickle=True)
-        self._sample_size = self._data.shape[1:]
-        self._samples = self._data.shape[0]
-        self.extracting_labels()
+        self._sample_size = data.shape[1:]
+        self._samples = data.shape[0]
+        labels = self.extracting_labels(dataset_name)
+        self.print_dataset()
+        if data.shape[0] != labels.shape[0]:
+            logger.error(f"The data and labels are not matched!! data shape ({data.shape[0]}) != labels shape {labels.shape[0]}")
+            sys.exit()
+        return data, labels
 
 
 class PreFeatures(Database):
-    def __init__( self, dataset_name):
-        super().__init__(dataset_name)
+    def __init__(self, dataset_name:str):
+        super().__init__()
         self._test_id = int(timeit.default_timer() * 1_000_000)
+        self._features_set = dict()
+        self.set_dataset_path(dataset_name)
+
         
     @staticmethod
     def computeCOPTimeSeries(Footprint3D):
@@ -222,7 +231,6 @@ class PreFeatures(Database):
 
     @staticmethod
     def computeCOATimeSeries(Footprint3D, Binarize="otsu", Threshold=1):
-
         """
         computeCOATimeSeries(Footprint3D)
         Footprint3D : [x,y,t] image
@@ -279,14 +287,12 @@ class PreFeatures(Database):
         """
         prefeatures(Footprint3D)
         Footprint3D: [x,y,t] image
-        return prefeatures: [x, y, 10] (CD, PTI, Tmin, Tmax, P50, P60, P70, P80, P90, P100)
+        return pre_images: [x, y, 10] (CD, PTI, Tmin, Tmax, P50, P60, P70, P80, P90, P100)
 
         If The 30th percentile of a is 24.0: This means that 30% of values fall below 24.
         
         """
-
-        prefeaturesl = list()
-            
+          
         temp = np.zeros(Footprint3D.shape)
         temp[Footprint3D > eps] = 1
         CD = np.sum(temp, axis=2)
@@ -307,22 +313,25 @@ class PreFeatures(Database):
         P90  = np.percentile(Footprint3D,  90, axis=2)
         P100 = np.percentile(Footprint3D, 100, axis=2)
 
-        prefeaturesl = np.stack((CD, PTI, Tmin, Tmax, P50, P60, P70, P80, P90, P100), axis = -1)
+        pre_images = np.stack((CD, PTI, Tmin, Tmax, P50, P60, P70, P80, P90, P100), axis = -1)
 
-        return prefeaturesl
+        return pre_images
     
-    def extracting_pre_features(self):
-        self.loaddataset()
+    def extracting_pre_features(self, dataset_name:str, combination:bool=True) -> pd.DataFrame:
+        data, labels = self.loaddataset(dataset_name)
         GRFs = list()
         COPs = list()
         COAs = list()
         pre_images = list()
-        for sample, label in zip(self._data, self._meta):
+        # i=0
+        for sample, label in zip(data, labels):
+            # logger.info(  i )
+            # i = i+1
     
-            if self._combination==True and label[1]==0:
+            if combination==True and label[1]==0 and dataset_name=='casia':
                 sample = np.fliplr(sample)
 
-            COA = self.computeCOATimeSeries(sample, Binarize = "simple", Threshold = 0)
+            COA = self.computeCOATimeSeries(sample, Binarize="simple", Threshold=0)
             COA = COA.flatten()
 
             GRF = self.computeGRF(sample)
@@ -337,162 +346,146 @@ class PreFeatures(Database):
             GRFs.append(GRF)
             pre_images.append(pre_image)
 
-        self._GRFs = pd.DataFrame(np.array(GRFs), columns=["GRF_"+str(i) for i in range(np.array(GRFs).shape[1])])
-        self._COPs = pd.DataFrame(np.array(COPs), columns=["COP_"+str(i) for i in range(np.array(COPs).shape[1])]) 
-        self._COAs = pd.DataFrame(np.array(COAs), columns=["COA_"+str(i) for i in range(np.array(COAs).shape[1])]) 
-        self._pre_images = np.array(pre_images)
+        GRFs = pd.DataFrame(np.array(GRFs), columns=["GRF_"+str(i) for i in range(np.array(GRFs).shape[1])])
+        COPs = pd.DataFrame(np.array(COPs), columns=["COP_"+str(i) for i in range(np.array(COPs).shape[1])]) 
+        COAs = pd.DataFrame(np.array(COAs), columns=["COA_"+str(i) for i in range(np.array(COAs).shape[1])]) 
+        pre_images = np.array(pre_images)
 
-        self.saving_pre_features()
+        self.saving_pre_features(GRFs, COPs, COAs, pre_images, labels, combination)
+        return GRFs, COPs, COAs, pre_images, labels
 
-    def saving_pre_features(self):
-        pd.DataFrame(self._labels, columns=["ID", "side",]).to_excel(os.path.join(self._pre_features_path, "label.xlsx"))
+    def saving_pre_features(self, GRFs, COPs, COAs, pre_images, labels, combination:bool=True):
+        pd.DataFrame(labels, columns=["ID", "side",]).to_parquet(os.path.join(self._pre_features_path, f"label.parquet"))
 
-        if self._combination==True:
-            self._GRFs.to_excel(os.path.join(self._pre_features_path, "GRF_c.xlsx"))
-            self._COAs.to_excel(os.path.join(self._pre_features_path, "COA_c.xlsx"))
-            self._COPs.to_excel(os.path.join(self._pre_features_path, "COP_c.xlsx"))
-            np.save(os.path.join(self._pre_features_path, "pre_images_c.npy"), self._pre_images)
-        else:
-            self._GRFs.to_excel(os.path.join(self._pre_features_path, "GRF.xlsx"))
-            self._COAs.to_excel(os.path.join(self._pre_features_path, "COA.xlsx"))
-            self._COPs.to_excel(os.path.join(self._pre_features_path, "COP.xlsx"))
-            np.save(os.path.join(self._pre_features_path, "pre_images.npy"), self._pre_images)
+        GRFs.to_parquet(os.path.join(self._pre_features_path, f"GRF_{combination}.parquet"))
+        COAs.to_parquet(os.path.join(self._pre_features_path, f"COA_{combination}.parquet"))
+        COPs.to_parquet(os.path.join(self._pre_features_path, f"COP_{combination}.parquet"))
+        np.save(os.path.join(self._pre_features_path, f"pre_images_{combination}.npy"), pre_images)
 
-    def loading_pre_features_COP(self):
-        self.loaddataset()
-
+    def loading_pre_features_COP(self, dataset_name:str, combination:bool=True) -> pd.DataFrame:
         try:
-            logger.info("loading pre features!!!")
+            labels = pd.read_parquet(os.path.join(self._pre_features_path, f"label.parquet"))
+            COPs = pd.read_parquet(os.path.join(self._pre_features_path, f"COP_{combination}.parquet"))
+            logger.info("COP curve were loaded!!!")
 
-            self._labels = pd.read_excel(os.path.join(self._pre_features_path, "label.xlsx"), index_col = 0)
-
-            if self._combination==True:
-                self._COPs = pd.read_excel(os.path.join(self._pre_features_path, "COP_c.xlsx"), index_col = 0)
-            else:
-                self._COPs = pd.read_excel(os.path.join(self._pre_features_path, "COP.xlsx"), index_col = 0)
-        except:
-            logger.info("extraxting pre features!!!")
-            self.extracting_pre_features()
+        except Exception as e: 
+            logger.error(e) 
+            logger.info("extraxting COP curve!!!")
+            _, COPs, _, _, labels = self.extracting_pre_features(dataset_name, combination)
 
         self._features_set["COPs"] = {
-            "columns": self._COPs.columns,
-            "number_of_features": self._COPs.shape[1], 
-            "number_of_samples": self._COPs.shape[0],           
+            "columns": COPs.columns,
+            "number_of_features": COPs.shape[1], 
+            "number_of_samples": COPs.shape[0],           
         }  
 
-    def loading_pre_features_COA(self):
-        self.loaddataset()
+        return COPs, labels
 
+    def loading_pre_features_COA(self, dataset_name:str, combination:bool=True) -> pd.DataFrame:
         try:
-            logger.info("loading pre features!!!")
+            labels = pd.read_parquet(os.path.join(self._pre_features_path, f"label.parquet"))
+            COAs = pd.read_parquet(os.path.join(self._pre_features_path, f"COA_{combination}.parquet"))
+            logger.info("COA curve were loaded!!!")
 
-            self._labels = pd.read_excel(os.path.join(self._pre_features_path, "label.xlsx"), index_col = 0)
-
-            if self._combination==True:
-                self._COAs = pd.read_excel(os.path.join(self._pre_features_path, "COA_c.xlsx"), index_col = 0)
                 
-            else:
-                self._COAs = pd.read_excel(os.path.join(self._pre_features_path, "COA.xlsx"), index_col = 0)
-                
-        except:
-            logger.info("extraxting pre features!!!")
-            self.extracting_pre_features()
+        except Exception as e: 
+            logger.error(e) 
+            logger.info("extraxting COA curve!!!")
+            _, _, COAs, _, labels = self.extracting_pre_features(dataset_name, combination)
 
         self._features_set["COAs"] = {
-            "columns": self._COAs.columns,
-            "number_of_features": self._COAs.shape[1], 
-            "number_of_samples": self._COAs.shape[0],           
+            "columns": COAs.columns,
+            "number_of_features": COAs.shape[1], 
+            "number_of_samples": COAs.shape[0],           
         }  
+        
+        return COAs, labels
 
-    def loading_pre_features_GRF(self):
-        self.loaddataset()
+    def loading_pre_features_GRF(self, dataset_name:str, combination:bool=True) -> pd.DataFrame:
 
         try:
-            logger.info("loading pre features!!!")
+            labels = pd.read_parquet(os.path.join(self._pre_features_path, f"label.parquet"))
+            GRFs = pd.read_parquet(os.path.join(self._pre_features_path, f"GRF_{combination}.parquet"))
+            logger.info("GRF curve were loaded!!!")
 
-            self._labels = pd.read_excel(os.path.join(self._pre_features_path, "label.xlsx"), index_col = 0)
-
-            if self._combination==True:
-                self._GRFs = pd.read_excel(os.path.join(self._pre_features_path, "GRF_c.xlsx"), index_col = 0)
-                
-            else:
-                self._GRFs = pd.read_excel(os.path.join(self._pre_features_path, "GRF.xlsx"), index_col = 0)
-                
-        except:
-            logger.info("extraxting pre features!!!")
-            self.extracting_pre_features()
+        except Exception as e: 
+            logger.error(e) 
+            logger.info("extraxting GRF curve!!!")
+            GRFs, _, _, _, labels = self.extracting_pre_features(dataset_name, combination)
 
         self._features_set["GRFs"] = {
-            "columns": self._GRFs.columns,
-            "number_of_features": self._GRFs.shape[1], 
-            "number_of_samples": self._GRFs.shape[0],           
+            "columns": GRFs.columns,
+            "number_of_features": GRFs.shape[1], 
+            "number_of_samples": GRFs.shape[0],           
         }  
 
-    def loading_pre_features_image(self):
-        self.loaddataset()
+        return GRFs, labels
 
+    def loading_pre_features_image(self, dataset_name:str, combination:bool=True) -> pd.DataFrame:
         try:
-            logger.info("loading pre features!!!")
-
-            self._labels = pd.read_excel(os.path.join(self._pre_features_path, "label.xlsx"), index_col = 0)
-
-            if self._combination==True:
-                self._pre_images = np.load(os.path.join(self._pre_features_path, "pre_images_c.npy"))
-            else:
-                self._pre_images = np.load(os.path.join(self._pre_features_path, "pre_images.npy"))
-        except:
-            logger.info("extraxting pre features!!!")
-            self.extracting_pre_features()
+            labels = pd.read_parquet(os.path.join(self._pre_features_path, f"label.parquet"))
+            pre_images = np.load(os.path.join(self._pre_features_path, f"pre_images_{combination}.npy"))
+            logger.info("image features were loaded!!!")
+        except Exception as e: 
+            logger.error(e) 
+            logger.info("extraxting image features!!!")
+            _, _, _, pre_images, labels = self.extracting_pre_features(dataset_name, combination)
+        return pre_images, labels
     
-    def loading_pre_features(self):
-        self.loaddataset()
-
+    def loading_pre_features(self, dataset_name:str, combination:bool=True) -> pd.DataFrame:
         try:
-            logger.info("loading pre features!!!")
-
-            self._labels = pd.read_excel(os.path.join(self._pre_features_path, "label.xlsx"), index_col = 0)
-
-            if self._combination==True:
-                self._GRFs = pd.read_excel(os.path.join(self._pre_features_path, "GRF_c.xlsx"), index_col = 0)
-                self._COAs = pd.read_excel(os.path.join(self._pre_features_path, "COA_c.xlsx"), index_col = 0)
-                self._COPs = pd.read_excel(os.path.join(self._pre_features_path, "COP_c.xlsx"), index_col = 0)
-                self._pre_images = np.load(os.path.join(self._pre_features_path, "pre_images_c.npy"))
-            else:
-                self._GRFs = pd.read_excel(os.path.join(self._pre_features_path, "GRF.xlsx"), index_col = 0)
-                self._COAs = pd.read_excel(os.path.join(self._pre_features_path, "COA.xlsx"), index_col = 0)
-                self._COPs = pd.read_excel(os.path.join(self._pre_features_path, "COP.xlsx"), index_col = 0)
-                self._pre_images = np.load(os.path.join(self._pre_features_path, "pre_images.npy"))
-        except:
+            labels = pd.read_parquet(os.path.join(self._pre_features_path, f"label.parquet"))
+            GRFs = pd.read_parquet(os.path.join(self._pre_features_path, f"GRF_{combination}.parquet"))
+            COAs = pd.read_parquet(os.path.join(self._pre_features_path, f"COA_{combination}.parquet"))
+            COPs = pd.read_parquet(os.path.join(self._pre_features_path, f"COP_{combination}.parquet"))
+            pre_images = np.load(os.path.join(self._pre_features_path, f"pre_images_{combination}.npy"))
+            logger.info(" all pre features were loaded!!!")
+               
+        except Exception as e: 
+            logger.error(e) 
             logger.info("extraxting pre features!!!")
-            self.extracting_pre_features()
+            GRFs, COPs, COAs, pre_images, labels = self.extracting_pre_features(dataset_name, combination)
 
         self._features_set["GRFs"] = {
-            "columns": self._GRFs.columns,
-            "number_of_features": self._GRFs.shape[1], 
-            "number_of_samples": self._GRFs.shape[0],           
+            "columns": GRFs.columns,
+            "number_of_features": GRFs.shape[1], 
+            "number_of_samples": GRFs.shape[0],           
         } 
 
         self._features_set["COAs"] = {
-            "columns": self._COAs.columns,
-            "number_of_features": self._COAs.shape[1], 
-            "number_of_samples": self._COAs.shape[0],           
+            "columns": COAs.columns,
+            "number_of_features": COAs.shape[1], 
+            "number_of_samples": COAs.shape[0],           
         } 
 
         self._features_set["COPs"] = {
-            "columns": self._COPs.columns,
-            "number_of_features": self._COPs.shape[1], 
-            "number_of_samples": self._COPs.shape[0],           
+            "columns": COPs.columns,
+            "number_of_features": COPs.shape[1], 
+            "number_of_samples": COPs.shape[0],           
         } 
-        self._CNN_image_size = self._pre_images.shape
+        # self._CNN_image_size = pre_images.shape
+        return GRFs, COPs, COAs, pre_images, labels
         
 
 class Features(PreFeatures):
+    COX_feature_name = ['MDIST_RD', 'MDIST_AP', 'MDIST_ML', 'RDIST_RD', 'RDIST_AP', 'RDIST_ML', 
+        'TOTEX_RD', 'TOTEX_AP', 'TOTEX_ML', 'MVELO_RD', 'MVELO_AP', 'MVELO_ML', 
+        'RANGE_RD', 'RANGE_AP', 'RANGE_ML', 'AREA_CC',  'AREA_CE',  'AREA_SW', 
+        'MFREQ_RD', 'MFREQ_AP', 'MFREQ_ML', 'FDPD_RD',  'FDPD_AP',  'FDPD_ML', 
+        'FDCC',     'FDCE']
 
-    def __init__(self, dataset_name, waveletname="coif1", pywt_mode="constant", wavelet_level=4):
+    GRF_feature_name = ["max_value_1", "max_value_1_ind", "max_value_2", "max_value_2_ind", 
+        "min_value", "min_value_ind", "mean_value", "std_value", "sum_value"]
+
+    _pre_image_names = ["CD", "PTI", "Tmin", "Tmax", "P50", "P60", "P70", "P80", "P90", "P100"]
+
+    def __init__(self, dataset_name:str, combination:bool=True, waveletname:str="coif1", pywt_mode:str="constant", wavelet_level:int=4):
         super().__init__(dataset_name)
-        self._waveletname=waveletname
-        self._pywt_mode=pywt_mode
-        self._wavelet_level=wavelet_level
+        self._waveletname = waveletname
+        self._pywt_mode = pywt_mode
+        self._wavelet_level = wavelet_level
+        self.dataset_name = dataset_name
+        self._combination = combination
 
     @staticmethod
     def computeMDIST(COPTS):
@@ -757,12 +750,10 @@ class Features(PreFeatures):
 
         return dwt_coeff
 
-    
-    
     ## COA
-    def extraxting_COA_handcrafted(self):
+    def extraxting_COA_handcrafted(self, COAs:np.ndarray) -> pd.DataFrame:
         COA_handcrafted = list()
-        for idx, sample in self._COAs.iterrows():
+        for _, sample in COAs.iterrows():
             sample = sample.values.reshape(3,100)
 
             MDIST = self.computeMDIST(sample)    
@@ -781,46 +772,37 @@ class Features(PreFeatures):
             COA_handcrafted.append(np.concatenate((MDIST, RDIST, TOTEX, MVELO, RANGE, [AREACC], [AREACE], [AREASW], MFREQ, FDPD, [FDCC], [FDCE]), axis = 0))
             
             
-        self._COA_handcrafted = pd.DataFrame(np.array(COA_handcrafted), columns=self.COX_feature_name)
+        COA_handcrafted = pd.DataFrame(np.array(COA_handcrafted), columns=self.COX_feature_name)
 
-        self.saving_COA_handcrafted()
+        self.saving_dataframe(COA_handcrafted, "COA_handcrafted")
 
-    def saving_COA_handcrafted(self):
+        return COA_handcrafted
+
+    def saving_dataframe(self, data:pd.DataFrame, name:str) -> None:
         Pathlb(self._features_path).mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(self._labels, columns=["ID", "side",]).to_excel(os.path.join(self._features_path, "label.xlsx"))
-
-        if self._combination==True:
-            self._COA_handcrafted.to_excel(os.path.join(self._features_path, "COA_handcrafted_c.xlsx"))
+        data.to_parquet(os.path.join(self._features_path, f"{name}_{self._combination}.parquet"))
             
-        else:
-            self._COA_handcrafted.to_excel(os.path.join(self._features_path, "COA_handcrafted.xlsx"))
-            
-    def loading_COA_handcrafted(self):
+    def loading_COA_handcrafted(self, COAs:np.ndarray) -> pd.DataFrame:
         try:
-            logger.info("loading COA features!!!")
+            COA_handcrafted = pd.read_parquet(os.path.join(self._features_path, f"COA_handcrafted_{self._combination}.parquet"))   
+            logger.info("loading COA handcrafted features!!!")
 
-            self._labels = pd.read_excel(os.path.join(self._features_path, "label.xlsx"), index_col = 0)
-
-            if self._combination==True:
-                self._COA_handcrafted = pd.read_excel(os.path.join(self._features_path, "COA_handcrafted_c.xlsx"), index_col = 0)
-
-            else:
-                self._COA_handcrafted = pd.read_excel(os.path.join(self._features_path, "COA_handcrafted.xlsx"), index_col = 0)
-
-        except:
-            logger.info("extraxting COA features!!!")
-            self.extraxting_COA_handcrafted()
+        except Exception as e: 
+            logger.error(e) 
+            logger.info("extraxting COA handcrafted features!!!")
+            COA_handcrafted = self.extraxting_COA_handcrafted(COAs)
 
         self._features_set["COA_handcrafted"] = {
-            "columns": self._COA_handcrafted.columns,
-            "number_of_features": self._COA_handcrafted.shape[1], 
-            "number_of_samples": self._COA_handcrafted.shape[0],           
+            "columns": COA_handcrafted.columns,
+            "number_of_features": COA_handcrafted.shape[1], 
+            "number_of_samples": COA_handcrafted.shape[0],           
         }
+        return COA_handcrafted
 
     ## COP
-    def extraxting_COP_handcrafted(self):
+    def extraxting_COP_handcrafted(self, COPs:np.ndarray) -> pd.DataFrame:
         COP_handcrafted = list()
-        for idx, sample in self._COPs.iterrows():
+        for _, sample in COPs.iterrows():
             sample = sample.values.reshape(3,100)
 
             MDIST = self.computeMDIST(sample)    
@@ -838,237 +820,176 @@ class Features(PreFeatures):
 
             COP_handcrafted.append(np.concatenate((MDIST, RDIST, TOTEX, MVELO, RANGE, [AREACC], [AREACE], [AREASW], MFREQ, FDPD, [FDCC], [FDCE]), axis = 0))
             
+        COP_handcrafted = pd.DataFrame(np.array(COP_handcrafted), columns=self.COX_feature_name) 
+        self.saving_dataframe(COP_handcrafted, "COP_handcrafted")
+        return COP_handcrafted
             
-        self._COP_handcrafted = pd.DataFrame(np.array(COP_handcrafted), columns=self.COX_feature_name) 
-
-        self.saving_COP_handcrafted()
-
-    def saving_COP_handcrafted(self):
-        Pathlb(self._features_path).mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(self._labels, columns=["ID", "side",]).to_excel(os.path.join(self._features_path, "label.xlsx"))
-
-        if self._combination==True:
-            self._COP_handcrafted.to_excel(os.path.join(self._features_path, "COP_handcrafted_c.xlsx"))
-            
-        else:
-            self._COP_handcrafted.to_excel(os.path.join(self._features_path, "COP_handcrafted.xlsx"))
-            
-    def loading_COP_handcrafted(self):
+    def loading_COP_handcrafted(self, COPs:np.ndarray) -> pd.DataFrame:
         try:
-            logger.info("loading COP features!!!")
+            COP_handcrafted = pd.read_parquet(os.path.join(self._features_path, f"COP_handcrafted_{self._combination}.parquet"))
+            logger.info("loading COP handcrafted features!!!")
 
-            self._labels = pd.read_excel(os.path.join(self._features_path, "label.xlsx"), index_col = 0)
-
-            if self._combination==True:
-                self._COP_handcrafted = pd.read_excel(os.path.join(self._features_path, "COP_handcrafted_c.xlsx"), index_col = 0)
-
-            else:
-                self._COP_handcrafted = pd.read_excel(os.path.join(self._features_path, "COP_handcrafted.xlsx"), index_col = 0)
-
-        except:
-            logger.info("extraxting COP features!!!")
-            self.extraxting_COP_handcrafted()
+        except Exception as e: 
+            logger.error(e) 
+            logger.info("extraxting COP handcrafted features!!!")
+            COP_handcrafted = self.extraxting_COP_handcrafted(COPs)
         
         self._features_set["COP_handcrafted"] = {
-            "columns": self._COP_handcrafted.columns,
-            "number_of_features": self._COP_handcrafted.shape[1], 
-            "number_of_samples": self._COP_handcrafted.shape[0],           
+            "columns": COP_handcrafted.columns,
+            "number_of_features": COP_handcrafted.shape[1], 
+            "number_of_samples": COP_handcrafted.shape[0],           
         }
+        return COP_handcrafted
 
     ## GRF
-    def extraxting_GRF_handcrafted(self):
+    def extraxting_GRF_handcrafted(self, GRFs:np.ndarray) -> pd.DataFrame:
         GRF_handcrafted = list()
-        for idx, sample in self._GRFs.iterrows():
+        for _, sample in GRFs.iterrows():
             GRF_handcrafted.append(self.computeGRFfeatures(sample))
                
-        self._GRF_handcrafted = pd.DataFrame(np.array(GRF_handcrafted), columns=self.GRF_feature_name)
-        self.saving_GRF_handcrafted()
-
-    def saving_GRF_handcrafted(self):
-        Pathlb(self._features_path).mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(self._labels, columns=["ID", "side",]).to_excel(os.path.join(self._features_path, "label.xlsx"))
-
-        if self._combination==True:
-            self._GRF_handcrafted.to_excel(os.path.join(self._features_path, "GRF_handcrafted_c.xlsx"))
+        GRF_handcrafted = pd.DataFrame(np.array(GRF_handcrafted), columns=self.GRF_feature_name)
+        self.saving_dataframe(GRF_handcrafted, "GRF_handcrafted")
+        return GRF_handcrafted
             
-        else:
-            self._GRF_handcrafted.to_excel(os.path.join(self._features_path, "GRF_handcrafted.xlsx"))
-            
-    def loading_GRF_handcrafted(self):
+    def loading_GRF_handcrafted(self, GRFs:np.ndarray) -> pd.DataFrame:
         try:
-            logger.info("loading GRF features!!!")
+            GRF_handcrafted = pd.read_parquet(os.path.join(self._features_path, f"GRF_handcrafted_{self._combination}.parquet"))
+            logger.info("loading GRF handcrafted features!!!")
 
-            self._labels = pd.read_excel(os.path.join(self._features_path, "label.xlsx"), index_col = 0)
-
-            if self._combination==True:
-                self._GRF_handcrafted = pd.read_excel(os.path.join(self._features_path, "GRF_handcrafted_c.xlsx"), index_col = 0)
-
-            else:
-                self._GRF_handcrafted = pd.read_excel(os.path.join(self._features_path, "GRF_handcrafted.xlsx"), index_col = 0)
-
-        except:
-            logger.info("extraxting GRF features!!!")
-            self.extraxting_GRF_handcrafted()
+        except Exception as e: 
+            logger.error(e) 
+            logger.info("extraxting GRF handcrafted features!!!")
+            GRF_handcrafted = self.extraxting_GRF_handcrafted(GRFs)
 
         self._features_set["GRF_handcrafted"] = {
-            "columns": self._GRF_handcrafted.columns,
-            "number_of_features": self._GRF_handcrafted.shape[1], 
-            "number_of_samples": self._GRF_handcrafted.shape[0],           
+            "columns": GRF_handcrafted.columns,
+            "number_of_features": GRF_handcrafted.shape[1], 
+            "number_of_samples": GRF_handcrafted.shape[0],           
         }
+        return GRF_handcrafted
 
     ## GRF WPT
-    def extraxting_GRF_WPT(self):
+    def extraxting_GRF_WPT(self, GRFs:np.ndarray) -> pd.DataFrame:
         GRF_WPT = list()
-        for idx, sample in self._GRFs.iterrows():
+        for _, sample in GRFs.iterrows():
             GRF_WPT.append(self.wt_feature(sample))
                
-        self._GRF_WPT = pd.DataFrame(np.array(GRF_WPT), columns=["GRF_WPT_"+str(i) for i in range(np.array(GRF_WPT).shape[1])]) 
-        self.saving_GRF_WPT()
+        GRF_WPT = pd.DataFrame(np.array(GRF_WPT), columns=["GRF_WPT_"+str(i) for i in range(np.array(GRF_WPT).shape[1])]) 
+        self.saving_dataframe(GRF_WPT, "GRF_WPT")
 
-    def saving_GRF_WPT(self):
-        Pathlb(self._features_path).mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(self._labels, columns=["ID", "side",]).to_excel(os.path.join(self._features_path, "label.xlsx"))
+        return GRF_WPT
 
-        if self._combination==True:
-            self._GRF_WPT.to_excel(os.path.join(self._features_path, "GRF_WPT_c.xlsx"))
-            
-        else:
-            self._GRF_WPT.to_excel(os.path.join(self._features_path, "GRF_WPT.xlsx"))
-            
-    def loading_GRF_WPT(self):
+    def loading_GRF_WPT(self, GRFs:np.ndarray) -> pd.DataFrame:
         try:
-            logger.info("loading GRF features!!!")
+            GRF_WPT = pd.read_parquet(os.path.join(self._features_path, f"GRF_WPT_{self._combination}.parquet"))
+            logger.info("loading GRF WPT features!!!")
 
-            self._labels = pd.read_excel(os.path.join(self._features_path, "label.xlsx"), index_col = 0)
-
-            if self._combination==True:
-                self._GRF_WPT = pd.read_excel(os.path.join(self._features_path, "GRF_WPT_c.xlsx"), index_col = 0)
-
-            else:
-                self._GRF_WPT = pd.read_excel(os.path.join(self._features_path, "GRF_WPT.xlsx"), index_col = 0)
-
-        except:
-            logger.info("extraxting GRF features!!!")
-            self.extraxting_GRF_WPT()
+        except Exception as e: 
+            logger.error(e) 
+            logger.info("extraxting GRF WPT features!!!")
+            GRF_WPT = self.extraxting_GRF_WPT(GRFs)
 
         self._features_set["GRF_WPT"] = {
-            "columns": self._GRF_WPT.columns,
-            "number_of_features": self._GRF_WPT.shape[1], 
-            "number_of_samples": self._GRF_WPT.shape[0],           
+            "columns": GRF_WPT.columns,
+            "number_of_features": GRF_WPT.shape[1], 
+            "number_of_samples": GRF_WPT.shape[0],           
         }
+        return GRF_WPT
 
     ## COP WPT
-    def extraxting_COP_WPT(self):
+    def extraxting_COP_WPT(self, COPs:np.ndarray) -> pd.DataFrame:
         COP_WPT = list()
-        for idx, sample in self._COPs.iterrows():
+        for _, sample in COPs.iterrows():
             sample = sample.values.reshape(3,100)
             wt_COA_RD = self.wt_feature(sample[0,:])
             wt_COA_AP = self.wt_feature(sample[1,:])
             wt_COA_ML = self.wt_feature(sample[2,:])
             COP_WPT.append(np.concatenate((wt_COA_RD, wt_COA_AP, wt_COA_ML), axis = 0))
                
-        self._COP_WPT = pd.DataFrame(np.array(COP_WPT), columns=["COP_WPT_"+str(i) for i in range(np.array(COP_WPT).shape[1])])  
-        self.saving_COP_WPT()
-
-    def saving_COP_WPT(self):
-        Pathlb(self._features_path).mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(self._labels, columns=["ID", "side",]).to_excel(os.path.join(self._features_path, "label.xlsx"))
-
-        if self._combination==True:
-            self._COP_WPT.to_excel(os.path.join(self._features_path, "COP_WPT_c.xlsx"))
-            
-        else:
-            self._COP_WPT.to_excel(os.path.join(self._features_path, "COP_WPT.xlsx"))
-            
-    def loading_COP_WPT(self):
+        COP_WPT = pd.DataFrame(np.array(COP_WPT), columns=["COP_WPT_"+str(i) for i in range(np.array(COP_WPT).shape[1])])  
+        self.saving_dataframe(COP_WPT, "COP_WPT")
+        return COP_WPT
+        
+    def loading_COP_WPT(self, COPs:np.ndarray) -> pd.DataFrame:
         try:
-            logger.info("loading COP features!!!")
+            COP_WPT = pd.read_parquet(os.path.join(self._features_path, f"COP_WPT_{self._combination}.parquet"))
+            logger.info("loading COP WPT features!!!")
 
-            self._labels = pd.read_excel(os.path.join(self._features_path, "label.xlsx"), index_col = 0)
-
-            if self._combination==True:
-                self._COP_WPT = pd.read_excel(os.path.join(self._features_path, "COP_WPT_c.xlsx"), index_col = 0)
-
-            else:
-                self._COP_WPT = pd.read_excel(os.path.join(self._features_path, "COP_WPT.xlsx"), index_col = 0)
-
-        except:
-            logger.info("extraxting COP features!!!")
-            self.extraxting_COP_WPT()
+        except Exception as e: 
+            logger.error(e) 
+            logger.info("extraxting COP WPT features!!!")
+            COP_WPT = self.extraxting_COP_WPT(COPs)
 
         self._features_set["COP_WPT"] = {
-            "columns": self._COP_WPT.columns,
-            "number_of_features": self._COP_WPT.shape[1], 
-            "number_of_samples": self._COP_WPT.shape[0],           
+            "columns": COP_WPT.columns,
+            "number_of_features": COP_WPT.shape[1], 
+            "number_of_samples": COP_WPT.shape[0],           
         }
+        return COP_WPT
 
     ## COA WPT
-    def extraxting_COA_WPT(self):
+    def extraxting_COA_WPT(self, COAs:np.ndarray) -> pd.DataFrame:
         COA_WPT = list()
-        for idx, sample in self._COAs.iterrows():
+        for _, sample in COAs.iterrows():
             sample = sample.values.reshape(3,100)
             wt_COA_RD = self.wt_feature(sample[0,:])
             wt_COA_AP = self.wt_feature(sample[1,:])
             wt_COA_ML = self.wt_feature(sample[2,:])
             COA_WPT.append(np.concatenate((wt_COA_RD, wt_COA_AP, wt_COA_ML), axis = 0))
                
-        self._COA_WPT = pd.DataFrame(np.array(COA_WPT), columns=["COA_WPT_"+str(i) for i in range(np.array(COA_WPT).shape[1])]) 
-        self.saving_COA_WPT()
-
-    def saving_COA_WPT(self):
-        Pathlb(self._features_path).mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(self._labels, columns=["ID", "side",]).to_excel(os.path.join(self._features_path, "label.xlsx"))
-
-        if self._combination==True:
-            self._COA_WPT.to_excel(os.path.join(self._features_path, "COA_WPT_c.xlsx"))
-            
-        else:
-            self._COA_WPT.to_excel(os.path.join(self._features_path, "COA_WPT.xlsx"))
-            
-    def loading_COA_WPT(self):
+        COA_WPT = pd.DataFrame(np.array(COA_WPT), columns=["COA_WPT_"+str(i) for i in range(np.array(COA_WPT).shape[1])]) 
+        self.saving_dataframe(COA_WPT, "COA_WPT")
+        return COA_WPT
+        
+    def loading_COA_WPT(self, COAs:np.ndarray) -> pd.DataFrame:
         try:
-            logger.info("loading COA features!!!")
+            COA_WPT = pd.read_parquet(os.path.join(self._features_path, f"COA_WPT_{self._combination}.parquet"))
+            logger.info("loading COA WPT features!!!")
 
-            self._labels = pd.read_excel(os.path.join(self._features_path, "label.xlsx"), index_col = 0)
-
-            if self._combination==True:
-                self._COA_WPT = pd.read_excel(os.path.join(self._features_path, "COA_WPT_c.xlsx"), index_col = 0)
-
-            else:
-                self._COA_WPT = pd.read_excel(os.path.join(self._features_path, "COA_WPT.xlsx"), index_col = 0)
-
-        except:
-            logger.info("extraxting COA features!!!")
-            self.extraxting_COA_WPT()
+        except Exception as e: 
+            logger.error(e) 
+            logger.info("extraxting COA WPT features!!!")
+            COA_WPT = self.extraxting_COA_WPT(COAs)
 
         self._features_set["COA_WPT"] = {
-            "columns": self._COA_WPT.columns,
-            "number_of_features": self._COA_WPT.shape[1], 
-            "number_of_samples": self._COA_WPT.shape[0],           
+            "columns": COA_WPT.columns,
+            "number_of_features": COA_WPT.shape[1], 
+            "number_of_samples": COA_WPT.shape[0],           
         }
+        return COA_WPT
 
     ## deep
-    def extraxting_deep_features(self, pre_image_name, CNN_base_model="resnet50.ResNet50"):
-        self._CNN_base_model = CNN_base_model
+    @staticmethod
+    def resize_images(images, labels):
+        images = tf.image.grayscale_to_rgb(tf.expand_dims(images, -1))
+        images = tf.image.resize(images, (224, 224))
+        return images, labels
+
+    def extraxting_deep_features(self, data:tuple, pre_image_name:str, CNN_base_model:str) -> pd.DataFrame:
+        # self._CNN_base_model = CNN_base_model
         
         try:
             logger.info(f"Loading { CNN_base_model } model...")
             base_model = eval(f"tf.keras.applications.{CNN_base_model}(weights='{self._CNN_weights}', include_top={self._CNN_include_top})")
             logger.info("Successfully loaded base model and model...")
+            base_model.trainable = False
+            CNN_name = CNN_base_model.split(".")[0]
+            logger.info(f"MaduleName: {CNN_name}")
 
         except Exception as e: 
             base_model = None
             logger.error("The base model could NOT be loaded correctly!!!")
-            print(e)
+            logger.error(e)
+
+        pre_image_norm = self.normalizing_pre_image(data[0], pre_image_name)
+
+        train_ds = tf.data.Dataset.from_tensor_slices((pre_image_norm, data[1])) 
+        train_ds = train_ds.batch(self._CNN_batch_size)
+        logger.info(f"batch_size: {self._CNN_batch_size}")
+        train_ds = train_ds.map(self.resize_images)
 
 
-        base_model.trainable = False
-
-        CNN_name = CNN_base_model.split(".")[0]
-        logger.info("MaduleName: {}\n".format(CNN_name))
-        
-        
-        input = tf.keras.layers.Input(shape= (224, 224, 3), dtype = tf.float64, name="original_img") # todo image size
+        input = tf.keras.layers.Input(shape= (224, 224, 3), dtype = tf.float64, name="original_img")
         x = tf.cast(input, tf.float32)
         x = eval("tf.keras.applications." + CNN_name + ".preprocess_input(x)")
         x = base_model(x)
@@ -1081,33 +1002,11 @@ class Features(PreFeatures):
         #     tf.keras.utils.plot_model(model, to_file=CNN_name + ".png", show_shapes=True)
 
 
-        logger.info("batch_size: {}".format(self._CNN_batch_size))
 
-        # breakpoint()
-        pre_images_norm = self.normalizing_pre_image(pre_image_name)
-
-
-        train_ds = tf.data.Dataset.from_tensor_slices((pre_images_norm, self._labels["ID"] ))
-        train_ds = train_ds.batch(self._CNN_batch_size)
-
-        def resize_images(images, labels):
-            images = tf.image.grayscale_to_rgb(tf.expand_dims(images, -1))
-            images = tf.image.resize(images, (224, 224))
-            return images, labels
-
-        train_ds = train_ds.map(resize_images)
-
-        # [(x.shape, y.shape) for x,y in train_ds]
 
         Deep_features = np.zeros((1, model.layers[-1].output_shape[1]))
-
-        # deep_features = list()
-
         for image_batch, _ in train_ds:
            
-            # images = image_batch[...,tf.newaxis]
-            # images = np.concatenate((images, images, images), axis=-1)
-
             feature = model(image_batch)
             Deep_features = np.append(Deep_features, feature, axis=0)
 
@@ -1119,174 +1018,145 @@ class Features(PreFeatures):
         logger.info(f"Deep features shape: {Deep_features.shape}")
 
         # time = int(timeit.default_timer() * 1_000_000)
-        exec(f"self._deep_{pre_image_name}_{CNN_base_model[:5]} = pd.DataFrame(Deep_features, columns=['deep_{pre_image_name}_{CNN_base_model[:5]}_'+str(i) for i in range(Deep_features.shape[1])])")
+        exec(f"deep_{pre_image_name}_{CNN_name} = pd.DataFrame(Deep_features, columns=['deep_{pre_image_name}_{CNN_name}_'+str(i) for i in range(Deep_features.shape[1])])")
 
+        self.saving_deep_features(eval(f"deep_{pre_image_name}_{CNN_name}"), pre_image_name, CNN_name)
 
-        self.saving_deep_features(pre_image_name, CNN_base_model)
+        return eval(f"deep_{pre_image_name}_{CNN_name}")
 
-    def normalizing_pre_image(self, pre_image_name):
+    def normalizing_pre_image(self, pre_images:np.ndarray, pre_image_name:str) -> np.ndarray:
         if not pre_image_name in self._pre_image_names:
             raise Exception("Invalid pre image name!!!")
 
-
         i = self._pre_image_names.index(pre_image_name)
-        maxvalues = np.max(self._pre_images[..., i])
-        return self._pre_images[..., i]/maxvalues
+        maxvalues = np.max(pre_images[..., i])
+        return pre_images[..., i]/maxvalues
 
-    def saving_deep_features(self, pre_image_name, CNN_base_model):
-        
+    def saving_deep_features(self, data:pd.DataFrame, pre_image_name:str, CNN_name:str) -> None:
         Pathlb(self._features_path).mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(self._labels, columns=["ID", "side",]).to_excel(os.path.join(self._features_path, "label.xlsx"))
-
-        if self._combination==True:
-            exec(f"self._deep_{pre_image_name}_{CNN_base_model[:5]}.to_excel(os.path.join(self._features_path, f'deep_{pre_image_name}_{CNN_base_model[:5]}_c.xlsx'))")
-            
-        else:
-            exec(f"self._deep_{pre_image_name}_{CNN_base_model[:5]}.to_excel(os.path.join(self._features_path, f'deep_{pre_image_name}_{CNN_base_model[:5]}.xlsx'))")
-            
-    def loading_deep_features(self, pre_image_name, CNN_base_model="resnet50.ResNet50"):
+        exec(f"data.to_parquet(os.path.join(self._features_path, f'deep_{pre_image_name}_{CNN_name}_{self._combination}.parquet'))")
+                   
+    def loading_deep_features(self, data:tuple, pre_image_name:str, CNN_base_model:str) -> pd.DataFrame:
+        CNN_name = CNN_base_model.split(".")[0]
         if not pre_image_name in self._pre_image_names:
             raise Exception("Invalid pre image name!!!")
         try:
-            logger.info("loading COA features!!!")
+            logger.info(f"loading deep features from {pre_image_name}!!!")
+            exec(f"df = pd.read_parquet(os.path.join(self._features_path, f'deep_{pre_image_name}_{CNN_name}_{self._combination}.parquet'))")
 
-            self._labels = pd.read_excel(os.path.join(self._features_path, "label.xlsx"), index_col = 0)
+        except Exception as e: 
+            logger.error(e) 
+            logger.info(f"extraxting deep features from {pre_image_name}!!!")
+            exec(f'df = self.extraxting_deep_features(data, pre_image_name, CNN_base_model)')
 
-            if self._combination==True:
-                exec(f"self._deep_{pre_image_name}_{CNN_base_model[:5]} = pd.read_excel(os.path.join(self._features_path, f'deep_{pre_image_name}_{CNN_base_model[:5]}_c.xlsx'), index_col = 0)")
-
-            else:
-                exec(f"self._deep_{pre_image_name}_{CNN_base_model[:5]} = pd.read_excel(os.path.join(self._features_path, f'deep_{pre_image_name}_{CNN_base_model[:5]}.xlsx'), index_col = 0)")
-
-        except:
-            logger.info("extraxting COA features!!!")
-            self.extraxting_deep_features(pre_image_name, CNN_base_model)
-
-        self._features_set[f'deep_{pre_image_name}_{CNN_base_model[:5]}'] = {
-            "columns": eval(f"self._deep_{pre_image_name}_{CNN_base_model[:5]}.columns"),
-            "number_of_features": eval(f"self._deep_{pre_image_name}_{CNN_base_model[:5]}.shape[1]"), 
-            "number_of_samples": eval(f"self._deep_{pre_image_name}_{CNN_base_model[:5]}.shape[0]"),           
+        self._features_set[f'deep_{pre_image_name}_{CNN_name}'] = {
+            "columns": eval('df.columns'),
+            "number_of_features": eval('df.shape[1]'), 
+            "number_of_samples": eval('df.shape[0]'),           
         }
+        return eval('df')
 
-    def loading_deep_features_from_list(self, list:list, CNN_base_model="resnet50.ResNet50") -> None:
+    def loading_deep_features_from_list(self, data:tuple, pre_image_names:list, CNN_base_model:str) -> pd.DataFrame:
         """loading deep features from a list of image features"""
-        self._labels = pd.read_excel(os.path.join(self._features_path, "label.xlsx"), index_col = 0)
-        self._CNN_base_model = CNN_base_model
-
-        for pre_image_name in list:
+        CNN_name = CNN_base_model.split(".")[0]
+        sss = []
+        for pre_image_name in pre_image_names:
             if not pre_image_name in self._pre_image_names:
                 raise Exception("Invalid pre image name!!!")
             try:
-                if self._combination==True:
-                    exec(f"self._deep_{pre_image_name}_{CNN_base_model[:5]} = pd.read_excel(os.path.join(self._features_path, f'deep_{pre_image_name}_{CNN_base_model[:5]}_c.xlsx'), index_col = 0)")
+                exec(f"{pre_image_name} = pd.read_parquet(os.path.join(self._features_path, f'deep_{pre_image_name}_{CNN_name}_{self._combination}.parquet'))")
+                logger.info(f"loading deep features from {pre_image_name}!!!")
 
-                else:
-                    exec(f"self._deep_{pre_image_name}_{CNN_base_model[:5]} = pd.read_excel(os.path.join(self._features_path, f'deep_{pre_image_name}_{CNN_base_model[:5]}.xlsx'), index_col = 0)")
+            except Exception as e: 
+                logger.error(e) 
+                logger.info(f"extraxting deep features  from {pre_image_name}!!!")
+                exec(f"{pre_image_name} = self.extraxting_deep_features(data, pre_image_name, CNN_base_model)")
 
-                logger.info("loading COA features!!!")
-
-            except:
-                logger.info("extraxting COA features!!!")
-                self.extraxting_deep_features(pre_image_name, CNN_base_model)
-
-            self._features_set[f'deep_{pre_image_name}_{CNN_base_model[:5]}'] = {
-                "columns": eval(f"self._deep_{pre_image_name}_{CNN_base_model[:5]}.columns"),
-                "number_of_features": eval(f"self._deep_{pre_image_name}_{CNN_base_model[:5]}.shape[1]"), 
-                "number_of_samples": eval(f"self._deep_{pre_image_name}_{CNN_base_model[:5]}.shape[0]"),           
+            self._features_set[f'deep_{pre_image_name}_{CNN_name}'] = {
+                "columns": eval(f"{pre_image_name}.columns"),
+                "number_of_features": eval(f"{pre_image_name}.shape[1]"), 
+                "number_of_samples": eval(f"{pre_image_name}.shape[0]"),           
             }
-
+        
+            sss.append(eval(f"{pre_image_name}"))
+        return sss
 
     ## images
-    def extraxting_pre_image(self, pre_image_name):
+    def extraxting_pre_image(self, pre_images:np.ndarray, pre_image_name:str) -> pd.DataFrame:
         if not pre_image_name in self._pre_image_names:
             raise Exception("Invalid pre image name!!!")
 
         pre_image = list()
-        for idx in range(self._pre_images.shape[0]):
+        for idx in range(pre_images.shape[0]):
 
-            sample = self._pre_images[idx,..., self._pre_image_names.index(pre_image_name)]
+            sample = pre_images[idx,..., self._pre_image_names.index(pre_image_name)]
             sample = sample.reshape(-1)
             pre_image.append(sample)
                
-        
-        exec(f"self._{pre_image_name} = pd.DataFrame(np.array(pre_image), columns=['{pre_image_name}_pixel_'+str(i) for i in range(np.array(pre_image).shape[1])]) ")
-        self.saving_pre_image(pre_image_name)
+        exec(f"I = pd.DataFrame(np.array(pre_image), columns=['{pre_image_name}_pixel_'+str(i) for i in range(np.array(pre_image).shape[1])]) ")
+        exec(f"self.saving_pre_image(I, '{pre_image_name}')")
 
-    def saving_pre_image(self, pre_image_name:str) -> None:
+        return eval("I")
+
+    def saving_pre_image(self, data, pre_image_name:str) -> None:
         Pathlb(self._features_path).mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(self._labels, columns=["ID", "side",]).to_excel(os.path.join(self._features_path, "label.xlsx"))
+        exec(f"data.to_parquet(os.path.join(self._features_path, '{pre_image_name}_{self._combination}.parquet'))")
 
-        if self._combination==True:
-            exec(f"self._{pre_image_name}.to_excel(os.path.join(self._features_path, '{pre_image_name}_c.xlsx'))")
-            
-        else:
-            exec(f"self._{pre_image_name}.to_excel(os.path.join(self._features_path, '{pre_image_name}.xlsx'))")
-
-    def loading_pre_image(self, pre_image_name: str) -> None:
+    def loading_pre_image(self, pre_images:np.ndarray, pre_image_name: str) -> pd.DataFrame:
         """loading a pre image from a excel file."""
         if not pre_image_name in self._pre_image_names:
             raise Exception("Invalid pre image name!!!")
         try:
+            exec(f"I = pd.read_parquet(os.path.join(self._features_path, '{pre_image_name}_{self._combination}.parquet'))")
             logger.info(f"loading {pre_image_name} features!!!")
 
-            self._labels = pd.read_excel(os.path.join(self._features_path, "label.xlsx"), index_col = 0)
-
-            if self._combination==True:
-                exec(f"self._{pre_image_name}= pd.read_excel(os.path.join(self._features_path, '{pre_image_name}_c.xlsx'), index_col = 0)")
-            else:
-                exec(f"self._{pre_image_name}= pd.read_excel(os.path.join(self._features_path, '{pre_image_name}.xlsx'), index_col = 0)")
-    
-            
-
-        except:
+        except Exception as e: 
+            logger.error(e) 
             logger.info(f"extraxting {pre_image_name} features!!!")
-            self.extraxting_pre_image(pre_image_name)
+            exec(f"I = self.extraxting_pre_image(pre_images, pre_image_name)")
             
         self._features_set[f"{pre_image_name}"] = {
-            "columns": eval(f"self._{pre_image_name}.columns"),
-            "number_of_features": eval(f"self._{pre_image_name}.shape[1]"), 
-            "number_of_samples": eval(f"self._{pre_image_name}.shape[0]"),           
+            "columns": eval(f"I.columns"),
+            "number_of_features": eval(f"I.shape[1]"), 
+            "number_of_samples": eval(f"I.shape[0]"),           
         }
+        return eval("I")
 
-    def loading_pre_image_from_list(self, list:list) -> None:
+    def loading_pre_image_from_list(self, pre_images:np.ndarray, list_pre_image:list) -> list:
         """loading multiple pre image features from list"""
-        self._labels = pd.read_excel(os.path.join(self._features_path, "label.xlsx"), index_col = 0)
-
-        for pre_image_name in list:
+        sss = []
+        for pre_image_name in list_pre_image:
             if not pre_image_name in self._pre_image_names:
                 raise Exception("Invalid pre image name!!!")
 
             try:
+                exec(f"{pre_image_name} = pd.read_parquet(os.path.join(self._features_path, '{pre_image_name}_{self._combination}.parquet'))")
                 logger.info(f"loading {pre_image_name} features!!!")
-                if self._combination==True:
-                    exec(f"self._{pre_image_name}= pd.read_excel(os.path.join(self._features_path, '{pre_image_name}_c.xlsx'), index_col = 0)")
-                else:
-                    exec(f"self._{pre_image_name}= pd.read_excel(os.path.join(self._features_path, '{pre_image_name}.xlsx'), index_col = 0)")
-        
-                
 
-            except:
+            except Exception as e: 
+                logger.error(e) 
                 logger.info(f"extraxting {pre_image_name} features!!!")
-                self.extraxting_pre_image(pre_image_name)
+                exec(f"{pre_image_name} = self.extraxting_pre_image(pre_images, pre_image_name)")
                 
             self._features_set[f"{pre_image_name}"] = {
-                "columns": eval(f"self._{pre_image_name}.columns"),
-                "number_of_features": eval(f"self._{pre_image_name}.shape[1]"), 
-                "number_of_samples": eval(f"self._{pre_image_name}.shape[0]"),           
+                "columns": eval(f"{pre_image_name}.columns"),
+                "number_of_features": eval(f"{pre_image_name}.shape[1]"), 
+                "number_of_samples": eval(f"{pre_image_name}.shape[0]"),           
             }
+        
+            sss.append(eval(f"{pre_image_name}"))
+        return sss
 
-    def pack(self, list_features:list) -> pd.DataFrame:
+    def pack(self, list_features:list, labels:pd.DataFrame) -> pd.DataFrame:
         """
         list of features=[
-            ["COA_handcrafted", "COAs", "COA_WPT",     
-             "COP_handcrafted", "COPs", "COP_WPT",    
-             "GRF_handcrafted", "GRFs", "GRF_WPT",
-             "P100", "CD", "PTI", "Tmin", "Tmax", "P50", "P60", "P70", "P80", "P90", "P100",
-             "deep_features",]
-        # ]"""
-        C = ["self._"+i for i in list_features]
-        exec(f"DF_features_all = pd.concat({C} + [self._labels], axis=1)".replace("'", ""))
-        return eval("DF_features_all")
+            [GRFs, COAs, COPs, 
+            COA_handcrafted, COP_handcrafted, GRF_handcrafted,
+            deep_P100_resnet50, deep_P80_resnet50, deep_P90_resnet50,
+            P50, P60, P70, 
+            COA_WPT, COP_WPT, GRF_WPT]
+        """
+        return pd.concat( list_features + [labels], axis=1)
 
     def filtering_subjects_and_samples(self, DF_features_all:pd.DataFrame) -> pd.DataFrame:
         subjects, samples = np.unique(DF_features_all["ID"].values, return_counts=True)
@@ -1296,16 +1166,188 @@ class Features(PreFeatures):
         if self._known_imposter + self._unknown_imposter > len(ss):
             raise Exception("Invalid _known_imposter and _unknown_imposter!!!")
 
-
         self._known_imposter_list   = ss[:self._known_imposter] 
-        self._unknown_imposter_list = ss[self._known_imposter : self._known_imposter + self._unknown_imposter] 
+        self._unknown_imposter_list = ss[-self._unknown_imposter:] 
 
+
+       
         DF_unknown_imposter =  DF_features_all[DF_features_all["ID"].isin(self._unknown_imposter_list)]
         DF_known_imposter =    DF_features_all[DF_features_all["ID"].isin(self._known_imposter_list)]
 
         DF_unknown_imposter = DF_unknown_imposter.groupby('ID', group_keys=False).apply(lambda x: x.sample(frac=self._number_of_unknown_imposter_samples, replace=False, random_state=self._random_state))
         
         return DF_known_imposter, DF_unknown_imposter
+
+    ## fine_tuning
+    def FT_deep_features(self, data:tuple, training_data:str, pre_image_name:str, CNN_base_model:str) -> pd.DataFrame:
+
+        logger.info("fine_tuning")
+
+        S = Features(training_data)
+
+        pre_images, labels = S.loading_pre_features_image(training_data)
+        pre_image_norm = S.normalizing_pre_image(pre_images, pre_image_name)
+
+
+
+
+        # # ##################################################################
+        # #                phase 3: processing labels
+        # # ##################################################################
+        le = sk_preprocessing.LabelEncoder()
+        le.fit(labels['ID'])
+
+        logger.info(f"Number of subjects: {len(np.unique(labels['ID']))}")
+
+        transfered_labels = le.transform(labels['ID'])
+
+        # labels = tf.keras.utils.to_categorical(labels, num_classes=len(np.unique(indices)))
+
+        logger.info(f"features shape: {pre_image_norm.shape}")
+        logger.info(f"features shape: {transfered_labels.shape}")
+
+        self._val_size = .2 #todo: change this value
+        X_train, X_val, y_train, y_val = model_selection.train_test_split(pre_image_norm, transfered_labels, test_size=self._val_size, random_state=self._random_state, stratify=transfered_labels)
+
+
+        AUTOTUNE = tf.data.AUTOTUNE
+
+        train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)).map(self.resize_images).shuffle(1000)
+        train_ds = train_ds.batch(self._CNN_batch_size)
+        train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)).map(self.resize_images).shuffle(1000)
+        val_ds = val_ds.batch(self._CNN_batch_size)
+        val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        # # ##################################################################
+        # #                phase 4: loading CNN
+        # # ##################################################################
+        try:
+            IMG_SHAPE = (224, 224, 3)
+            logger.info(f"Loading { CNN_base_model } model...")
+            base_model = eval(f"tf.keras.applications.{CNN_base_model}(input_shape=IMG_SHAPE, weights='{self._CNN_weights}', include_top={self._CNN_include_top})")
+            logger.info("Successfully loaded base model and model...")
+            base_model.trainable = False
+            CNN_name = CNN_base_model.split(".")[0]
+            logger.info(f"MaduleName: {CNN_name}")
+
+        except Exception as e: 
+            base_model = None
+            logger.error("The base model could NOT be loaded correctly!!!")
+            logger.error(e)
+            sys.exit()
+
+        
+        for images, labels in train_ds.take(1):
+            print(images.shape)
+
+            for i in range(9):
+                ax = plt.subplot(3, 3, i + 1)
+                plt.imshow(images[i])
+                # plt.title(labels[i])
+                plt.axis("off")
+                print(images[i].shape)
+
+
+        data_augmentation = tf.keras.Sequential([tf.keras.layers.RandomFlip('horizontal'),tf.keras.layers.RandomRotation(0.2),])
+        for image, _ in train_ds.take(1):
+            plt.figure(figsize=(10, 10))
+            first_image = image[0]
+            for i in range(9):
+                ax = plt.subplot(3, 3, i + 1)
+                augmented_image = data_augmentation(tf.expand_dims(first_image, 0))
+                plt.imshow(augmented_image[0])
+                plt.axis('off')
+        # breakpoint()
+
+        input = tf.keras.layers.Input(shape=IMG_SHAPE, dtype = tf.float64, name="original_img")
+        x = tf.cast(input, tf.float32)
+        x = tf.keras.layers.RandomFlip("horizontal_and_vertical")(x)
+        x = tf.keras.layers.RandomRotation(0.2)(x)
+        x = tf.keras.layers.RandomZoom(0.1)(x)
+        x = eval("tf.keras.applications." + CNN_name + ".preprocess_input(x)")
+        x = base_model(x)
+        x = tf.keras.layers.GlobalAveragePooling2D()(x)
+        x = tf.keras.layers.Dropout(0.2)(x)
+
+        # x = tf.keras.layers.BatchNormalization()(x)
+        # x = tf.keras.layers.Flatten()(x)
+        # x = tf.keras.layers.Dense(512,  activation='relu', name="last_dense-2")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
+        # x = tf.keras.layers.Dense(256,  activation='relu', name="last_dense-1")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
+        # # x = tf.keras.layers.Dropout(0.2)(x)
+        # x = tf.keras.layers.Dense(128,  activation='relu', name="last_dense")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
+        # # x = tf.keras.layers.Dropout(0.2)(x)
+        output = tf.keras.layers.Dense(256, name="prediction")(x) # activation='softmax',
+
+        model = tf.keras.models.Model(inputs=input, outputs=output, name=CNN_name)
+        
+        # breakpoint()
+
+        # # ##################################################################
+        # #                phase 7: training CNN
+        # # ##################################################################
+
+        model.compile(
+            optimizer=tf.keras.optimizers.Adam(), #learning_rate=0.001
+            loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), #if softmaxt then from_logits=False otherwise True
+            # metrics=["sparse_categorical_accuracy"]
+            metrics=METRICS
+            )
+
+        time = int(timeit.timeit()*1_000_000)
+        # TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], "_".join(("FT", SLURM_JOBID, CNN_name, configs["features"]["image_feature_name"], str(time)) )  )
+        # path = configs["CNN"]["saving_path"] + "_".join(( "FT", SLURM_JOBID, CNN_name, configs["features"]["image_feature_name"], "best.h5" ))
+
+        checkpoint = [
+                tf.keras.callbacks.ModelCheckpoint(    './best.h5', save_best_only=True, monitor="val_loss"),
+                tf.keras.callbacks.ReduceLROnPlateau(  monitor="val_loss", factor=0.5, patience=30, min_lr=0.00001),
+                tf.keras.callbacks.EarlyStopping(      monitor="val_loss", patience=90, verbose=1),
+                # tf.keras.callbacks.TensorBoard(        log_dir=TensorBoard_logs)   
+            ]    
+
+
+        history = model.fit(
+            train_ds,    
+            batch_size=self._CNN_batch_size,
+            callbacks=[checkpoint],
+            epochs=self._CNN_epochs,
+            validation_data=val_ds,
+            verbose=self._verbose,
+        )
+
+        # path = configs["CNN"]["saving_path"] + "_".join(( "FT", SLURM_JOBID, CNN_name, configs["features"]["image_feature_name"], str(int(np.round(test_acc*100)))+"%" + ".h5" ))
+        # model.save(path)
+        plt.plot(history.history['accuracy'], label='accuracy')
+        # plt.plot(history.history['val_accuracy'], label = 'val_accuracy')
+
+        plt.xlabel('Epoch')
+        plt.ylabel('Accuracy')
+        plt.show()
+        breakpoint()
+
+        # # ##################################################################
+        # #                phase 5: loading pre image features
+        # # ##################################################################
+        plt.show()
+        breakpoint()
+
+        pre_image_norm = self.normalizing_pre_image(data[0], pre_image_name)
+
+        train_ds = tf.data.Dataset.from_tensor_slices((pre_image_norm, data[1])) 
+        train_ds = train_ds.batch(self._CNN_batch_size)
+        logger.info(f"batch_size: {self._CNN_batch_size}")
+        train_ds = train_ds.map(self.resize_images)
+
+
+        
+        x = eval("tf.keras.applications." + CNN_name + ".preprocess_input(x)")
+        x = base_model(x)
+        output = tf.keras.layers.GlobalMaxPool2D()(x)
+
+        model = tf.keras.Model(input, output, name=CNN_name)
+
+        return history
 
 
 class Classifier(Features):
@@ -1407,6 +1449,7 @@ class Classifier(Features):
             principal = PCA(svd_solver="full")
             N = list()
             for ind, feat in enumerate(listn):
+                # breakpoint()
                 col = self._features_set[feat]["columns"]
             
                 PCA_out_train = principal.fit_transform(df_train.loc[:, col])
@@ -1522,7 +1565,7 @@ class Classifier(Features):
 
         return DF_clustered
 
-    def ML_classifier(self, x_train, x_test, x_test_U,a):
+    def ML_classifier(self, x_train, x_test, x_test_U, a):
         
         if self._classifier_name=="knn":
             classifier = knn(n_neighbors=self._KNN_n_neighbors, metric=self._KNN_metric, weights=self._KNN_weights, n_jobs=-1)
@@ -1544,7 +1587,7 @@ class Classifier(Features):
             # best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
             # y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
             FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
-            # self.plot_eer(FRR_t, FAR_t)
+            self.plot_eer(FRR_t, FAR_t)
             EER, t_idx = self.compute_eer(FRR_t, FAR_t)
             TH = self._THRESHOLDs[t_idx]
         
@@ -1557,7 +1600,7 @@ class Classifier(Features):
             EER, t_idx = self.compute_eer(FRR_t, FAR_t)
             TH = self._THRESHOLDs[t_idx]
         else:
-            raise Exception("_classifier_name is not valid!!")
+            raise Exception(f"_classifier_name ({self._classifier_name}) is not valid!!")
 
         
 
@@ -1664,54 +1707,55 @@ class Classifier(Features):
             FAU_All = np.where(y_pred_U==1)[0].shape[0]
 
         # breakpoint()
+        # #todo
+        PP = f"./C/{self._classifier_name}/{str(a)}/{str(self._unknown_imposter)}/1/"
+        PP1 = f"./C/{self._classifier_name}/{str(a)}/{str(self._unknown_imposter)}/2/"
+        PP2 = f"./C/{self._classifier_name}/{str(a)}/{str(self._unknown_imposter)}/3/"
+        PP3 = f"./C/{self._classifier_name}/{str(a)}/{str(self._unknown_imposter)}/4/"
+        Pathlb(PP).mkdir(parents=True, exist_ok=True)
+        Pathlb(PP1).mkdir(parents=True, exist_ok=True)
+        Pathlb(PP2).mkdir(parents=True, exist_ok=True)
+        Pathlb(PP3).mkdir(parents=True, exist_ok=True)
+        # breakpoint()
 
-        # PP = f"./A/{self._classifier_name}/{str(a)}/{str(self._known_imposter)}/1/"
-        # PP1 = f"./A/{self._classifier_name}/{str(a)}/{str(self._known_imposter)}/2/"
-        # PP2 = f"./A/{self._classifier_name}/{str(a)}/{str(self._known_imposter)}/3/"
-        # PP3 = f"./A/{self._classifier_name}/{str(a)}/{str(self._known_imposter)}/4/"
-        # Pathlb(PP).mkdir(parents=True, exist_ok=True)
-        # Pathlb(PP1).mkdir(parents=True, exist_ok=True)
-        # Pathlb(PP2).mkdir(parents=True, exist_ok=True)
-        # Pathlb(PP3).mkdir(parents=True, exist_ok=True)
-        # # breakpoint()
-
-
-        # SS = pd.DataFrame(y_pred_tr,x_train['ID'].values).reset_index()
-        # SS.columns = ["Labels","train scores"]
-        # sns.histplot(data=SS, x="train scores", hue="Labels", bins=100)
-        # plt.plot([TH,TH],[0,13], 'r--', linewidth = 2)
-        # plt.title(f"Number of unknown Imposters: {str(self._unknown_imposter)} \n EER: {round(EER,2)}      Threshold: {round(TH,2)}")
-        # plt.savefig(PP+f"{str(self._unknown_imposter)}.png")
-
-
-        # plt.figure()
-        # SS = pd.DataFrame(y_pred1,x_test['ID'].values).reset_index()
-        # SS.columns = ["Labels","test scores"]
-        # sns.histplot(data=SS, x="test scores", hue="Labels", bins=100)
-        # plt.plot([TH,TH],[0,13], 'r--', linewidth = 2)
-        # plt.title(f"unknown Imposters: {str(self._unknown_imposter)},   ACC: {round(ACC_ud,2)},    BACC: {round(BACC_ud,2)},   CM: {CM_ud}")
-        # plt.savefig(PP1+f"{str(self._unknown_imposter)}.png")
+        plt.figure()
+        SS = pd.DataFrame(y_pred_tr,x_train['ID'].values).reset_index()
+        SS.columns = ["Labels","train scores"]
+        sns.histplot(data=SS, x="train scores", hue="Labels", bins=100)
+        plt.plot([TH,TH],[0,13], 'r--', linewidth = 2)
+        plt.title(f"Number of known Imposters: {str(self._known_imposter)} \n EER: {round(EER,2)}      Threshold: {round(TH,2)}")
+        plt.savefig(PP+f"{str(self._known_imposter)}.png")
 
 
-        # plt.figure()
-        # sns.histplot(y_pred_U1, bins=100)
-        # plt.plot([TH,TH],[0,13], 'r--', linewidth = 2)
-        # plt.xlabel("unknown imposter scores")
-        # plt.title(f"Number of unknown Imposters: {str(self._unknown_imposter)},\n AUS: {round(AUS_All,2)},       FAU: {round(FAU_All,2)}")
-        # plt.savefig(PP2+f"{str(self._unknown_imposter)}.png")
+        plt.figure()
+        SS = pd.DataFrame(y_pred1,x_test['ID'].values).reset_index()
+        SS.columns = ["Labels","test scores"]
+        sns.histplot(data=SS, x="test scores", hue="Labels", bins=100)
+        plt.plot([TH,TH],[0,13], 'r--', linewidth = 2)
+        plt.title(f"known Imposters: {str(self._known_imposter)},   ACC: {round(ACC_ud,2)},    BACC: {round(BACC_ud,2)},   CM: {CM_ud}")
+        plt.savefig(PP1+f"{str(self._known_imposter)}.png")
 
-        # plt.figure()
-        # plt.scatter(x_train.iloc[:, 0].values, x_train.iloc[:, 1].values, c ="red", marker ="s", label="train", s = x_train.iloc[:, -1].values*22+1)
-        # plt.scatter(x_test.iloc[:, 0].values, x_test.iloc[:, 1].values,  c ="blue", marker ="*", label="test", s = x_test.iloc[:, -1].values*22+1)
-        # plt.scatter(x_test_U.iloc[:, 0].values, x_test_U.iloc[:, 1].values, c ="green", marker ="o", label="u", s = 5)
-        # plt.title(f'# training positives: {x_train[x_train["ID"]== 1.0].shape[0]},       # training negatives: {x_train[x_train["ID"]== 0.0].shape[0]} \n # test positives: {x_test[x_test["ID"]== 1.0].shape[0]},       # test negatives: {x_test[x_test["ID"]== 0.0].shape[0]}               # test_U : {x_test_U.shape[0]}')
 
-        # plt.xlabel("PC1")
-        # plt.ylabel("PC2")
-        # plt.legend()
-        # plt.savefig(PP3+f"{str(self._unknown_imposter)}.png")
+        plt.figure()
+        sns.histplot(y_pred_U1, bins=100)
+        plt.plot([TH,TH],[0,13], 'r--', linewidth = 2)
+        plt.xlabel("unknown imposter scores")
+        plt.title(f"Number of known Imposters: {str(self._known_imposter)},\n AUS: {round(AUS_All,2)},       FAU: {round(FAU_All,2)}")
+        plt.savefig(PP2+f"{str(self._known_imposter)}.png")
+
+        plt.figure()
+        plt.scatter(x_train.iloc[:, 0].values, x_train.iloc[:, 1].values, c ="red", marker ="s", label="train", s = x_train.iloc[:, -1].values*22+1)
+        plt.scatter(x_test.iloc[:, 0].values, x_test.iloc[:, 1].values,  c ="blue", marker ="*", label="test", s = x_test.iloc[:, -1].values*22+1)
+        plt.scatter(x_test_U.iloc[:, 0].values, x_test_U.iloc[:, 1].values, c ="green", marker ="o", label="u", s = 5)
+        plt.title(f'# training positives: {x_train[x_train["ID"]== 1.0].shape[0]},       # training negatives: {x_train[x_train["ID"]== 0.0].shape[0]} \n # test positives: {x_test[x_test["ID"]== 1.0].shape[0]},       # test negatives: {x_test[x_test["ID"]== 0.0].shape[0]}               # test_U : {x_test_U.shape[0]}')
+
+        plt.xlabel("PC1")
+        plt.ylabel("PC2")
+        plt.legend()
+        plt.savefig(PP3+f"{str(self._known_imposter)}.png")
         # plt.close('all')
-
+        print(self._known_imposter_list) 
+        print(self._unknown_imposter_list)
 
         # plt.show()
         # breakpoint()  
@@ -1720,55 +1764,6 @@ class Classifier(Features):
         results = [EER, TH, ACC_bd, BACC_bd, FAR_bd, FRR_bd, ACC_ud, BACC_ud, FAR_ud, FRR_ud, AUS, FAU, x_test_U.shape[0], AUS_All, FAU_All]
 
         return results, CM_bd, CM_ud      
-
-    def compacting_results(self, results, CM_bd, CM_ud, subject):
-        # [EER, TH, ACC_bd, BACC_bd, FAR_bd, FRR_bd, ACC_ud, BACC_ud, FAR_ud, FRR_ud,]
-
-        # return results, CM_bd, CM_ud
-        # breakpoint()
-        # pos_te_samples = self._p
-        # neg_te_samples = self._
-        # pos_tr_samples = self._
-        # neg_tr_ratio = self._
-
-        result = list()
-
-        result.append([
-            self._test_id,
-            subject, 
-            self._combination, 
-            self._classifier_name, 
-            self._normilizing, 
-            self._persentage, 
-            self._num_pc, 
-            # configs["classifier"][CLS], 
-        ])
-
-        result.append(np.array(results).mean(axis=0))
-        result.append([np.array(CM_bd).mean(axis=0), np.array(CM_ud).mean(axis=0)])
-        
-
-        # _CNN_weights = 'imagenet'
-        # _CNN_base_model = ""
-
-        result.append([
-            self._KFold,
-            self._p_training_samples,
-            self._train_ratio,
-            self._ratio,
-            # pos_te_samples, 
-            # neg_te_samples, 
-            self._known_imposter, 
-            self._unknown_imposter, 
-            self._min_number_of_sample,
-            self._number_of_unknown_imposter_samples,
-        ])
-
-
-        result = [val for sublist in result for val in sublist]
-        
-        # results.append(result)
-        return result
 
     @staticmethod
     def compute_score_matrix(positive_samples, negative_samples):
@@ -1819,28 +1814,17 @@ class Classifier(Features):
         min_index = 99 - np.argmin(abs_diffs[::-1])
         plt.figure(figsize=(5,5))
         eer = np.mean((FAR[min_index], FRR[min_index]))
-        plt.plot( np.linspace(0, 1, 100), FRR)
-        plt.plot( np.linspace(0, 1, 100), FAR)
-        plt.plot(np.linspace(0, 1, 100)[min_index], eer, "r*")
+        plt.plot( np.linspace(0, 1, 100), FRR, label = "FRR")
+        plt.plot( np.linspace(0, 1, 100), FAR, label = "FAR")
+        plt.plot(np.linspace(0, 1, 100)[min_index], eer, "r*",label = "EER")
+        plt.legend()
         # plt.savefig(path, bbox_inches='tight')
 
-        plt.show()
+        # plt.show()
 
 
 class Pipeline(Classifier):
-    _features_set = dict()
-
-    COX_feature_name = ['MDIST_RD', 'MDIST_AP', 'MDIST_ML', 'RDIST_RD', 'RDIST_AP', 'RDIST_ML', 
-        'TOTEX_RD', 'TOTEX_AP', 'TOTEX_ML', 'MVELO_RD', 'MVELO_AP', 'MVELO_ML', 
-        'RANGE_RD', 'RANGE_AP', 'RANGE_ML', 'AREA_CC',  'AREA_CE',  'AREA_SW', 
-        'MFREQ_RD', 'MFREQ_AP', 'MFREQ_ML', 'FDPD_RD',  'FDPD_AP',  'FDPD_ML', 
-        'FDCC',     'FDCE']
-
-    GRF_feature_name = ["max_value_1", "max_value_1_ind", "max_value_2", "max_value_2_ind", 
-        "min_value", "min_value_ind", "mean_value", "std_value", "sum_value"]
-
-    _pre_image_names = ["CD", "PTI", "Tmin", "Tmax", "P50", "P60", "P70", "P80", "P90", "P100"]
-
+  
     _col = ["test_id",
         "subject", 
         "combination", 
@@ -1863,8 +1847,14 @@ class Pipeline(Classifier):
         "unknown_imposter_samples",
         "AUS_All",
         "FAU_All",
-        "CM_bd", 
-        "CM_ud",
+        "CM_bd_TN",
+        "CM_bd_FP",
+        "CM_bd_FN",
+        "CM_bd_TP", 
+        "CM_ud_TN",
+        "CM_ud_FP",
+        "CM_ud_FN",
+        "CM_ud_TP",
         "KFold",
         "p_training_samples",
         "train_ratio",
@@ -1877,9 +1867,10 @@ class Pipeline(Classifier):
         "number_of_unknown_imposter_samples",
     ]
 
-    def __init__(self, dataset_name, classifier_name, kwargs):
-        super().__init__(dataset_name, classifier_name)
+    def __init__(self, kwargs):
         
+        
+        self.dataset_name = ""
         self._combination = 0
 
         self._labels = 0
@@ -1905,7 +1896,10 @@ class Pipeline(Classifier):
         self._CNN_include_top = False
         self._verbose = False
         self._CNN_batch_size = 32
-        self._CNN_base_model = ""
+        self._CNN_epochs = 10
+        self._CNN_optimizer = 'adam'
+        self._val_size = 0.2
+
         #####################################################
         self._CNN_class_numbers = 97
         self._CNN_epochs = 10
@@ -1949,263 +1943,107 @@ class Pipeline(Classifier):
                 logger.error("key must be one of these:", self.__dict__.keys())
                 raise KeyError(key)
 
-    def pipeline_tem(self, ):
-        ###############
-        ##  block 1  ##
-        ###############
-        # F.loading_pre_features_GRF()
-        # F.loading_pre_features_image()
-        # F.loading_pre_features_COP()
-        # F.loading_pre_features_COA()
+        super().__init__(self.dataset_name, self._classifier_name)
 
-
-        ###############
-        ##  block 2  ##
-        ###############
-        # F.loading_deep_features("P100")
-
-        # F.loading_pre_image("P100")
-
-        # F.loading_COA_handcrafted()
-        # F.loading_COA_WPT()
-
-        self.loading_GRF_handcrafted()
-        # F.loading_GRF_WPT()
-
-        self.loading_COP_handcrafted()
-        # F.loading_COP_WPT()
-
-
-
-        ###############
-        ##  block 2  ##
-        ###############
-        # ["COA_handcrafted", "COAs", "COA_WPT",     
-        # "COP_handcrafted", "COPs", "COP_WPT",    
-        # "GRF_handcrafted", "GRFs", "GRF_WPT",
-        # "P100", "CD", "PTI", "Tmin", "Tmax", "P50", "P60", "P70", "P80", "P90", "P100",
-        # "deep_features",]
-            
-        listn = ["COP_handcrafted", "GRF_handcrafted"]
-        DF_features_all = self.pack(listn)     
-
-        return self.run(DF_features_all, listn)
-
-    def pipeline_test(self, ):
-        ###############
-        ##  block 1  ##
-        ###############
-        if self._GRFs.empty:
-            self.loading_pre_features_GRF()
-        # F.loading_pre_features_image()
-        # F.loading_pre_features_COP()
-        # F.loading_pre_features_COA()
-
-
-        ###############
-        ##  block 2  ##
-        ###############
-        # F.loading_deep_features("P100")
-
-        # F.loading_pre_image("P100")
-
-        # F.loading_COA_handcrafted()
-        # F.loading_COA_WPT()
-        if self._GRF_handcrafted.empty:
-            self.loading_GRF_handcrafted()
-        # F.loading_GRF_WPT()
-
-        # F.loading_COP_handcrafted()
-        # F.loading_COP_WPT()
-
-
-
-        ###############
-        ##  block 2  ##
-        ###############
-        # ["COA_handcrafted", "COAs", "COA_WPT",     
-        # "COP_handcrafted", "COPs", "COP_WPT",    
-        # "GRF_handcrafted", "GRFs", "GRF_WPT",
-        # "P100", "CD", "PTI", "Tmin", "Tmax", "P50", "P60", "P70", "P80", "P90", "P100",
-        # "deep_features",]
-            
-        listn = ["GRF_handcrafted"]
-        DF_features_all = self.pack(listn)     
-
-        return self.run(DF_features_all, listn)
-
-    def pipeline_1(self, ):
-        """GRF+COP"""
-        # self.t = "P1"
-        ###############
-        ##  block 1  ##
-        ###############
-        # if self._GRFs.empty or self._COPs.empty:
-        #     self.loading_pre_features_GRF()
-        #     self.loading_pre_features_COP()
-
-
-        # ###############
-        # ##  block 2  ##
-        # ###############
-        # if self._GRF_handcrafted.empty or self._GRF_WPT.empty:
-        #     self.loading_GRF_handcrafted()
-        #     self.loading_GRF_WPT()
-
-        # if self._COP_handcrafted.empty or self._COP_WPT.empty:
-        #     self.loading_COP_handcrafted()
-        #     self.loading_COP_WPT()
-
-
-        ###############
-        ##  block 2  ##
-        ###############           
-        listn = ["COP_handcrafted", "COPs", "COP_WPT", "GRF_handcrafted", "GRFs", "GRF_WPT",]
-        DF_features_all = self.pack(listn)     
-
-        return self.run(DF_features_all, listn)
-        
-    def pipeline_2(self, Image_feature_name:list):
-        """image"""
-        # self.t = "P2"
-
-        ###############
-        ##  block 1  ##
-        ###############
-        # if self._pre_images.empty or eval(f'self._{Image_feature_name}.empty'):
-        #     self.loading_pre_features_image()
-
-
-        #     ###############
-        #     ##  block 2  ##
-        #     ###############
-        #     self.loading_pre_image(Image_feature_name)
-
-
-        ###############
-        ##  block 2  ##
-        ###############
-        # listn = [Image_feature_name]
-        DF_features_all = self.pack(Image_feature_name)     
-
-        return self.run(DF_features_all, Image_feature_name)
-
-    def pipeline_3(self, Image_feature_name):
-        """deep features"""
-        # self.t = "P3"
-
-        ###############
-        ##  block 1  ##
-        ###############
-        # if self._pre_images.empty or eval(f'self._{Image_feature_name}.empty'):
-
-        #     self.loading_pre_features_image()
-
-
-        #     ###############
-        #     ##  block 2  ##
-        #     ###############
-        #     self.loading_deep_features(Image_feature_name)
+    def run(self, listn:list, label:pd.DataFrame, feature_set_names:list):
+        DF_features_all = self.pack(listn, label)
 
         
-        ###############
-        ##  block 2  ##
-        ###############         
-
-        listn = [ f'deep_{pre_image_name}_{self._CNN_base_model[:5]}' for pre_image_name in Image_feature_name]
-        DF_features_all = self.pack(listn)     
-
-        return self.run(DF_features_all, listn)
-
-    def pipeline_4(self, Image_feature_name):
-        """All Handcrafted"""
-        # self.t = "P4"
-
-        ###############
-        ##  block 1  ##
-        ###############
-        # breakpoint()
-        # if self._pre_images.empty or eval(f'self._{Image_feature_name}.empty'):
-
-        #     self.loading_pre_features_GRF()
-        #     self.loading_pre_features_image()
-        #     self.loading_pre_features_COP()
-        #     # self.loading_pre_features_COA()
-
-
-        #     ###############
-        #     ##  block 2  ##
-        #     ###############
-        #     self.loading_pre_image(Image_feature_name)
-
-        #     # self.loading_COA_handcrafted()
-        #     # self.loading_COA_WPT()
-
-        #     self.loading_GRF_handcrafted()
-        #     self.loading_GRF_WPT()
-
-        #     self.loading_COP_handcrafted()
-        #     self.loading_COP_WPT()
-
-
-        ###############
-        ##  block 2  ##
-        ###############           
-        listn = ["COP_handcrafted", "COPs", "COP_WPT", "GRF_handcrafted", "GRFs", "GRF_WPT", Image_feature_name]
-        DF_features_all = self.pack(listn)     
-
-        return self.run(DF_features_all, listn)
-
-    def run(self, DF_features_all, listn):
-        # pool = multiprocessing.Pool(processes=ncpus)
         DF_known_imposter, DF_unknown_imposter = self.filtering_subjects_and_samples(DF_features_all)
 
-
         results = list()
-        for subject in self._known_imposter_list:
-            # if subject not in [4, 5, 6, 7]:
-            #     break
+        for idx, subject in enumerate(self._known_imposter_list):
+            if subject not in [4,5,6,7]: #todo: remove this  5, 6, 7
+                break
 
 
             if self._verbose == True:
-                print(f"Subject number: {subject} out of {len(self._known_imposter_list)} ")
+                logger.info(f"     Subject number: {idx} out of {len(self._known_imposter_list)} (subject ID is {subject})")
             DF_known_imposter_binariezed, DF_unknown_imposter_binariezed = self.binarize_labels(DF_known_imposter, DF_unknown_imposter, subject)
 
-            CV = model_selection.StratifiedKFold(n_splits=self._KFold, random_state=None, shuffle=False)
+            CV = model_selection.StratifiedKFold(n_splits=self._KFold, random_state=self._random_state, shuffle=True)
             X = DF_known_imposter_binariezed
             U = DF_unknown_imposter_binariezed
 
-
             cv_results = list()
-            cv_CM_u = list()
-            cv_CM_b = list()
-            for train_index, test_index in CV.split(X.iloc[:,:-1], X.iloc[:,-1]):
+          
+            ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK', default=multiprocessing.cpu_count()))
+            pool = multiprocessing.Pool(processes=ncpus)
 
-                df_train = X.iloc[train_index, :]
-                df_test = X.iloc[test_index, :]
-                # df_test = pd.concat([X.iloc[test_index, :], DF_unknown_imposter_binariezed])
 
-                df_train = self.down_sampling(df_train)
+            for fold, (train_index, test_index) in enumerate(CV.split(X.iloc[:,:-1], X.iloc[:,-1])):
 
-                df_train, df_test, df_test_U = self.scaler(df_train, df_test, U)
+                pool.apply_async(self.fold_calculating, args=(feature_set_names, subject, X, U, train_index, test_index, fold), callback=cv_results.append)
+                break #todo: remove this
 
-                df_train, df_test, df_test_U = self.projector(df_train, df_test, df_test_U, listn)
+            pool.close()
+            pool.join()
 
-                result, CM_bd, CM_ud = self.ML_classifier(df_train, df_test, df_test_U, subject) 
-
-                cv_results.append(result)
-                cv_CM_u.append(CM_ud)
-                cv_CM_b.append(CM_bd)
-                # break
-
-            result = self.compacting_results(cv_results, cv_CM_b, cv_CM_u, subject)
+            result = self.compacting_results(cv_results, subject)
             results.append(result)
 
         return pd.DataFrame(results, columns=self._col)
 
+    def compacting_results(self, results, subject):
+        # [EER, TH, ACC_bd, BACC_bd, FAR_bd, FRR_bd, ACC_ud, BACC_ud, FAR_ud, FRR_ud,]
+
+        # return results, CM_bd, CM_ud
+        # breakpoint()
+        # pos_te_samples = self._p
+        # neg_te_samples = self._
+        # pos_tr_samples = self._
+        # neg_tr_ratio = self._
+
+        result = list()
+
+        result.append([
+            self._test_id,
+            subject, 
+            self._combination, 
+            self._classifier_name, 
+            self._normilizing, 
+            self._persentage, 
+            self._num_pc, 
+            # configs["classifier"][CLS], 
+        ])
+
+        result.append(np.array(results).mean(axis=0))
+        # result.append([np.array(CM_bd).mean(axis=0), np.array(CM_ud).mean(axis=0)])
+        
+
+        # _CNN_weights = 'imagenet'
+        # _CNN_base_model = ""
+
+        result.append([
+            self._KFold,
+            self._p_training_samples,
+            self._train_ratio,
+            self._ratio,
+            # pos_te_samples, 
+            # neg_te_samples, 
+            self._known_imposter, 
+            self._unknown_imposter, 
+            self._min_number_of_sample,
+            self._number_of_unknown_imposter_samples,
+        ])
+
+        return [val for sublist in result for val in sublist]
+
+    def fold_calculating(self, feature_set_names:list, subject:int, X, U, train_index, test_index, fold):
+        logger.info(f"\t   Fold number: {fold} out of {self._KFold} ({os.getpid()})")
+        df_train = X.iloc[train_index, :]
+        df_test = X.iloc[test_index, :]
+        df_train = self.down_sampling(df_train)
+
+        df_train, df_test, df_test_U = self.scaler(df_train, df_test, U)
+        df_train, df_test, df_test_U = self.projector(df_train, df_test, df_test_U, feature_set_names)
+        result, CM_bd, CM_ud = self.ML_classifier(df_train, df_test, df_test_U, subject)
+        
+        return result + CM_ud.reshape(1,-1).tolist()[0] + CM_bd.reshape(1,-1).tolist()[0]
+
     def collect_results(self, result: pd.DataFrame, pipeline_name: str) -> None:
         result['pipeline'] = pipeline_name
-        test = os.environ.get('SLURM_JOB_NAME', default=self.t)
+        test = os.environ.get('SLURM_JOB_NAME', default=pipeline_name)
         excel_path = os.path.join(os.getcwd(), "results", f"Result__{test}.xlsx")
 
         if os.path.isfile(excel_path):
@@ -2216,7 +2054,8 @@ class Pipeline(Classifier):
         Results_DF = Results_DF.append(result)
         try:
             Results_DF.to_excel(excel_path)
-        except:
+        except Exception as e: 
+            logger.error(e) 
             Results_DF.to_excel(excel_path[:-5]+str(self._test_id)+'.xlsx') 
 
 
@@ -2434,6 +2273,512 @@ class Deep_network(Pipeline):
         pass
 
 
+    def fine_tuning(self, CNN:str, dataset:str, pre_image_name:list):
+        logger.info("fine_tuning")
+
+        self.loading_pre_image_from_list(['P100', 'P80'])
+
+
+
+        # # ##################################################################
+        # #                phase 3: processing labels
+        # # ##################################################################
+        metadata = np.load(configs["paths"]["stepscan_image_label.npy"])
+        logger.info("metadata shape: {}".format(metadata.shape))
+
+
+
+        indices = metadata[:,0]
+        le = preprocessing.LabelEncoder()
+        le.fit(indices)
+
+        logger.info(f"Number of subjects: {len(np.unique(indices))}")
+
+        labels = le.transform(indices)
+
+        # labels = tf.keras.utils.to_categorical(labels, num_classes=len(np.unique(indices)))
+
+
+
+
+
+        # # ##################################################################
+        # #                phase 4: Loading Image features
+        # # ##################################################################
+        features = np.load(configs["paths"]["stepscan_image_feature.npy"])
+        logger.info("features shape: {}".format(features.shape))
+
+
+        # #CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100
+        logger.info("batch_size: {}".format(configs["CNN"]["batch_size"]))
+
+        maxvalues = [np.max(features[...,ind]) for ind in range(len(cfg.image_feature_name))]
+
+        for i in range(len(cfg.image_feature_name)):
+            features[..., i] = features[..., i]/maxvalues[i]
+
+
+        if configs['CNN']["image_feature"]=="tile":
+            images = tile(features)
+
+        else:
+            image_feature_name = dict(zip(cfg.image_feature_name, range(len(cfg.image_feature_name))))
+            ind = image_feature_name[configs['CNN']["image_feature"]]
+            
+            images = features[...,ind]
+            images = images[...,tf.newaxis]
+            images = np.concatenate((images, images, images), axis=-1)
+
+
+class Specificity(tf.keras.metrics.Metric):
+    def __init__(self, name='specificity', **kwargs):
+        super().__init__(name=name, **kwargs)
+        self.tn = tf.keras.metrics.TrueNegatives()
+        self.fp = tf.keras.metrics.FalsePositives()
+        self.specificity = self.add_weight(
+            name='specificity', initializer='zeros')
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        tn = self.tn(y_true, y_pred)
+        fp = self.fp(y_true, y_pred)
+        self.specificity.assign((tn) / (fp + tn + 1e-6))
+
+    def result(self):
+        return self.specificity
+
+    def reset_states(self):
+        self.tn.reset_states()
+        self.fp.reset_states()
+        self.specificity.assign(0)
+
+
+class Sensitivity(tf.keras.metrics.Metric):
+    def __init__(self, name='sensitivity', **kwargs):
+        super().__init__(name=name, **kwargs)
+        self.tp = tf.keras.metrics.TruePositives()
+        self.fn = tf.keras.metrics.FalseNegatives()
+        self.sensitivity = self.add_weight(
+            name='sensitivity', initializer='zeros')
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        tp = self.tp(y_true, y_pred)
+        fn = self.fn(y_true, y_pred)
+        # since f1 is a variable, we use assign
+        self.sensitivity.assign((tp) / (tp + fn + 1e-6))
+
+    def result(self):
+        return self.sensitivity
+
+    def reset_states(self):
+        self.tp.reset_states()
+        self.fn.reset_states()
+        self.sensitivity.assign(0.0)
+
+
+class F1_Score(tf.keras.metrics.Metric):
+
+    def __init__(self, name='fscore', **kwargs):
+        super().__init__(name=name, **kwargs)
+        self.f1 = self.add_weight(name='fscore', initializer='zeros')
+        self.precision_fn = tf.keras.metrics.Precision(thresholds=0.5)
+        self.recall_fn = tf.keras.metrics.Recall(thresholds=0.5)
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        p = self.precision_fn(y_true, y_pred)
+        r = self.recall_fn(y_true, y_pred)
+        # since f1 is a variable, we use assign
+        self.f1.assign(2 * ((p * r) / (p + r + 1e-6)))
+
+    def result(self):
+        return self.f1
+
+    def reset_states(self):
+        self.precision_fn.reset_states()
+        self.recall_fn.reset_states()
+        self.f1.assign(0)
+
+
+class BalancedAccuracy(tf.keras.metrics.Metric):
+    def __init__(self, name='bac', **kwargs):
+        super().__init__(name=name, **kwargs)
+        self.tp = tf.keras.metrics.TruePositives()
+        self.tn = tf.keras.metrics.TrueNegatives()
+        self.fp = tf.keras.metrics.FalsePositives()
+        self.fn = tf.keras.metrics.FalseNegatives()
+        self.bac = self.add_weight(name='bac', initializer='zeros')
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        tp = self.tp(y_true, y_pred)
+        tn = self.tn(y_true, y_pred)
+        fp = self.fp(y_true, y_pred)
+        fn = self.fn(y_true, y_pred)
+        spec = ((tn) / (fp + tn + 1e-6))
+        sen = ((tp) / (tp + fn + 1e-6))
+        self.bac.assign((sen + spec)/2)
+
+    def result(self):
+        return self.bac
+
+    def reset_states(self):
+        self.tp.reset_states()
+        self.tn.reset_states()
+        self.fp.reset_states()
+        self.fn.reset_states()
+        self.bac.assign(0)
+
+
+METRICS = [
+    tf.keras.metrics.SparseCategoricalCrossentropy(name='accuracy'),
+    # BalancedAccuracy(),
+    # Kappa(),
+    # tf.keras.metrics.Precision(name='precision'),
+    # tf.keras.metrics.Recall(name='recall'),
+    # F1_Score(),
+    # Specificity(),
+    # Sensitivity(),
+    # tf.keras.metrics.TruePositives(name='tp'),
+    # tf.keras.metrics.FalsePositives(name='fp'),
+    # tf.keras.metrics.TrueNegatives(name='tn'),
+    # tf.keras.metrics.FalseNegatives(name='fn'),
+    # tf.keras.metrics.AUC(name='auc'),
+
+]
+
+
+def Participant_Count():
+    setting = {
+
+        "dataset_name": 'casia',
+
+        "_classifier_name": 'TM',
+        "_combination": True,
+
+        "_CNN_weights": 'imagenet',
+        "_verbose": True,
+        "_CNN_batch_size": 32,
+        "_CNN_base_model": '',
+
+        "_min_number_of_sample": 30,
+        "_known_imposter": 3,
+        "_unknown_imposter": 5,
+        "_number_of_unknown_imposter_samples": 1.0,  # Must be less than 1
+
+
+        "_waveletname": 'coif1',
+        "_pywt_mode": 'constant',
+        "_wavelet_level": 4,
+
+
+        "_p_training_samples": 27,
+        "_train_ratio": 1000,
+        "_ratio": False,
+
+
+        "_KNN_n_neighbors": 5,
+        "_KNN_metric": 'euclidean',
+        "_KNN_weights": 'uniform',
+        "_SVM_kernel": 'linear',
+
+
+        "_KFold": 10,
+        "_random_runs": 10,
+        "_persentage": 0.95,
+        "_normilizing": 'z-score',
+
+    }
+    
+    A = Pipeline(setting)
+
+    GRFs, COPs, COAs, pre_images, labels = A.loading_pre_features('casia')
+    COA_handcrafted = A.loading_COA_handcrafted(COAs)
+    COP_handcrafted = A.loading_COP_handcrafted(COPs)
+    GRF_handcrafted = A.loading_GRF_handcrafted(GRFs)
+    COA_WPT = A.loading_COA_WPT(COAs)
+    COP_WPT = A.loading_COP_WPT(COPs)
+    GRF_WPT= A.loading_GRF_WPT(GRFs)
+
+    deep_features_list = A.loading_deep_features_from_list((pre_images, labels), ['P100', 'P80'], 'resnet50.ResNet50')
+    image_from_list = A.loading_pre_image_from_list(pre_images, ['P80', 'P100'])
+    # P70 = A.loading_pre_image(pre_images, 'P70')
+    # P90 = A.loading_deep_features((pre_images, labels), 'P90', 'resnet50.ResNet50')
+    
+
+    feature_set_names = ['COP_handcrafted', 'COPs', 'COP_WPT', 'GRF_handcrafted', 'GRFs', 'GRF_WPT']
+    feature_set =[]
+    for i in feature_set_names:
+        feature_set.append(eval(f"{i}"))
+
+    p0 = [5, 30]
+    p1 = [5, 10, 15, 20, 25, 30]
+    p2 = ['TM']#, 'svm']
+
+    space = list(product(p0, p1, p2))
+    space = space[:]
+
+    for idx, parameters in enumerate(space):
+        
+        A._known_imposter     = parameters[1]
+        A._unknown_imposter   = parameters[0]
+        A._classifier_name    = parameters[2]
+
+        tic = timeit.default_timer()
+        A.collect_results(A.run( feature_set, labels, feature_set_names), 'COP+GRF')
+        toc = timeit.default_timer()
+
+        logger.info(f'[step {idx+1} out of {len(space)}], parameters: {parameters}, process time: {round(toc-tic, 2)}')
+
+
+def Feature_Count():
+    setting = {
+
+        "dataset_name": 'casia',
+
+        "_classifier_name": 'TM',
+        "_combination": True,
+
+        "_CNN_weights": 'imagenet',
+        "_verbose": True,
+        "_CNN_batch_size": 32,
+        "_CNN_base_model": '',
+
+        "_min_number_of_sample": 30,
+        "_known_imposter": 3,
+        "_unknown_imposter": 5,
+        "_number_of_unknown_imposter_samples": 1.0,  # Must be less than 1
+
+
+        "_waveletname": 'coif1',
+        "_pywt_mode": 'constant',
+        "_wavelet_level": 4,
+
+
+        "_p_training_samples": 11,
+        "_train_ratio": 34,
+        "_ratio": False,
+
+
+        "_KNN_n_neighbors": 5,
+        "_KNN_metric": 'euclidean',
+        "_KNN_weights": 'uniform',
+        "_SVM_kernel": 'linear',
+
+
+        "_KFold": 10,
+        "_random_runs": 20,
+        "_persentage": 0.95,
+        "_normilizing": 'z-score',
+
+    }
+    
+    A = Pipeline(setting)
+
+    GRFs, COPs, COAs, pre_images, labels = A.loading_pre_features('casia')
+    COA_handcrafted = A.loading_COA_handcrafted(COAs)
+    COP_handcrafted = A.loading_COP_handcrafted(COPs)
+    GRF_handcrafted = A.loading_GRF_handcrafted(GRFs)
+    COA_WPT = A.loading_COA_WPT(COAs)
+    COP_WPT = A.loading_COP_WPT(COPs)
+    GRF_WPT= A.loading_GRF_WPT(GRFs)
+
+    deep_features_list = A.loading_deep_features_from_list((pre_images, labels), ['P100', 'P80'], 'resnet50.ResNet50')
+    image_from_list = A.loading_pre_image_from_list(pre_images, ['P80', 'P100'])
+    # P70 = A.loading_pre_image(pre_images, 'P70')
+    # P90 = A.loading_deep_features((pre_images, labels), 'P90', 'resnet50.ResNet50')
+    
+
+    feature_set_names = ['COP_handcrafted', 'COPs', 'COP_WPT', 'GRF_handcrafted', 'GRFs', 'GRF_WPT']
+    feature_set =[]
+    for i in feature_set_names:
+        feature_set.append(eval(f"{i}"))
+
+    p0 = [5, 30]
+    p1 = [5, 10, 15, 20, 25, 30]
+    p1 = [5, 30]
+
+    space = list(product(p0, p1))
+    space = space[:]
+
+    for idx, parameters in enumerate(space):
+        
+        A._known_imposter     = parameters[0]
+        A._unknown_imposter   = parameters[1]
+
+        tic = timeit.default_timer()
+        A.collect_results(A.run( feature_set, labels, feature_set_names), 'COP+GRF')
+        toc = timeit.default_timer()
+
+        logger.info(f'[step {idx+1} out of {len(space)}], parameters: {parameters}, process time: {round(toc-tic, 2)}')
+
+
+def template_Count():
+
+    setting = {
+
+        "dataset_name": 'casia',
+
+        "_classifier_name": 'TM',
+        "_combination": True,
+
+        "_CNN_weights": 'imagenet',
+        "_verbose": True,
+        "_CNN_batch_size": 32,
+        "_CNN_base_model": '',
+
+        "_min_number_of_sample": 30,
+        "_known_imposter": 3,
+        "_unknown_imposter": 5,
+        "_number_of_unknown_imposter_samples": 1.0,  # Must be less than 1
+
+
+        "_waveletname": 'coif1',
+        "_pywt_mode": 'constant',
+        "_wavelet_level": 4,
+
+
+        "_p_training_samples": 11,
+        "_train_ratio": 34,
+        "_ratio": False,
+
+
+        "_KNN_n_neighbors": 5,
+        "_KNN_metric": 'euclidean',
+        "_KNN_weights": 'uniform',
+        "_SVM_kernel": 'linear',
+
+
+        "_KFold": 10,
+        "_random_runs": 20,
+        "_persentage": 0.95,
+        "_normilizing": 'z-score',
+
+    }
+    
+    A = Pipeline(setting)
+
+    GRFs, COPs, COAs, pre_images, labels = A.loading_pre_features('casia')
+    COA_handcrafted = A.loading_COA_handcrafted(COAs)
+    COP_handcrafted = A.loading_COP_handcrafted(COPs)
+    GRF_handcrafted = A.loading_GRF_handcrafted(GRFs)
+    COA_WPT = A.loading_COA_WPT(COAs)
+    COP_WPT = A.loading_COP_WPT(COPs)
+    GRF_WPT= A.loading_GRF_WPT(GRFs)
+
+    deep_features_list = A.loading_deep_features_from_list((pre_images, labels), ['P100', 'P80'], 'resnet50.ResNet50')
+    image_from_list = A.loading_pre_image_from_list(pre_images, ['P80', 'P100'])
+    # P70 = A.loading_pre_image(pre_images, 'P70')
+    # P90 = A.loading_deep_features((pre_images, labels), 'P90', 'resnet50.ResNet50')
+    
+
+    feature_set_names = ['COP_handcrafted', 'COPs', 'COP_WPT', 'GRF_handcrafted', 'GRFs', 'GRF_WPT']
+    feature_set =[]
+    for i in feature_set_names:
+        feature_set.append(eval(f"{i}"))
+
+    p0 = [5, 30]
+    p1 = [5, 10, 15, 20, 25, 30]
+    p1 = [5, 30]
+
+    space = list(product(p0, p1))
+    space = space[:]
+
+    for idx, parameters in enumerate(space):
+        
+        A._known_imposter     = parameters[0]
+        A._unknown_imposter   = parameters[1]
+
+        tic = timeit.default_timer()
+        A.collect_results(A.run( feature_set, labels, feature_set_names), 'COP+GRF')
+        toc = timeit.default_timer()
+
+        logger.info(f'[step {idx+1} out of {len(space)}], parameters: {parameters}, process time: {round(toc-tic, 2)}')
+
+
+def FT():
+
+    setting = {
+
+        "dataset_name": 'casia',
+
+        "_classifier_name": 'TM',
+        "_combination": True,
+
+        "_CNN_weights": 'imagenet',
+        "_verbose": True,
+        "_CNN_batch_size": 32,
+        "_CNN_base_model": '',
+
+        "_min_number_of_sample": 30,
+        "_known_imposter": 3,
+        "_unknown_imposter": 5,
+        "_number_of_unknown_imposter_samples": 1.0,  # Must be less than 1
+
+
+        "_waveletname": 'coif1',
+        "_pywt_mode": 'constant',
+        "_wavelet_level": 4,
+
+
+        "_p_training_samples": 11,
+        "_train_ratio": 34,
+        "_ratio": False,
+
+
+        "_KNN_n_neighbors": 5,
+        "_KNN_metric": 'euclidean',
+        "_KNN_weights": 'uniform',
+        "_SVM_kernel": 'linear',
+
+
+        "_KFold": 10,
+        "_random_runs": 20,
+        "_persentage": 0.95,
+        "_normilizing": 'z-score',
+
+    }
+    
+    A = Pipeline(setting)
+
+   
+
+    GRFs, COPs, COAs, pre_images, labels = A.loading_pre_features('casia')
+    COA_handcrafted = A.loading_COA_handcrafted(COAs)
+    COP_handcrafted = A.loading_COP_handcrafted(COPs)
+    GRF_handcrafted = A.loading_GRF_handcrafted(GRFs)
+    COA_WPT = A.loading_COA_WPT(COAs)
+    COP_WPT = A.loading_COP_WPT(COPs)
+    GRF_WPT= A.loading_GRF_WPT(GRFs)
+
+    deep_features_list = A.loading_deep_features_from_list((pre_images, labels), ['P100', 'P80'], 'resnet50.ResNet50')
+    image_from_list = A.loading_pre_image_from_list(pre_images, ['P80', 'P100'])
+    # P70 = A.loading_pre_image(pre_images, 'P70')
+    # P90 = A.loading_deep_features((pre_images, labels), 'P90', 'resnet50.ResNet50')
+    
+    A.FT_deep_features((pre_images, labels), 'stepscan', 'P100', 'resnet50.ResNet50')
+
+    feature_set_names = ['COP_handcrafted', 'COPs', 'COP_WPT', 'GRF_handcrafted', 'GRFs', 'GRF_WPT']
+    feature_set =[]
+    for i in feature_set_names:
+        feature_set.append(eval(f"{i}"))
+
+    p0 = [5, 30]
+    p1 = [5, 10, 15, 20, 25, 30]
+    p1 = [5, 30]
+
+    space = list(product(p0, p1))
+    space = space[:]
+
+    for idx, parameters in enumerate(space):
+        
+        A._known_imposter     = parameters[0]
+        A._unknown_imposter   = parameters[1]
+
+        tic = timeit.default_timer()
+        A.collect_results(A.run( feature_set, labels, feature_set_names), 'COP+GRF')
+        toc = timeit.default_timer()
+
+        logger.info(f'[step {idx+1} out of {len(space)}], parameters: {parameters}, process time: {round(toc-tic, 2)}')
+
+
 def main():
 
     setting = {
@@ -2525,149 +2870,18 @@ def main():
         logger.info(f'[step {idx+1} out of {len(space)}], parameters: {parameters}, process time: {round(toc-tic, 2)}')
 
 
-def Participant_Count():
-
-    setting = {
-        "_classifier_name": 'TM',
-        "_combination": True,
-
-        "_CNN_weights": 'imagenet',
-        "_verbose": True,
-        "_CNN_batch_size": 32,
-        "_CNN_base_model": '',
-
-        "_min_number_of_sample": 30,
-        "_known_imposter": 3,
-        "_unknown_imposter": 1,
-        "_number_of_unknown_imposter_samples": 1.0,  # Must be less than 1
-
-        "_waveletname": 'coif1',
-        "_pywt_mode": 'constant',
-        "_wavelet_level": 4,
-
-        "_p_training_samples": 27,
-        "_train_ratio": 300,
-        "_ratio": False,
-
-        "_KNN_n_neighbors": 5,
-        "_KNN_metric": 'euclidean',
-        "_KNN_weights": 'uniform',
-        "_SVM_kernel": 'linear',
-
-        "_KFold": 10,
-        "_random_runs": 10,
-        "_persentage": 0.95,
-        "_normilizing": 'z-score',
-    }
-    
-
-    P = Pipeline("casia", "TM", setting)
-    P.t = "Participant_Count_P1_test"
-
-    # P.loading_pre_features_image()
-    P.loading_pre_features_GRF()
-    P.loading_pre_features_COP()
-
-    # P.loading_pre_image('P100')
-    P.loading_GRF_handcrafted()
-    P.loading_GRF_WPT()
-    P.loading_COP_handcrafted()
-    P.loading_COP_WPT()
-
-    # P.loading_deep_features('P100')
- 
-
-    ######################################################################################################################
-    ######################################################################################################################
-    test = os.environ.get('SLURM_JOB_NAME', default= P.t )
-    logger.info(f'test name: {test}')
-
-    ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK', default=4))
-    pool = multiprocessing.Pool(processes=ncpus)
-    logger.info(f'CPU count: {ncpus}')
-
-    # p0 = [9, 10, 11, 12, 13, 14, 15, 18]
-    # p1 = [3, 21, 27, 30, 45, 60, 90, 120, 150, 180, 210]
-    # p0 = [5, 30]
-    # p1 = [5, 10, 15, 20, 25, 30]
-    p0 = [5, 10, 15, 20, 25, 30]
-    p1 = [10, 0, 5, 15, 20, 25, 30]
-
-    space = list(product(p0, p1))
-    space = space[:]
-
-    for idx, parameters in enumerate(space):
-
-        # P._p_training_samples = parameters[0]
-        P._known_imposter     = parameters[0]
-        P._unknown_imposter   = parameters[1]
-
-        # P.collect_results(P.pipeline_test())
-        P._classifier_name = 'svm'
-        P.collect_results(P.pipeline_1(), "Pipeline_1") 
-        # P.collect_results(P.pipeline_2('P100'), "Pipeline_2") 
-        # P.collect_results(P.pipeline_4('P100'), "Pipeline_4") 
-        # P._classifier_name = 'svm'
-        # P.collect_results(P.pipeline_3('P100'), "Pipeline_3") 
-
-
-        toc = timeit.default_timer()
-        logger.info(f'[step {idx+1} out of {len(space)}], parameters: {parameters}, process time: {round(toc-tic, 2)}')
-
-
-def main_test():
-    setting = {
-        "_classifier_name": 'TM',
-        "_combination": True,
-
-        "_CNN_weights": 'imagenet',
-        "_verbose": True,
-        "_CNN_batch_size": 32,
-        "_CNN_base_model": '',
-
-        "_min_number_of_sample": 30,
-        "_known_imposter": 3,
-        "_unknown_imposter": 1,
-        "_number_of_unknown_imposter_samples": 1.0,  # Must be less than 1
-
-
-        "_waveletname": 'coif1',
-        "_pywt_mode": 'constant',
-        "_wavelet_level": 4,
-
-
-        "_p_training_samples": 11,
-        "_train_ratio": 34,
-        "_ratio": False,
-
-
-        "_KNN_n_neighbors": 5,
-        "_KNN_metric": 'euclidean',
-        "_KNN_weights": 'uniform',
-        "_SVM_kernel": 'linear',
-
-
-        "_KFold": 10,
-        "_random_runs": 20,
-        "_persentage": 0.95,
-        "_normilizing": 'z-score',
-
-    }
-    A = Deep_network("casia", "TM", setting)
-    A.loading_pre_features_image()
-    A.deep_training_2("P100")
-
 
 if __name__ == "__main__":
     logger.info("Starting !!!")
-    tic = timeit.default_timer()
+    tic1 = timeit.default_timer()
+
     # main()
-    Participant_Count()
+    # Participant_Count()
 
-    # main_test()
+    FT()
 
-    toc = timeit.default_timer()
-    logger.info("Done ({:2.2f} process time)!!!\n\n\n".format(toc-tic))
+    toc1 = timeit.default_timer()
+    logger.info("Done ({:2.2f} process time)!!!\n\n\n".format(toc1-tic1))
 
 
 
