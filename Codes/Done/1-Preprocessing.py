@@ -11,7 +11,7 @@ working_path = os.getcwd()
 print(sys.platform)
 print(working_path)
 
-meta_path = os.path.join(working_path, 'Datasets', 'Casia-D', 'perFootDataBarefoot', 'PerFootMetaDataBarefoot.npy')
+meta_path = os.path.join(working_path, 'Datasets', 'Casia-D', 'alignmentPerFootDataShod', 'PerFootMetaDataShod.npy') #AlignedFootMetaDataShod PerFootMetaDataBarefoot
 
 
 print(meta_path)
@@ -20,6 +20,7 @@ PerFootMetaDataBarefoot = np.load(
     meta_path
 )
 
+
 PerFootMetaDataBarefoot = pd.DataFrame(
     PerFootMetaDataBarefoot,
     columns=[
@@ -27,7 +28,7 @@ PerFootMetaDataBarefoot = pd.DataFrame(
         "left(0)/right(1) foot classification",
         "foot index in gait cycle",
         "partial",
-        " y center-offset",
+        "y center-offset",
         "x center-offset",
         "time center-offset",
     ],
@@ -40,7 +41,7 @@ print("[INFO] shape of Meta Data", CompleteMetaDataBarefoot.shape)
 CompleteMetaDataBarefoot = CompleteMetaDataBarefoot.reset_index()
 
 # Dataset_path = r"C:\Users\skazemi1\Documents\Projects\Worksheet\Datasets/RSScanData//AlignedFootDataBarefoot.npz"
-dataset_path = os.path.join(working_path, 'Datasets', 'Casia-D', 'alignedPerFootDataBarefoot', 'AlignedFootDataBarefoot.npz')
+dataset_path = os.path.join(working_path, 'Datasets', 'Casia-D', 'alignmentPerFootDataShod', 'AlignedFootDataShod.npz')
 
 AlignedFootDataBarefoot = np.load(
     dataset_path
@@ -54,10 +55,10 @@ for i in CompleteMetaDataBarefoot.index:
     metadatalist.append(CompleteMetaDataBarefoot.iloc[i,:].values[2:])
 print("[INFO] length of data", len(datalist))
 
-saving_path = os.path.join(working_path, 'Datasets', 'Casia-D', 'Data-barefoot.npy')
+saving_path = os.path.join(working_path, 'Datasets', 'Casia-D', 'Data-shod.npy')
 np.save(saving_path, datalist)
 
-saving_path = os.path.join(working_path, 'Datasets', 'Casia-D', 'Metadata-barefoot.npy')
+saving_path = os.path.join(working_path, 'Datasets', 'Casia-D', 'Metadata-shod.npy')
 np.save(saving_path, metadatalist)
 
 

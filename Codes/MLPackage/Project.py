@@ -1,8 +1,10 @@
+from cProfile import label
 import numpy as np
 import pandas as pd
 from scipy import ndimage
 from scipy.spatial import distance
 import scipy.io
+import collections
 
 from pathlib import Path as Pathlb
 import pywt, sys
@@ -36,7 +38,7 @@ import seaborn as sns
 project_dir = os.getcwd()
 log_path = os.path.join(project_dir, 'logs')
 
-
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
 def create_logger(level):
     loggerName = Pathlb(__file__).stem
@@ -86,11 +88,18 @@ class Database(object):
     def set_dataset_path(self, dataset_name:str) -> None:
         """setting path for dataset"""
         if dataset_name == "casia":
-            self._h5_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "footpressures_align.h5")
+            self._h5_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "reserve.h5")
             self._data_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "Data-barefoot.npy")
             self._meta_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "Metadata-barefoot.npy")
             self._pre_features_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "pre_features")
             self._features_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "features")
+
+        elif dataset_name == "casia-shod":
+            self._h5_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "reserve.h5")
+            self._data_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "Data-shod.npy")
+            self._meta_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "Metadata-shod.npy")
+            self._pre_features_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "pre_features-shod")
+            self._features_path = os.path.join(os.getcwd(), "Datasets", "Casia-D", "features-shod")
 
         elif dataset_name == "stepscan":
             self._h5_path = os.path.join(os.getcwd(), "Datasets", "stepscan", "footpressures_align.h5")
@@ -114,11 +123,17 @@ class Database(object):
             logger.error("The name is not valid!!")
             sys.exit()
 
+
         Pathlb(self._pre_features_path).mkdir(parents=True, exist_ok=True)
         Pathlb(self._features_path).mkdir(parents=True, exist_ok=True)
 
+        return None
+
     def extracting_labels(self, dataset_name:str) -> np.ndarray:
         if dataset_name == "casia":
+            return self._meta[:,0:2]
+        
+        elif dataset_name == "casia-shod":
             return self._meta[:,0:2]
 
         elif dataset_name == "stepscan":
@@ -197,7 +212,128 @@ class PreFeatures(Database):
         self._features_set = dict()
         self.set_dataset_path(dataset_name)
 
+    @staticmethod
+    def plot_COP(Footprint3D_1, nname):
+        import matplotlib.animation as animation
+                
+  
+        figure = plt.figure()
+
+        gs = figure.add_gridspec(1,1)
+        ax1 = figure.add_subplot(gs[0, 0])
+
+        dot, = plt.plot([0], [0], 'ro')
+        def func(i):
+            ML = list()
+            AP = list()
+            for ii in range(Footprint3D_1.shape[2]):
+                temp = Footprint3D_1[:, :, ii]
+                temp2 = ndimage.measurements.center_of_mass(temp)
+                ML.append(temp2[1])
+                AP.append(temp2[0])
+            
+            
+            
+            lowpass = Butterworth.Butterworthfilter(mode= "lowpass", fs = 100, cutoff = 5, order = 4)
+            ML = lowpass.filter(ML)
+            AP = lowpass.filter(AP)
+
+            # ml, ap = A.plot_COP(data[0])
+            ax1.imshow(Footprint3D_1[...,i])
+            ax1.axis('off')
+            ax1.plot(ML,AP, 'w')
+
+            dot.set_data(ML[i], AP[i])
+            return dot
         
+        myani = animation.FuncAnimation(figure, func, frames=np.arange(0, 100, 1), interval=10)
+        # plt.show()
+       
+        FFwriter = animation.PillowWriter(fps=30)
+        myani.save(nname, writer=FFwriter)
+
+
+    @staticmethod
+    def plot_GRF(Footprint3D_1, Footprint3D_2):
+        import matplotlib.animation as animation
+        # breakpoint()
+        figure = plt.figure()
+
+        gs = figure.add_gridspec(2,2)
+        ax1 = figure.add_subplot(gs[0, 0])
+        ax2 = figure.add_subplot(gs[0, 1])
+        ax3 = figure.add_subplot(gs[1, :])
+
+        dot, = plt.plot([0], [0], 'ro')
+        dot2, = plt.plot([0], [0], 'r*')
+        def func(i):
+            GRF_1 = list()
+            for ii in range(Footprint3D_1.shape[2]):
+                temp = Footprint3D_1[:, :, ii].sum()
+                GRF_1.append(temp)
+            
+            GRF_2 = list()
+            for ii in range(Footprint3D_2.shape[2]):
+                temp = Footprint3D_2[:, :, ii].sum()
+                GRF_2.append(temp)
+
+            dd_1 = Footprint3D_1[...,i]
+            dd_2 = Footprint3D_2[...,i]
+
+            ax1.imshow(np.rot90(dd_1, 3))
+            ax1.axis('off')
+            ax1.set_title('footprint subject 1')
+
+            ax2.imshow(np.rot90(dd_2, 3))
+            ax2.axis('off')
+            ax2.set_title('footprint subject 2')
+
+            ax3.plot( np.arange(0,100,1), GRF_1, 'b', label='GRF of subject 1')
+            ax3.plot( np.arange(0,100,1), GRF_2, 'g', label='GRF of subject 2')
+            ax3.set_xlabel('time')
+            ax3.set_ylabel('Pressure')
+            ax3.set_title('GRF')
+            
+            dot.set_data(i, GRF_1[i])
+            dot2.set_data(i, GRF_2[i])
+            return dot, dot2
+        ax3.legend()
+        myani = animation.FuncAnimation(figure, func, frames=np.arange(0, 100, 1), interval=10)
+        plt.show()
+
+        # FFwriter = animation.PillowWriter(fps=30)
+        # myani.save('GRF_two_sub.gif', writer=FFwriter)
+
+    def plot_preimages(self, Footprint3D_1, Footprint3D_2):
+        figure, axs = plt.subplots(1,2)
+        breakpoint()
+        imgs = self.pre_image(Footprint3D_1)
+        imgs1 = self.pre_image(Footprint3D_2)
+        x = ['CD', 'PTI', 'Tmin', 'Tmax', 'P50', 'P60', 'P70', 'P80', 'P90', 'P100']
+        axs[0].imshow(imgs[...,9])
+        axs[0].axis('off')
+        axs[0].set_title(f"{x[9]} for subject 1")
+
+        axs[1].imshow(imgs1[...,9])
+        axs[1].axis('off')
+        axs[1].set_title(f"{x[9]} for subject 2")
+        # for i in range(5):
+        #     axs[0,i].imshow(imgs[...,i])
+        #     axs[0,i].axis('off')
+        #     axs[0,i].set_title(f"{x[i]}")
+
+        #     axs[1,i].imshow(imgs[...,i+5])
+        #     axs[1,i].axis('off')
+        #     axs[1,i].set_title(f"{x[i+5]}")
+
+        plt.show()
+
+    @staticmethod
+    def plot_footprint3D(Footprint3D):
+        plt.imshow(Footprint3D)
+        plt.axis('off')
+        plt.show()
+
     @staticmethod
     def computeCOPTimeSeries(Footprint3D):
         """
@@ -318,6 +454,7 @@ class PreFeatures(Database):
         return pre_images
     
     def extracting_pre_features(self, dataset_name:str, combination:bool=True) -> pd.DataFrame:
+        self.set_dataset_path(dataset_name)
         data, labels = self.loaddataset(dataset_name)
         GRFs = list()
         COPs = list()
@@ -328,7 +465,7 @@ class PreFeatures(Database):
             # logger.info(  i )
             # i = i+1
     
-            if combination==True and label[1]==0 and dataset_name=='casia':
+            if combination==True and label[1]==0 and (dataset_name=='casia' or dataset_name=='casia-shod'):
                 sample = np.fliplr(sample)
 
             COA = self.computeCOATimeSeries(sample, Binarize="simple", Threshold=0)
@@ -363,6 +500,7 @@ class PreFeatures(Database):
         np.save(os.path.join(self._pre_features_path, f"pre_images_{combination}.npy"), pre_images)
 
     def loading_pre_features_COP(self, dataset_name:str, combination:bool=True) -> pd.DataFrame:
+        self.set_dataset_path(dataset_name)
         try:
             labels = pd.read_parquet(os.path.join(self._pre_features_path, f"label.parquet"))
             COPs = pd.read_parquet(os.path.join(self._pre_features_path, f"COP_{combination}.parquet"))
@@ -382,6 +520,7 @@ class PreFeatures(Database):
         return COPs, labels
 
     def loading_pre_features_COA(self, dataset_name:str, combination:bool=True) -> pd.DataFrame:
+        self.set_dataset_path(dataset_name)
         try:
             labels = pd.read_parquet(os.path.join(self._pre_features_path, f"label.parquet"))
             COAs = pd.read_parquet(os.path.join(self._pre_features_path, f"COA_{combination}.parquet"))
@@ -402,7 +541,7 @@ class PreFeatures(Database):
         return COAs, labels
 
     def loading_pre_features_GRF(self, dataset_name:str, combination:bool=True) -> pd.DataFrame:
-
+        self.set_dataset_path(dataset_name)
         try:
             labels = pd.read_parquet(os.path.join(self._pre_features_path, f"label.parquet"))
             GRFs = pd.read_parquet(os.path.join(self._pre_features_path, f"GRF_{combination}.parquet"))
@@ -422,6 +561,7 @@ class PreFeatures(Database):
         return GRFs, labels
 
     def loading_pre_features_image(self, dataset_name:str, combination:bool=True) -> pd.DataFrame:
+        self.set_dataset_path(dataset_name)
         try:
             labels = pd.read_parquet(os.path.join(self._pre_features_path, f"label.parquet"))
             pre_images = np.load(os.path.join(self._pre_features_path, f"pre_images_{combination}.npy"))
@@ -433,6 +573,7 @@ class PreFeatures(Database):
         return pre_images, labels
     
     def loading_pre_features(self, dataset_name:str, combination:bool=True) -> pd.DataFrame:
+        self.set_dataset_path(dataset_name)
         try:
             labels = pd.read_parquet(os.path.join(self._pre_features_path, f"label.parquet"))
             GRFs = pd.read_parquet(os.path.join(self._pre_features_path, f"GRF_{combination}.parquet"))
@@ -730,7 +871,8 @@ class Features(PreFeatures):
             haar family: haar
             db family: db1, db2, db3, db4, db5, db6, db7, db8, db9, db10, db11, db12, db13, db14, db15, db16, db17, db18, db19, db20, db21, db22, db23, db24, db25, db26, db27, db28, db29, db30, db31, db32, db33, db34, db35, db36, db37, db38
             sym family: sym2, sym3, sym4, sym5, sym6, sym7, sym8, sym9, sym10, sym11, sym12, sym13, sym14, sym15, sym16, sym17, sym18, sym19, sym20   
-            coif family: coif1, coif2, coif3, coif4, coif5, coif6, coif7, coif8, coif9, coif10, coif11, coif12, coif13, coif14, coif15, coif16, coif17bior family: bior1.1, bior1.3, bior1.5, bior2.2, bior2.4, bior2.6, bior2.8, bior3.1, bior3.3, bior3.5, bior3.7, bior3.9, bior4.4, bior5.5, bior6.8
+            coif family: coif1, coif2, coif3, coif4, coif5, coif6, coif7, coif8, coif9, coif10, coif11, coif12, coif13, coif14, coif15, coif16, coif17
+            bior family: bior1.1, bior1.3, bior1.5, bior2.2, bior2.4, bior2.6, bior2.8, bior3.1, bior3.3, bior3.5, bior3.7, bior3.9, bior4.4, bior5.5, bior6.8
             rbio family: rbio1.1, rbio1.3, rbio1.5, rbio2.2, rbio2.4, rbio2.6, rbio2.8, rbio3.1, rbio3.3, rbio3.5, rbio3.7, rbio3.9, rbio4.4, rbio5.5, rbio6.8
             dmey family: dmey
             gaus family: gaus1, gaus2, gaus3, gaus4, gaus5, gaus6, gaus7, gaus8
@@ -1147,38 +1289,7 @@ class Features(PreFeatures):
             sss.append(eval(f"{pre_image_name}"))
         return sss
 
-    def pack(self, list_features:list, labels:pd.DataFrame) -> pd.DataFrame:
-        """
-        list of features=[
-            [GRFs, COAs, COPs, 
-            COA_handcrafted, COP_handcrafted, GRF_handcrafted,
-            deep_P100_resnet50, deep_P80_resnet50, deep_P90_resnet50,
-            P50, P60, P70, 
-            COA_WPT, COP_WPT, GRF_WPT]
-        """
-        return pd.concat( list_features + [labels], axis=1)
-
-    def filtering_subjects_and_samples(self, DF_features_all:pd.DataFrame) -> pd.DataFrame:
-        subjects, samples = np.unique(DF_features_all["ID"].values, return_counts=True)
-
-        ss = [a[0] for a in list(zip(subjects, samples)) if a[1]>=self._min_number_of_sample]
-
-        if self._known_imposter + self._unknown_imposter > len(ss):
-            raise Exception("Invalid _known_imposter and _unknown_imposter!!!")
-
-        self._known_imposter_list   = ss[:self._known_imposter] 
-        self._unknown_imposter_list = ss[-self._unknown_imposter:] 
-
-
-       
-        DF_unknown_imposter =  DF_features_all[DF_features_all["ID"].isin(self._unknown_imposter_list)]
-        DF_known_imposter =    DF_features_all[DF_features_all["ID"].isin(self._known_imposter_list)]
-
-        DF_unknown_imposter = DF_unknown_imposter.groupby('ID', group_keys=False).apply(lambda x: x.sample(frac=self._number_of_unknown_imposter_samples, replace=False, random_state=self._random_state))
-        
-        return DF_known_imposter, DF_unknown_imposter
-
-    ## fine_tuning
+     ## fine_tuning
     def FT_deep_features(self, data:tuple, training_data:str, pre_image_name:str, CNN_base_model:str) -> pd.DataFrame:
 
         logger.info("fine_tuning")
@@ -1349,7 +1460,41 @@ class Features(PreFeatures):
 
         return history
 
+    ## rest of the code 
+    def pack(self, list_features:list, labels:pd.DataFrame) -> pd.DataFrame:
+        """
+        list of features=[
+            [GRFs, COAs, COPs, 
+            COA_handcrafted, COP_handcrafted, GRF_handcrafted,
+            deep_P100_resnet50, deep_P80_resnet50, deep_P90_resnet50,
+            P50, P60, P70, 
+            COA_WPT, COP_WPT, GRF_WPT]
+        """
+        return pd.concat( list_features + [labels], axis=1)
 
+    def filtering_subjects_and_samples(self, DF_features_all:pd.DataFrame) -> pd.DataFrame:
+        subjects, samples = np.unique(DF_features_all["ID"].values, return_counts=True)
+
+        ss = [a[0] for a in list(zip(subjects, samples)) if a[1]>=self._min_number_of_sample]
+        if self._known_imposter + self._unknown_imposter > len(ss):
+            raise Exception(f"Invalid _known_imposter and _unknown_imposter!!! self._known_imposter:{self._known_imposter}, self._unknown_imposter:{self._unknown_imposter}, len(ss):{len(ss)}")
+
+        self._known_imposter_list   = ss[:self._known_imposter] 
+        self._unknown_imposter_list = ss[-self._unknown_imposter:] 
+
+        if self._unknown_imposter==0:
+            self._unknown_imposter_list = []
+
+
+       
+        DF_unknown_imposter =  DF_features_all[DF_features_all["ID"].isin(self._unknown_imposter_list)]
+        DF_known_imposter =    DF_features_all[DF_features_all["ID"].isin(self._known_imposter_list)]
+
+        DF_unknown_imposter = DF_unknown_imposter.groupby('ID', group_keys=False).apply(lambda x: x.sample(frac=self._number_of_unknown_imposter_samples, replace=False, random_state=self._random_state))
+        
+        return DF_known_imposter, DF_unknown_imposter
+
+   
 class Classifier(Features):
     
     def __init__(self, dataset_name, classifier_name):
@@ -1362,7 +1507,7 @@ class Classifier(Features):
 
 
         DF_unknown_imposter_binariezed = DF_unknown_imposter.copy().drop(["side"], axis=1)
-        DF_unknown_imposter_binariezed["ID"] = DF_unknown_imposter_binariezed["ID"].map(lambda x: 1.0 if x==subject else 0.0)
+        DF_unknown_imposter_binariezed["ID"] = DF_unknown_imposter_binariezed["ID"].map(lambda x: 1.0 if x=='a' else 0.0)
         
         return DF_known_imposter_binariezed, DF_unknown_imposter_binariezed
         
@@ -1440,9 +1585,7 @@ class Classifier(Features):
             df_test.columns = columnsName
             df_test_U.columns = columnsName
 
-            self._num_pc = num_pc
-
-            return df_train, df_test, df_test_U
+            return df_train, df_test, df_test_U, num_pc
 
         elif self._persentage != 1.0:
 
@@ -1479,9 +1622,9 @@ class Classifier(Features):
                 tem = [("df_test_U_pc_"+str(i)) for i in range(len(listn))] + ['df_test_U["ID"]']
                 exec( f"df_test_U_pc = pd.concat({tem}, axis=1)".replace("'",""))
 
-            self._num_pc = np.sum(N)
+            num_pc = np.sum(N)
 
-            return eval("df_train_pc"), eval("df_test_pc"), eval("df_test_U_pc")
+            return eval("df_train_pc"), eval("df_test_pc"), eval("df_test_U_pc"), num_pc
 
     def FXR_calculater(self, x_train, y_pred):
         FRR = list()
@@ -1547,10 +1690,7 @@ class Classifier(Features):
                 DF_clustered.append(mean_cluster.iloc[0,:-2])
 
             DF_clustered  = pd.DataFrame(DF_clustered, columns=col)
-            if verbose: 
-                logger.info(f"Clustered data shape: {DF_clustered.shape}")
-                logger.info(f"original data shape: {DF.shape}")
-
+            
         elif method == "MDIST":
             A = distance.squareform(distance.pdist(DF.iloc[:, :-2].values)).mean(axis=1)
             i = np.argsort(A)[:k_cluster]
@@ -1562,11 +1702,14 @@ class Classifier(Features):
 
         elif method == "Random":
             DF_clustered  = pd.DataFrame(DF, columns=DF.columns).sample(n=k_cluster)
-
+        
+        if verbose: 
+            logger.info(f"\tApplying template selection with method '{method}' [orginal shape: {DF.shape}, output shape{DF_clustered.shape}]")
         return DF_clustered
 
     def ML_classifier(self, x_train, x_test, x_test_U, a):
-        
+        PP = f"./temp/shod1-dend/{self._classifier_name}/{str(a)}/{str(self._unknown_imposter)}/"
+
         if self._classifier_name=="knn":
             classifier = knn(n_neighbors=self._KNN_n_neighbors, metric=self._KNN_metric, weights=self._KNN_weights, n_jobs=-1)
 
@@ -1583,13 +1726,34 @@ class Classifier(Features):
             client_scores, imposter_scores = self.compute_scores(similarity_matrix_positives, similarity_matrix_negatives, criteria="min")
             y_pred_tr = np.append(client_scores.data, imposter_scores.data)
 
-            # classifier = knn(n_neighbors=1, metric=self._KNN_metric, weights=self._KNN_weights, n_jobs=-1)
-            # best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
-            # y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
             FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
             self.plot_eer(FRR_t, FAR_t)
             EER, t_idx = self.compute_eer(FRR_t, FAR_t)
             TH = self._THRESHOLDs[t_idx]
+            
+            Pathlb(PP).mkdir(parents=True, exist_ok=True)
+            plt.savefig(PP+f"EER_{str(self._known_imposter)}.png")
+
+
+            # EER1 = list()
+            # TH1 = list()
+            # for _ in range(self._random_runs):
+            #     DF, _ = self.balancer(x_train, method="Random")
+
+            #     positives = DF[DF["ID"]== 1.0] 
+            #     negatives = DF[DF["ID"]== 0.0] 
+
+            #     similarity_matrix_positives, similarity_matrix_negatives = self.compute_score_matrix(positives, negatives)
+            #     client_scores, imposter_scores = self.compute_scores(similarity_matrix_positives, similarity_matrix_negatives, criteria="min")
+            #     y_pred = np.append(client_scores.data, imposter_scores.data)
+
+            #     FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred)
+            #     qq, t_idx = self.compute_eer(FRR_t, FAR_t)
+            #     EER1.append(qq)
+            #     TH1.append(self._THRESHOLDs[t_idx])
+            # EER1 = np.mean(EER1)
+            # TH1 = np.mean(TH1)
+
         
         elif self._classifier_name=="svm":
             classifier = svm.SVC(kernel=self._SVM_kernel , probability=True, random_state=self._random_state)
@@ -1706,59 +1870,82 @@ class Classifier(Features):
             AUS_All = accuracy_score(x_test_U["ID"].values, y_pred_U)*100 
             FAU_All = np.where(y_pred_U==1)[0].shape[0]
 
-        # breakpoint()
         # #todo
-        PP = f"./C/{self._classifier_name}/{str(a)}/{str(self._unknown_imposter)}/1/"
-        PP1 = f"./C/{self._classifier_name}/{str(a)}/{str(self._unknown_imposter)}/2/"
-        PP2 = f"./C/{self._classifier_name}/{str(a)}/{str(self._unknown_imposter)}/3/"
-        PP3 = f"./C/{self._classifier_name}/{str(a)}/{str(self._unknown_imposter)}/4/"
-        Pathlb(PP).mkdir(parents=True, exist_ok=True)
-        Pathlb(PP1).mkdir(parents=True, exist_ok=True)
-        Pathlb(PP2).mkdir(parents=True, exist_ok=True)
-        Pathlb(PP3).mkdir(parents=True, exist_ok=True)
-        # breakpoint()
+        # # PP = f"./C/{self._classifier_name}/{str(a)}/{str(self._unknown_imposter)}/1/"
+        # # PP1 = f"./C/{self._classifier_name}/{str(a)}/{str(self._unknown_imposter)}/2/"
+        # # PP2 = f"./C/{self._classifier_name}/{str(a)}/{str(self._unknown_imposter)}/3/"
+        # # PP3 = f"./C/{self._classifier_name}/{str(a)}/{str(self._unknown_imposter)}/4/"
+        # # Pathlb(PP).mkdir(parents=True, exist_ok=True)
+        # # Pathlb(PP1).mkdir(parents=True, exist_ok=True)
+        # # Pathlb(PP2).mkdir(parents=True, exist_ok=True)
+        # # Pathlb(PP3).mkdir(parents=True, exist_ok=True)
+        # # breakpoint()
 
-        plt.figure()
-        SS = pd.DataFrame(y_pred_tr,x_train['ID'].values).reset_index()
-        SS.columns = ["Labels","train scores"]
-        sns.histplot(data=SS, x="train scores", hue="Labels", bins=100)
-        plt.plot([TH,TH],[0,13], 'r--', linewidth = 2)
-        plt.title(f"Number of known Imposters: {str(self._known_imposter)} \n EER: {round(EER,2)}      Threshold: {round(TH,2)}")
-        plt.savefig(PP+f"{str(self._known_imposter)}.png")
+        # # plt.figure().suptitle(f"Number of known Imposters: {str(self._known_imposter)}", fontsize=20)
+        # figure, axs = plt.subplots(1,3,figsize=(15,5))
+        # figure.suptitle(f"Number of known Imposters: {str(self._known_imposter)}", fontsize=20)
 
-
-        plt.figure()
-        SS = pd.DataFrame(y_pred1,x_test['ID'].values).reset_index()
-        SS.columns = ["Labels","test scores"]
-        sns.histplot(data=SS, x="test scores", hue="Labels", bins=100)
-        plt.plot([TH,TH],[0,13], 'r--', linewidth = 2)
-        plt.title(f"known Imposters: {str(self._known_imposter)},   ACC: {round(ACC_ud,2)},    BACC: {round(BACC_ud,2)},   CM: {CM_ud}")
-        plt.savefig(PP1+f"{str(self._known_imposter)}.png")
+        # SS = pd.DataFrame(y_pred_tr, x_train['ID'].values).reset_index()
+        # SS.columns = ["Labels","train scores"]
+        # sns.histplot(data=SS, x="train scores", hue="Labels", bins=100 , ax=axs[0], kde=True)
+        # axs[0].plot([TH,TH],[0,13], 'r--', linewidth=2, label="unbalanced threshold")
+        # # axs[0].plot([TH1,TH1],[0,10], 'g:', linewidth=2, label="balanced threshold")
+        # axs[0].set_title(f"EER: {round(EER,2)}  Threshold: {round(TH,2)}  ")
+        # # plt.savefig(PP+f"{str(self._known_imposter)}.png")
 
 
-        plt.figure()
-        sns.histplot(y_pred_U1, bins=100)
-        plt.plot([TH,TH],[0,13], 'r--', linewidth = 2)
-        plt.xlabel("unknown imposter scores")
-        plt.title(f"Number of known Imposters: {str(self._known_imposter)},\n AUS: {round(AUS_All,2)},       FAU: {round(FAU_All,2)}")
-        plt.savefig(PP2+f"{str(self._known_imposter)}.png")
+        # # plt.figure()
+        # SS = pd.DataFrame(y_pred1,x_test['ID'].values).reset_index()
+        # SS.columns = ["Labels","test scores"]
+        # sns.histplot(data=SS, x="test scores", hue="Labels", bins=100, ax=axs[1], kde=True)
+        # axs[1].plot([TH,TH],[0,13], 'r--', linewidth=2, label="unbalanced threshold")
+        # # axs[1].plot([TH1,TH1],[0,10], 'g:', linewidth=2, label="balanced threshold")
+        # axs[1].set_title(f"ACC: {round(ACC_ud,2)},    BACC: {round(BACC_ud,2)},  \n CM: {CM_ud}")
+        # # plt.savefig(PP1+f"{str(self._known_imposter)}.png")
 
-        plt.figure()
-        plt.scatter(x_train.iloc[:, 0].values, x_train.iloc[:, 1].values, c ="red", marker ="s", label="train", s = x_train.iloc[:, -1].values*22+1)
-        plt.scatter(x_test.iloc[:, 0].values, x_test.iloc[:, 1].values,  c ="blue", marker ="*", label="test", s = x_test.iloc[:, -1].values*22+1)
-        plt.scatter(x_test_U.iloc[:, 0].values, x_test_U.iloc[:, 1].values, c ="green", marker ="o", label="u", s = 5)
-        plt.title(f'# training positives: {x_train[x_train["ID"]== 1.0].shape[0]},       # training negatives: {x_train[x_train["ID"]== 0.0].shape[0]} \n # test positives: {x_test[x_test["ID"]== 1.0].shape[0]},       # test negatives: {x_test[x_test["ID"]== 0.0].shape[0]}               # test_U : {x_test_U.shape[0]}')
 
-        plt.xlabel("PC1")
-        plt.ylabel("PC2")
-        plt.legend()
-        plt.savefig(PP3+f"{str(self._known_imposter)}.png")
-        # plt.close('all')
-        print(self._known_imposter_list) 
-        print(self._unknown_imposter_list)
+        # # plt.figure()
+        # sns.histplot(y_pred_U1, bins=100, ax=axs[2], kde=True)
+        # axs[2].plot([TH,TH],[0,13], 'r--', linewidth=2, label="unbalanced threshold")
+        # # axs[2].plot([TH1,TH1],[0,10], 'g:', linewidth=2, label="balanced threshold")
+        # axs[2].set_xlabel("unknown imposter scores")
+        # axs[2].set_title(f"AUS: {round(AUS_All,2)},       FAU: {round(FAU_All,2)}")
+        # # plt.savefig(PP2+f"{str(self._known_imposter)}.png")
+
+        # # plt.figure()
+        # # plt.scatter(x_train.iloc[:, 0].values, x_train.iloc[:, 1].values, c ="red", marker ="s", label="train", s = x_train.iloc[:, -1].values*22+1)
+        # # plt.scatter(x_test.iloc[:, 0].values, x_test.iloc[:, 1].values,  c ="blue", marker ="*", label="test", s = x_test.iloc[:, -1].values*22+1)
+        # # plt.scatter(x_test_U.iloc[:, 0].values, x_test_U.iloc[:, 1].values, c ="green", marker ="o", label="u", s = 5)
+        # # plt.title(f'# training positives: {x_train[x_train["ID"]== 1.0].shape[0]},       # training negatives: {x_train[x_train["ID"]== 0.0].shape[0]} \n # test positives: {x_test[x_test["ID"]== 1.0].shape[0]},       # test negatives: {x_test[x_test["ID"]== 0.0].shape[0]}               # test_U : {x_test_U.shape[0]}')
+
+        # # plt.xlabel("PC1")
+        # # plt.ylabel("PC2")
+        # # plt.legend()
+        # # plt.savefig(PP3+f"{str(self._known_imposter)}.png")
+        # plt.tight_layout()
+        # plt.savefig(PP+f"{str(self._known_imposter)}.png")
+
+
+        # plt.figure()
+        # SS = pd.DataFrame(y_pred_tr, x_train['ID'].values).reset_index()
+        # SS.columns = ["Labels","scores"]
+        # SS1 = pd.DataFrame(y_pred_U1).reset_index()
+        # SS1.columns = ["Labels","scores"]
+        # SS1["Labels"] = "unknown imposters"
+        # SS2 = pd.concat([SS1,SS], axis=0).reset_index()
+        # SS2["Labels"] = SS2["Labels"].map(lambda x: 'user' if x==1 else 'known imposters' if x==0 else 'unknown imposters')
+        # # sns.histplot(data=SS2, x="train scores", hue="Labels", bins=100 , kde=True)
+        # sns.kdeplot(data=SS2, x="scores", hue="Labels")#, bins=100 , kde=True)
+        # plt.plot([TH,TH],[0,13], 'r--', linewidth=2, label="unbalanced threshold")
+        # # plt.plot([TH1,TH1],[0,10], 'g:', linewidth=2, label="balanced threshold")
+        # plt.savefig(PP+f"kde_{str(self._known_imposter)}.png")
+
+
 
         # plt.show()
-        # breakpoint()  
+        # plt.close('all')
+       
+        # # breakpoint()  
 
 
         results = [EER, TH, ACC_bd, BACC_bd, FAR_bd, FRR_bd, ACC_ud, BACC_ud, FAR_ud, FRR_ud, AUS, FAU, x_test_U.shape[0], AUS_All, FAU_All]
@@ -1812,15 +1999,15 @@ class Classifier(Features):
         min_index = np.argmin(abs_diffs)
         # breakpoint()
         min_index = 99 - np.argmin(abs_diffs[::-1])
-        plt.figure(figsize=(5,5))
+        plt.figure(figsize=(10,5))
         eer = np.mean((FAR[min_index], FRR[min_index]))
         plt.plot( np.linspace(0, 1, 100), FRR, label = "FRR")
         plt.plot( np.linspace(0, 1, 100), FAR, label = "FAR")
         plt.plot(np.linspace(0, 1, 100)[min_index], eer, "r*",label = "EER")
-        plt.legend()
         # plt.savefig(path, bbox_inches='tight')
 
         # plt.show()
+        plt.legend()
 
 
 class Pipeline(Classifier):
@@ -1831,7 +2018,6 @@ class Pipeline(Classifier):
         "classifier_name", 
         "normilizing", 
         "persentage", 
-        "num_pc",
         "EER", 
         "TH", 
         "ACC_bd", 
@@ -1855,6 +2041,7 @@ class Pipeline(Classifier):
         "CM_ud_FP",
         "CM_ud_FN",
         "CM_ud_TP",
+        "num_pc",
         "KFold",
         "p_training_samples",
         "train_ratio",
@@ -1945,40 +2132,85 @@ class Pipeline(Classifier):
 
         super().__init__(self.dataset_name, self._classifier_name)
 
-    def run(self, listn:list, label:pd.DataFrame, feature_set_names:list):
-        DF_features_all = self.pack(listn, label)
-
+    def run(self, DF_features_all:pd.DataFrame, feature_set_names:list):
         
         DF_known_imposter, DF_unknown_imposter = self.filtering_subjects_and_samples(DF_features_all)
+        DF_unknown_imposter = DF_unknown_imposter.dropna()
+        DF_known_imposter = DF_known_imposter.dropna()
+        
+        #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # # extract features of shod dataset to use as unknown imposter samples
+        # # it is overwrite on DF_unknown_imposter DataFrame
+        #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # DF_features_all_shod, feature_set_names_shod = self.extracting_feature_set1('casia-shod')
+        # DF_unknown_imposter = DF_features_all_shod[DF_features_all_shod['side']>=2.0].dropna()
+        # subjects, samples = np.unique(DF_unknown_imposter["ID"].values, return_counts=True) 
+
+        # self._unknown_imposter_list = subjects[-self._unknown_imposter:]
+        # DF_unknown_imposter =  DF_unknown_imposter[DF_unknown_imposter["ID"].isin(self._unknown_imposter_list)]
+
+        # self.set_dataset_path('casia')
+        # breakpoint()
+        #----------------------------------------------------------------
+        
 
         results = list()
         for idx, subject in enumerate(self._known_imposter_list):
-            if subject not in [4,5,6,7]: #todo: remove this  5, 6, 7
-                break
+            # if idx not in [0, 1]: #todo: remove this block to run for all subjects.
+            #     break
 
 
             if self._verbose == True:
-                logger.info(f"     Subject number: {idx} out of {len(self._known_imposter_list)} (subject ID is {subject})")
+                logger.info(f"   Subject number: {idx} out of {len(self._known_imposter_list)} (subject ID is {subject})")
+            
+            # #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            # # # droping shod samples from known imposter in training set
+            # # # it is overwrite on DF_unknown_imposter DataFrame
+            # #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            # index_of_shod_samples = DF_known_imposter[ (DF_known_imposter['side'] >= 2) & (DF_known_imposter['ID'] == subject)].index
+            # DF_known_imposter1 = DF_known_imposter.drop(index_of_shod_samples)
+            # #----------------------------------------------------------------
+
+
+            # #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            # # # droping barefoot samples from unknown imposter
+            # # # it is overwrite on DF_unknown_imposter DataFrame
+            # #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            # index_of_barefoot_samples = DF_unknown_imposter[ DF_unknown_imposter['side'] <= 1 ].index
+            # DF_unknown_imposter = DF_unknown_imposter.drop(index_of_barefoot_samples)
+            # #----------------------------------------------------------------
+
+
             DF_known_imposter_binariezed, DF_unknown_imposter_binariezed = self.binarize_labels(DF_known_imposter, DF_unknown_imposter, subject)
 
-            CV = model_selection.StratifiedKFold(n_splits=self._KFold, random_state=self._random_state, shuffle=True)
+
+            #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            # # applying template selection on known imposters
+            # # it is select only 200 samples from all knowwn imposters
+            #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            A1 = DF_known_imposter_binariezed[DF_known_imposter_binariezed['ID'] == 1.0]
+            A2 = DF_known_imposter_binariezed[DF_known_imposter_binariezed['ID'] == 0.0]
+            A2 = self.template_selection(A2, 'DEND', 200, verbose=True)
+            DF_known_imposter_binariezed = pd.concat([A1, A2], axis=0)
+            # breakpoint()
+            #----------------------------------------------------------------
+
+            CV = model_selection.StratifiedKFold(n_splits=self._KFold, shuffle=False) # random_state=self._random_state,
             X = DF_known_imposter_binariezed
             U = DF_unknown_imposter_binariezed
 
             cv_results = list()
-          
+
             ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK', default=multiprocessing.cpu_count()))
             pool = multiprocessing.Pool(processes=ncpus)
 
-
             for fold, (train_index, test_index) in enumerate(CV.split(X.iloc[:,:-1], X.iloc[:,-1])):
-
                 pool.apply_async(self.fold_calculating, args=(feature_set_names, subject, X, U, train_index, test_index, fold), callback=cv_results.append)
-                break #todo: remove this
+                # cv_results.append(self.fold_calculating(feature_set_names, subject, X, U, train_index, test_index, fold)) #todo: comment this line to run all folds
+                # break #todo: comment this line to run all folds
 
             pool.close()
             pool.join()
-
             result = self.compacting_results(cv_results, subject)
             results.append(result)
 
@@ -2003,7 +2235,6 @@ class Pipeline(Classifier):
             self._classifier_name, 
             self._normilizing, 
             self._persentage, 
-            self._num_pc, 
             # configs["classifier"][CLS], 
         ])
 
@@ -2030,16 +2261,20 @@ class Pipeline(Classifier):
         return [val for sublist in result for val in sublist]
 
     def fold_calculating(self, feature_set_names:list, subject:int, X, U, train_index, test_index, fold):
-        logger.info(f"\t   Fold number: {fold} out of {self._KFold} ({os.getpid()})")
+        logger.info(f"\tFold number: {fold} out of {self._KFold} ({os.getpid()})")
         df_train = X.iloc[train_index, :]
         df_test = X.iloc[test_index, :]
         df_train = self.down_sampling(df_train)
 
         df_train, df_test, df_test_U = self.scaler(df_train, df_test, U)
-        df_train, df_test, df_test_U = self.projector(df_train, df_test, df_test_U, feature_set_names)
-        result, CM_bd, CM_ud = self.ML_classifier(df_train, df_test, df_test_U, subject)
         
-        return result + CM_ud.reshape(1,-1).tolist()[0] + CM_bd.reshape(1,-1).tolist()[0]
+        df_train, df_test, df_test_U, num_pc = self.projector(df_train, df_test, df_test_U, feature_set_names)
+        result, CM_bd, CM_ud = self.ML_classifier(df_train, df_test, df_test_U, subject)
+
+
+        
+
+        return result + CM_ud.reshape(1,-1).tolist()[0] + CM_bd.reshape(1,-1).tolist()[0] + [num_pc]
 
     def collect_results(self, result: pd.DataFrame, pipeline_name: str) -> None:
         result['pipeline'] = pipeline_name
@@ -2057,6 +2292,27 @@ class Pipeline(Classifier):
         except Exception as e: 
             logger.error(e) 
             Results_DF.to_excel(excel_path[:-5]+str(self._test_id)+'.xlsx') 
+
+    def extracting_feature_set1(self, dataset_name:str) -> pd.DataFrame:
+        GRFs, COPs, COAs, pre_images, labels = self.loading_pre_features(dataset_name)
+        COA_handcrafted = self.loading_COA_handcrafted(COAs)
+        COP_handcrafted = self.loading_COP_handcrafted(COPs)
+        GRF_handcrafted = self.loading_GRF_handcrafted(GRFs)
+        COA_WPT = self.loading_COA_WPT(COAs)
+        COP_WPT = self.loading_COP_WPT(COPs)
+        GRF_WPT= self.loading_GRF_WPT(GRFs)
+
+        # deep_features_list = A.loading_deep_features_from_list((pre_images, labels), ['P100', 'P80'], 'resnet50.ResNet50')
+        # image_from_list = A.loading_pre_image_from_list(pre_images, ['P80', 'P100'])
+        # P70 = A.loading_pre_image(pre_images, 'P70')
+        # P90 = A.loading_deep_features((pre_images, labels), 'P90', 'resnet50.ResNet50')
+
+        feature_set_names = ['COP_handcrafted', 'COPs', 'COP_WPT', 'GRF_handcrafted', 'GRFs', 'GRF_WPT']
+        feature_set =[]
+        for i in feature_set_names:
+            feature_set.append(eval(f"{i}"))
+
+        return pd.concat( feature_set + [labels], axis=1), feature_set_names
 
 
 class Deep_network(Pipeline):
@@ -2488,44 +2744,100 @@ def Participant_Count():
     }
     
     A = Pipeline(setting)
+    DF_feature_all, feature_set_names = A.extracting_feature_set1('casia')
 
-    GRFs, COPs, COAs, pre_images, labels = A.loading_pre_features('casia')
-    COA_handcrafted = A.loading_COA_handcrafted(COAs)
-    COP_handcrafted = A.loading_COP_handcrafted(COPs)
-    GRF_handcrafted = A.loading_GRF_handcrafted(GRFs)
-    COA_WPT = A.loading_COA_WPT(COAs)
-    COP_WPT = A.loading_COP_WPT(COPs)
-    GRF_WPT= A.loading_GRF_WPT(GRFs)
 
-    deep_features_list = A.loading_deep_features_from_list((pre_images, labels), ['P100', 'P80'], 'resnet50.ResNet50')
-    image_from_list = A.loading_pre_image_from_list(pre_images, ['P80', 'P100'])
-    # P70 = A.loading_pre_image(pre_images, 'P70')
-    # P90 = A.loading_deep_features((pre_images, labels), 'P90', 'resnet50.ResNet50')
-    
-
-    feature_set_names = ['COP_handcrafted', 'COPs', 'COP_WPT', 'GRF_handcrafted', 'GRFs', 'GRF_WPT']
-    feature_set =[]
-    for i in feature_set_names:
-        feature_set.append(eval(f"{i}"))
-
-    p0 = [5, 30]
+    p0 = [5, 10, 15, 20, 25, 30]
     p1 = [5, 10, 15, 20, 25, 30]
-    p2 = ['TM']#, 'svm']
+    p2 = ['TM', 'svm']
 
     space = list(product(p0, p1, p2))
     space = space[:]
 
     for idx, parameters in enumerate(space):
+        # if parameters[1]+parameters[0]>15:
+        #     continue
+        logger.info(f'Starting [step {idx+1} out of {len(space)}], parameters: {parameters}')
         
         A._known_imposter     = parameters[1]
         A._unknown_imposter   = parameters[0]
         A._classifier_name    = parameters[2]
 
         tic = timeit.default_timer()
-        A.collect_results(A.run( feature_set, labels, feature_set_names), 'COP+GRF')
+        A.collect_results(A.run( DF_feature_all, feature_set_names), 'COP1+DEND')
         toc = timeit.default_timer()
 
-        logger.info(f'[step {idx+1} out of {len(space)}], parameters: {parameters}, process time: {round(toc-tic, 2)}')
+        logger.info(f'ending [step {idx+1} out of {len(space)}], parameters: {parameters}, process time: {round(toc-tic, 2)}')
+
+
+def Participant_Count_shod():
+    setting = {
+
+        "dataset_name": 'casia',
+
+        "_classifier_name": 'TM',
+        "_combination": True,
+
+        "_CNN_weights": 'imagenet',
+        "_verbose": True,
+        "_CNN_batch_size": 32,
+        "_CNN_base_model": '',
+
+        "_min_number_of_sample": 30,
+        "_known_imposter": 3,
+        "_unknown_imposter": 5,
+        "_number_of_unknown_imposter_samples": 1.0,  # Must be less than 1
+
+
+        "_waveletname": 'coif1',
+        "_pywt_mode": 'constant',
+        "_wavelet_level": 4,
+
+
+        "_p_training_samples": 27,
+        "_train_ratio": 1000,
+        "_ratio": False,
+
+
+        "_KNN_n_neighbors": 5,
+        "_KNN_metric": 'euclidean',
+        "_KNN_weights": 'uniform',
+        "_SVM_kernel": 'linear',
+
+
+        "_KFold": 10,
+        "_random_runs": 10,
+        "_persentage": 0.95,
+        "_normilizing": 'z-score',
+
+    }
+    
+    A = Pipeline(setting)
+    DF_feature_all, feature_set_names = A.extracting_feature_set1('casia-shod')
+
+
+    p0 = [5 , 10]
+    p1 = [5, 10]#, 20, 25, 30]
+    p2 = ['TM', 'svm']
+
+    space = list(product(p0, p1, p2))
+    space = space[:]
+
+    for idx, parameters in enumerate(space):
+        if parameters[1]+parameters[0]>15:
+            continue
+        logger.info(f'Starting [step {idx+1} out of {len(space)}], parameters: {parameters}')
+        
+        A._known_imposter     = parameters[1]
+        A._unknown_imposter   = parameters[0]
+        A._classifier_name    = parameters[2]
+
+        tic = timeit.default_timer()
+        A.collect_results(A.run( DF_feature_all, feature_set_names), 'COP+shod+DEND')
+        toc = timeit.default_timer()
+
+        logger.info(f'ending [step {idx+1} out of {len(space)}], parameters: {parameters}, process time: {round(toc-tic, 2)}')
+
 
 
 def Feature_Count():
@@ -2762,111 +3074,21 @@ def FT():
 
     p0 = [5, 30]
     p1 = [5, 10, 15, 20, 25, 30]
-    p1 = [5, 30]
+    # p1 = [5, 30]
 
     space = list(product(p0, p1))
     space = space[:]
 
     for idx, parameters in enumerate(space):
         
-        A._known_imposter     = parameters[0]
-        A._unknown_imposter   = parameters[1]
+        A._known_imposter     = parameters[1]
+        A._unknown_imposter   = parameters[0]
+        A._classifier_name    = 'TM'
 
         tic = timeit.default_timer()
         A.collect_results(A.run( feature_set, labels, feature_set_names), 'COP+GRF')
         toc = timeit.default_timer()
 
-        logger.info(f'[step {idx+1} out of {len(space)}], parameters: {parameters}, process time: {round(toc-tic, 2)}')
-
-
-def main():
-
-    setting = {
-        "_classifier_name": 'TM',
-        "_combination": True,
-
-        "_CNN_weights": 'imagenet',
-        "_verbose": True,
-        "_CNN_batch_size": 32,
-        "_CNN_base_model": '',
-
-        "_min_number_of_sample": 30,
-        "_known_imposter": 50,
-        "_unknown_imposter": 0,
-        "_number_of_unknown_imposter_samples": 1.0,  # Must be less than 1
-
-        "_waveletname": 'coif1',
-        "_pywt_mode": 'constant',
-        "_wavelet_level": 4,
-
-        "_p_training_samples": 27,
-        "_train_ratio": 300,
-        "_ratio": False,
-
-        "_KNN_n_neighbors": 5,
-        "_KNN_metric": 'euclidean',
-        "_KNN_weights": 'uniform',
-        "_SVM_kernel": 'linear',
-
-        "_KFold": 10,
-        "_random_runs": 10,
-        "_persentage": 0.95,
-        "_normilizing": 'z-score',
-    }
-    
-
-    P = Pipeline("casia", "TM", setting)
-    P.t = "Aim1_P3-resnet50"
-
-    # P.loading_pre_features_image()
-    P.loading_pre_features_GRF()
-    P.loading_pre_features_COP()
-
-    # P.loading_pre_image_from_list(['P100', 'P80'])
-    P.loading_GRF_handcrafted()
-    P.loading_GRF_WPT()
-    P.loading_COP_handcrafted()
-    P.loading_COP_WPT()
-
- 
-
-    ######################################################################################################################
-    ######################################################################################################################
-    test = os.environ.get('SLURM_JOB_NAME', default= P.t )
-    logger.info(f'test name: {test}')
-
-    ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK', default=4))
-    pool = multiprocessing.Pool(processes=ncpus)
-    logger.info(f'CPU count: {ncpus}')
-
-    # p0 = [9, 10, 11, 12, 13, 14, 15, 18]
-    # p1 = [3, 21, 27, 30, 45, 60, 90, 120, 150, 180, 210]
-    p0 = ["svm"]
-    p1 = ["resnet50.ResNet50"]#["vgg16.VGG16", "resnet50.ResNet50", "efficientnet.EfficientNetB0", "mobilenet.MobileNet"]
-
-
-    space = list(product(p0, p1))
-    space = space[:]
-
-    for idx, parameters in enumerate(space):
-
-
-        P._classifier_name = parameters[0]
-        P.loading_deep_features_from_list(['P100', 'P80'], CNN_base_model=parameters[1])
- 
-
- 
-
-        # P.collect_results(P.pipeline_test())
-        # P._classifier_name = 'TM'
-        # P.collect_results(P.pipeline_1(), "Pipeline_1") 
-        # P.collect_results(P.pipeline_2(['P100', 'P80']), "Pipeline_2") 
-        # P.collect_results(P.pipeline_4('P100'), "Pipeline_4") 
-        # P._classifier_name = 'svm'
-        P.collect_results(P.pipeline_3(['P100', 'P80']), "Pipeline_3") 
-
-
-        toc = timeit.default_timer()
         logger.info(f'[step {idx+1} out of {len(space)}], parameters: {parameters}, process time: {round(toc-tic, 2)}')
 
 
@@ -2876,9 +3098,9 @@ if __name__ == "__main__":
     tic1 = timeit.default_timer()
 
     # main()
-    # Participant_Count()
-
-    FT()
+    Participant_Count()
+    # FT()
+    
 
     toc1 = timeit.default_timer()
     logger.info("Done ({:2.2f} process time)!!!\n\n\n".format(toc1-tic1))
@@ -2886,3 +3108,4 @@ if __name__ == "__main__":
 
 
 
+ 

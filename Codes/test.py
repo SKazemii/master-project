@@ -1,28 +1,13 @@
-import warnings
-warnings.simplefilter(action='ignore', category=FutureWarning)
-
-import numpy as np
-import pandas as pd
-
-import matplotlib.pyplot as plt
-import sys, os, logging, timeit
-from pathlib import Path as Pathlb
 
 
-from sklearn import preprocessing
-from sklearn.metrics import accuracy_score
-import itertools, multiprocessing
+from datetime import datetime
+from shutil import copyfile
+import os, sys
 
-
-import seaborn as sns
-
-
-
-
-# dd = np.load('C:\project\master-project\Datasets\stepscan\Data-barefoot.npy')
-a=[i for i in range(10)]
-print(a)
-
+print(__file__)
+run_id = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+run_dir = os.path.join(r"./runs/", run_id)
+copyfile(__file__, os.path.join(run_dir, f'''{run_id}_{__file__}'''))
 sys.exit()
 
 
