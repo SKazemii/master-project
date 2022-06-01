@@ -1,4 +1,5 @@
-from cProfile import label
+import re
+from unicodedata import name
 import numpy as np
 import pandas as pd
 from scipy import ndimage
@@ -7,7 +8,7 @@ import scipy.io
 import collections
 
 from pathlib import Path as Pathlb
-import pywt, sys
+import pywt, sys, random
 import os, logging, timeit, pprint, copy, multiprocessing, glob
 from itertools import product
 
@@ -16,8 +17,9 @@ import tensorflow as tf
 
 
 from tensorflow.keras import preprocessing, callbacks 
-from tensorflow.keras.models import Model
+from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.layers import Input, Dense, GlobalAveragePooling2D, Flatten
+import tensorflow.keras.backend as K
 
 from sklearn.cluster import KMeans
 from sklearn import model_selection
@@ -1103,7 +1105,11 @@ class Features(PreFeatures):
     ## deep
     @staticmethod
     def resize_images(images, labels):
-        images = tf.image.grayscale_to_rgb(tf.expand_dims(images, -1))
+        # breakpoint()
+        if len(images.shape)<4:
+            images = tf.expand_dims(images, -1)
+        
+        images = tf.image.grayscale_to_rgb(images)
         images = tf.image.resize(images, (224, 224))
         return images, labels
 
@@ -1162,7 +1168,7 @@ class Features(PreFeatures):
         # time = int(timeit.default_timer() * 1_000_000)
         exec(f"deep_{pre_image_name}_{CNN_name} = pd.DataFrame(Deep_features, columns=['deep_{pre_image_name}_{CNN_name}_'+str(i) for i in range(Deep_features.shape[1])])")
 
-        self.saving_deep_features(eval(f"deep_{pre_image_name}_{CNN_name}"), pre_image_name, CNN_name)
+        self.saving_deep_features(eval(f"deep_{pre_image_name}_{CNN_name}"), f'deep_{pre_image_name}_{CNN_name}_{self._combination}')
 
         return eval(f"deep_{pre_image_name}_{CNN_name}")
 
@@ -1174,9 +1180,10 @@ class Features(PreFeatures):
         maxvalues = np.max(pre_images[..., i])
         return pre_images[..., i]/maxvalues
 
-    def saving_deep_features(self, data:pd.DataFrame, pre_image_name:str, CNN_name:str) -> None:
+    def saving_deep_features(self, data:pd.DataFrame, name:str) -> None:
         Pathlb(self._features_path).mkdir(parents=True, exist_ok=True)
-        exec(f"data.to_parquet(os.path.join(self._features_path, f'deep_{pre_image_name}_{CNN_name}_{self._combination}.parquet'))")
+        # exec(f"data.to_parquet(os.path.join(self._features_path, f'deep_{pre_image_name}_{CNN_name}_{self._combination}.parquet'))")
+        exec(f"data.to_parquet(os.path.join(self._features_path, f'{name}.parquet'))")
                    
     def loading_deep_features(self, data:tuple, pre_image_name:str, CNN_base_model:str) -> pd.DataFrame:
         CNN_name = CNN_base_model.split(".")[0]
@@ -1289,176 +1296,85 @@ class Features(PreFeatures):
             sss.append(eval(f"{pre_image_name}"))
         return sss
 
-     ## fine_tuning
-    def FT_deep_features(self, data:tuple, training_data:str, pre_image_name:str, CNN_base_model:str) -> pd.DataFrame:
+    ## trained models
+    def normalizing_pre_image_1(self, pre_images:np.ndarray) -> np.ndarray:
+        assert len(pre_images.shape) == 4, 'the shape of image feature is not correct'
+        ww=[]
+        for i in range(pre_images.shape[3]):
+            maxvalues = np.max(pre_images[..., i])
+            ww.append( pre_images[...,i] / maxvalues)
+        return np.transpose(np.array(ww), (1, 2, 3, 0))
 
-        logger.info("fine_tuning")
-
-        S = Features(training_data)
-
-        pre_images, labels = S.loading_pre_features_image(training_data)
-        pre_image_norm = S.normalizing_pre_image(pre_images, pre_image_name)
-
-
-
-
-        # # ##################################################################
-        # #                phase 3: processing labels
-        # # ##################################################################
-        le = sk_preprocessing.LabelEncoder()
-        le.fit(labels['ID'])
-
-        logger.info(f"Number of subjects: {len(np.unique(labels['ID']))}")
-
-        transfered_labels = le.transform(labels['ID'])
-
-        # labels = tf.keras.utils.to_categorical(labels, num_classes=len(np.unique(indices)))
-
-        logger.info(f"features shape: {pre_image_norm.shape}")
-        logger.info(f"features shape: {transfered_labels.shape}")
-
-        self._val_size = .2 #todo: change this value
-        X_train, X_val, y_train, y_val = model_selection.train_test_split(pre_image_norm, transfered_labels, test_size=self._val_size, random_state=self._random_state, stratify=transfered_labels)
-
-
-        AUTOTUNE = tf.data.AUTOTUNE
-
-        train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)).map(self.resize_images).shuffle(1000)
-        train_ds = train_ds.batch(self._CNN_batch_size)
-        train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-        val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)).map(self.resize_images).shuffle(1000)
-        val_ds = val_ds.batch(self._CNN_batch_size)
-        val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-        # # ##################################################################
-        # #                phase 4: loading CNN
-        # # ##################################################################
+    def extracting_deep_feature_from_model(self, model:tf.keras.models.Model, feature_layer_name:str, data:tuple, pre_image_name:str) -> pd.DataFrame:
         try:
-            IMG_SHAPE = (224, 224, 3)
-            logger.info(f"Loading { CNN_base_model } model...")
-            base_model = eval(f"tf.keras.applications.{CNN_base_model}(input_shape=IMG_SHAPE, weights='{self._CNN_weights}', include_top={self._CNN_include_top})")
+            logger.info(f"Loading { model.name } model...")
             logger.info("Successfully loaded base model and model...")
-            base_model.trainable = False
-            CNN_name = CNN_base_model.split(".")[0]
-            logger.info(f"MaduleName: {CNN_name}")
-
+            model.trainable = False
+            
         except Exception as e: 
             base_model = None
             logger.error("The base model could NOT be loaded correctly!!!")
             logger.error(e)
-            sys.exit()
 
         
-        for images, labels in train_ds.take(1):
-            print(images.shape)
 
-            for i in range(9):
-                ax = plt.subplot(3, 3, i + 1)
-                plt.imshow(images[i])
-                # plt.title(labels[i])
-                plt.axis("off")
-                print(images[i].shape)
-
-
-        data_augmentation = tf.keras.Sequential([tf.keras.layers.RandomFlip('horizontal'),tf.keras.layers.RandomRotation(0.2),])
-        for image, _ in train_ds.take(1):
-            plt.figure(figsize=(10, 10))
-            first_image = image[0]
-            for i in range(9):
-                ax = plt.subplot(3, 3, i + 1)
-                augmented_image = data_augmentation(tf.expand_dims(first_image, 0))
-                plt.imshow(augmented_image[0])
-                plt.axis('off')
-        # breakpoint()
-
-        input = tf.keras.layers.Input(shape=IMG_SHAPE, dtype = tf.float64, name="original_img")
-        x = tf.cast(input, tf.float32)
-        x = tf.keras.layers.RandomFlip("horizontal_and_vertical")(x)
-        x = tf.keras.layers.RandomRotation(0.2)(x)
-        x = tf.keras.layers.RandomZoom(0.1)(x)
-        x = eval("tf.keras.applications." + CNN_name + ".preprocess_input(x)")
-        x = base_model(x)
-        x = tf.keras.layers.GlobalAveragePooling2D()(x)
-        x = tf.keras.layers.Dropout(0.2)(x)
-
-        # x = tf.keras.layers.BatchNormalization()(x)
-        # x = tf.keras.layers.Flatten()(x)
-        # x = tf.keras.layers.Dense(512,  activation='relu', name="last_dense-2")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
-        # x = tf.keras.layers.Dense(256,  activation='relu', name="last_dense-1")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
-        # # x = tf.keras.layers.Dropout(0.2)(x)
-        # x = tf.keras.layers.Dense(128,  activation='relu', name="last_dense")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
-        # # x = tf.keras.layers.Dropout(0.2)(x)
-        output = tf.keras.layers.Dense(256, name="prediction")(x) # activation='softmax',
-
-        model = tf.keras.models.Model(inputs=input, outputs=output, name=CNN_name)
+        # x = model.layers[-2].output 
+        x = model.get_layer(name=feature_layer_name).output
+        model = Model(inputs=model.input, outputs=x, name=model.name)
+        model.summary() 
         
-        # breakpoint()
-
-        # # ##################################################################
-        # #                phase 7: training CNN
-        # # ##################################################################
-
-        model.compile(
-            optimizer=tf.keras.optimizers.Adam(), #learning_rate=0.001
-            loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), #if softmaxt then from_logits=False otherwise True
-            # metrics=["sparse_categorical_accuracy"]
-            metrics=METRICS
-            )
-
-        time = int(timeit.timeit()*1_000_000)
-        # TensorBoard_logs =  os.path.join( configs["paths"]["TensorBoard_logs"], "_".join(("FT", SLURM_JOBID, CNN_name, configs["features"]["image_feature_name"], str(time)) )  )
-        # path = configs["CNN"]["saving_path"] + "_".join(( "FT", SLURM_JOBID, CNN_name, configs["features"]["image_feature_name"], "best.h5" ))
-
-        checkpoint = [
-                tf.keras.callbacks.ModelCheckpoint(    './best.h5', save_best_only=True, monitor="val_loss"),
-                tf.keras.callbacks.ReduceLROnPlateau(  monitor="val_loss", factor=0.5, patience=30, min_lr=0.00001),
-                tf.keras.callbacks.EarlyStopping(      monitor="val_loss", patience=90, verbose=1),
-                # tf.keras.callbacks.TensorBoard(        log_dir=TensorBoard_logs)   
-            ]    
-
-
-        history = model.fit(
-            train_ds,    
-            batch_size=self._CNN_batch_size,
-            callbacks=[checkpoint],
-            epochs=self._CNN_epochs,
-            validation_data=val_ds,
-            verbose=self._verbose,
-        )
-
-        # path = configs["CNN"]["saving_path"] + "_".join(( "FT", SLURM_JOBID, CNN_name, configs["features"]["image_feature_name"], str(int(np.round(test_acc*100)))+"%" + ".h5" ))
-        # model.save(path)
-        plt.plot(history.history['accuracy'], label='accuracy')
-        # plt.plot(history.history['val_accuracy'], label = 'val_accuracy')
-
-        plt.xlabel('Epoch')
-        plt.ylabel('Accuracy')
-        plt.show()
-        breakpoint()
-
-        # # ##################################################################
-        # #                phase 5: loading pre image features
-        # # ##################################################################
-        plt.show()
-        breakpoint()
-
-        pre_image_norm = self.normalizing_pre_image(data[0], pre_image_name)
+        pre_image_norm = self.normalizing_pre_image_1(data[0])
 
         train_ds = tf.data.Dataset.from_tensor_slices((pre_image_norm, data[1])) 
         train_ds = train_ds.batch(self._CNN_batch_size)
         logger.info(f"batch_size: {self._CNN_batch_size}")
-        train_ds = train_ds.map(self.resize_images)
+        # train_ds = train_ds.map(self.resize_images)
 
-
+        if model.name == "ResNet50":
+            train_ds = train_ds.map(self.resize_images)
+        else:
+            assert model.input.shape[1:] == data[0].shape[1:], f"image and input are not equal"
         
-        x = eval("tf.keras.applications." + CNN_name + ".preprocess_input(x)")
-        x = base_model(x)
-        output = tf.keras.layers.GlobalMaxPool2D()(x)
+        Deep_features = np.zeros((1, model.layers[-1].output_shape[1]))
+        for image_batch, _ in train_ds:
+            # breakpoint()
+            feature = model(image_batch)
+            Deep_features = np.append(Deep_features, feature, axis=0)
 
-        model = tf.keras.Model(input, output, name=CNN_name)
+            if (Deep_features.shape[0]-1) % 256 == 0:
+                logger.info(f" ->>> ({os.getpid()}) completed images: " + str(Deep_features.shape[0]))
 
-        return history
+
+        Deep_features = Deep_features[1:, :]
+        logger.info(f"Deep features shape: {Deep_features.shape}")
+
+        # time = int(timeit.default_timer() * 1_000_000)
+        pre_image_name = '_'.join(pre_image_name) 
+        exec(f"deep_{pre_image_name}_{model.name} = pd.DataFrame(Deep_features, columns=['deep_{pre_image_name}_{model.name}_trained_'+str(i) for i in range(Deep_features.shape[1])])")
+        # exec(f"deep_{pre_image_name}_{model.name} = pd.concat([deep_{pre_image_name}_{model.name},data[1].reset_index(drop=True)], axis=1)")
+        self.saving_deep_features(eval(f"deep_{pre_image_name}_{model.name}"), f'deep_{pre_image_name}_{model.name}_{self._combination}_trained')
+
+        return eval(f"deep_{pre_image_name}_{model.name}")
+
+    def loading_deep_feature_from_model(self, model:tf.keras.models.Model, feature_layer_name:str, data:tuple, pre_image_name:str) -> pd.DataFrame:
+        """loading a pre image from a excel file."""
+        CNN_name = model.name
+        pre_image_name_ = '_'.join(pre_image_name)
+        try:
+            logger.info(f"loading deep features from {pre_image_name_}!!!")
+            exec(f"df = pd.read_parquet(os.path.join(self._features_path, f'deep_{pre_image_name_}_{CNN_name}_{self._combination}_trained.parquet'))")
+
+        except Exception as e: 
+            logger.error(e) 
+            logger.info(f"extraxting deep features from {pre_image_name_}!!!")
+            exec(f'df = self.extracting_deep_feature_from_model(model, feature_layer_name, data, pre_image_name)')
+
+        self._features_set[f'deep_{pre_image_name_}_{CNN_name}_trained'] = {
+            "columns": eval('df.columns'),
+            "number_of_features": eval('df.shape[1]'), 
+            "number_of_samples": eval('df.shape[0]'),           
+        }
+        return eval('df')
 
     ## rest of the code 
     def pack(self, list_features:list, labels:pd.DataFrame) -> pd.DataFrame:
@@ -1492,9 +1408,16 @@ class Features(PreFeatures):
 
         DF_unknown_imposter = DF_unknown_imposter.groupby('ID', group_keys=False).apply(lambda x: x.sample(frac=self._number_of_unknown_imposter_samples, replace=False, random_state=self._random_state))
         
-        return DF_known_imposter, DF_unknown_imposter
+        
+        #  pre_image, labels = data[0], data[1]
+            
+        #     subjects, samples = np.unique(labels["ID"].values, return_counts=True)
 
+        #     unknown_imposter =  pre_image[labels["ID"].isin(self._unknown_imposter_list)], labels[labels["ID"].isin(self._unknown_imposter_list)]
+        #     known_imposter =    pre_image[labels["ID"].isin(self._known_imposter_list)], labels[labels["ID"].isin(self._known_imposter_list)]
+        return DF_known_imposter, DF_unknown_imposter
    
+
 class Classifier(Features):
     
     def __init__(self, dataset_name, classifier_name):
@@ -1537,6 +1460,9 @@ class Classifier(Features):
 
         elif self._normilizing == "z-score":
             scaling = sk_preprocessing.StandardScaler()
+
+        elif self._normilizing == "z-mean":
+            scaling = sk_preprocessing.StandardScaler(with_std=False)
 
         else:
             raise KeyError(self._normilizing)
@@ -1711,7 +1637,7 @@ class Classifier(Features):
         PP = f"./temp/shod1-dend/{self._classifier_name}/{str(a)}/{str(self._unknown_imposter)}/"
 
         if self._classifier_name=="knn":
-            classifier = knn(n_neighbors=self._KNN_n_neighbors, metric=self._KNN_metric, weights=self._KNN_weights, n_jobs=-1)
+            classifier = knn(n_neighbors=self._KNN_n_neighbors, metric=self._KNN_metric, weights=self._KNN_weights)
 
             best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
             y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
@@ -1727,12 +1653,12 @@ class Classifier(Features):
             y_pred_tr = np.append(client_scores.data, imposter_scores.data)
 
             FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
-            self.plot_eer(FRR_t, FAR_t)
             EER, t_idx = self.compute_eer(FRR_t, FAR_t)
             TH = self._THRESHOLDs[t_idx]
             
-            Pathlb(PP).mkdir(parents=True, exist_ok=True)
-            plt.savefig(PP+f"EER_{str(self._known_imposter)}.png")
+            # self.plot_eer(FRR_t, FAR_t)
+            # Pathlb(PP).mkdir(parents=True, exist_ok=True)
+            # plt.savefig(PP+f"EER_{str(self._known_imposter)}.png")
 
 
             # EER1 = list()
@@ -2010,7 +1936,689 @@ class Classifier(Features):
         plt.legend()
 
 
-class Pipeline(Classifier):
+class Deep_network(PreFeatures):
+
+    def __init__(self, dataset_name,):
+        super().__init__(dataset_name)
+        # self._classifier_name=classifier_name
+        
+
+    def loading_image_features_from_list(self, pre_images:np.ndarray, list_pre_image:list) -> np.ndarray:
+        """loading multiple pre image features from list"""
+        sss = []
+        for pre_image_name in list_pre_image:
+            if not pre_image_name in self._pre_image_names:
+                raise Exception("Invalid pre image name!!!")
+            
+            sss.append( self._pre_image_names.index(pre_image_name) )
+
+        return pre_images[...,sss]
+        
+    
+    def normalizing_image_features(self, pre_images:np.ndarray) -> np.ndarray:
+        norm_pre_images = pre_images.copy()
+        for i in range(norm_pre_images.shape[3]):
+            maxvalues = np.max(norm_pre_images[..., i])
+            norm_pre_images[..., i] = norm_pre_images[..., i]/maxvalues
+        return norm_pre_images
+
+
+    def label_encoding(self, labels:pd.DataFrame) -> np.ndarray:
+
+        indices = labels["ID"]
+        # logger.info("    metadata shape: {}".format(indices.shape))
+
+        le = sk_preprocessing.LabelEncoder()
+        le.fit(indices)
+
+        # logger.info(f"Number of subjects: {len(np.unique(indices))}")
+
+        return le.transform(indices)
+
+
+    def lightweight_CNN(self, image_size, Number_of_subjects):
+        """Lightweight CNN for pre-image features"""
+        
+        CNN_name = "lightweight_CNN"
+
+        input = tf.keras.layers.Input(shape=image_size, dtype = tf.float64, name="original_img")
+
+        x = tf.cast(input, tf.float32)
+        # x = tf.keras.layers.RandomFlip("horizontal_and_vertical")(x)
+        # x = tf.keras.layers.RandomRotation(0.2)(x)
+        # x = tf.keras.layers.RandomZoom(0.1)(x)
+
+        x = tf.keras.layers.Conv2D(32, kernel_size=(5, 5), activation='relu')(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+
+        x = tf.keras.layers.Conv2D(32, kernel_size=(7, 7), activation='relu')(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+
+        # x = tf.keras.layers.Conv2D(32, kernel_size=(7, 7), activation='relu')(x)
+        # x = tf.keras.layers.BatchNormalization()(x)
+
+        x = tf.keras.layers.MaxPooling2D(pool_size=(4, 4))(x)
+        x = tf.keras.layers.Dropout(0.25)(x)
+        x = tf.keras.layers.Flatten()(x)
+        x = tf.keras.layers.Dense(64,  activation='relu', name="last_dense")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
+        x = tf.keras.layers.Dropout(0.2)(x)
+        output = tf.keras.layers.Dense(Number_of_subjects, name="prediction")(x) # activation='sigmoid',
+
+        ## The CNN Model
+        return tf.keras.models.Model(inputs=input, outputs=output, name=CNN_name)
+
+
+    def ResNet50(self, image_size, Number_of_subjects):
+        CNN_name = "ResNet50"
+        try:
+            logger.info(f"Loading { CNN_name } model...")
+            base_model = tf.keras.applications.resnet50.ResNet50(weights='imagenet', include_top=False)
+            logger.info("Successfully loaded base model and model...")
+            for layer in base_model.layers: layer.trainable = False
+            for layer in base_model.layers[-7:]: layer.trainable = True
+            # base_model.summary()
+
+        except Exception as e: 
+            base_model = None
+            logger.error("The base model could NOT be loaded correctly!!!")
+            logger.error(e)
+
+        input = tf.keras.layers.Input(shape=(224, 224, 3), dtype=tf.float64, name="original_img")
+        x = tf.cast(input, tf.float32)
+        x = tf.keras.applications.resnet50.preprocess_input(x)
+        x = base_model(x)
+        x = tf.keras.layers.GlobalMaxPool2D()(x)
+        
+        x = tf.keras.layers.Dropout(0.25)(x)
+        # x = tf.keras.layers.Flatten()(x)
+        x = tf.keras.layers.Dense(64, activation='relu', name="last_dense")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
+        x = tf.keras.layers.Dropout(0.2)(x)
+        output = tf.keras.layers.Dense(Number_of_subjects, name="prediction")(x) # activation='softmax',
+        # x = tf.keras.layers.MaxPooling2D(pool_size=(4, 4))(x)
+        ## The CNN Model
+        return tf.keras.models.Model(inputs=input, outputs=output, name=CNN_name)
+
+    
+    def CNN_model(self, update, CNN_name, pre_image_shape, outputs):
+        if update==True:
+            path = os.path.join( os.getcwd(), "results", CNN_name, "best.h5")
+            model = load_model(path)
+        else:
+            # model = self.lightweight_CNN(pre_image.shape[1:], outputs)
+            model = eval(f'self.{CNN_name}(pre_image_shape, outputs)')
+        return model
+
+
+    def train_deep_CNN(self, dataset_name:str, image_feature_name:list, CNN_name:str, update:bool=False, ):
+        pre_images, labels = self.loading_pre_features_image(dataset_name)
+        pre_image = self.loading_image_features_from_list(pre_images, image_feature_name)
+        known_imposters, _ = self.filtering_subjects_and_samples_deep((pre_image, labels)) 
+
+        pre_image, labels = known_imposters[0], known_imposters[1]
+
+        encoded_labels = self.label_encoding(labels)
+
+        outputs = len(labels['ID'].unique())
+
+        images_feat_norm = self.normalizing_image_features(pre_image)
+
+        X_train, X_test, y_train, y_test = model_selection.train_test_split(images_feat_norm, encoded_labels, test_size=0.2, random_state=self._random_state, stratify=encoded_labels)
+        # X_train, X_val, y_train, y_val = model_selection.train_test_split(X_train, y_train, test_size=0.2, random_state=self._random_state, stratify=y_train)#todo
+
+        AUTOTUNE = tf.data.AUTOTUNE
+
+        train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(1000)
+        train_ds = train_ds.batch(self._CNN_batch_size)
+        train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        # val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)).shuffle(1000)
+        # val_ds = val_ds.batch(self._CNN_batch_size)
+        # val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        test_ds = tf.data.Dataset.from_tensor_slices((X_test, y_test))
+        test_ds = test_ds.batch(self._CNN_batch_size)
+        test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
+        # for images, labels in train_ds.take(1):
+        #     print('images.shape: ', images.shape)
+        #     print('labels.shape: ', labels.shape)
+        #     breakpoint()
+
+        if CNN_name == "ResNet50":
+            train_ds = train_ds.map(self.resize_images)
+            test_ds = test_ds.map(self.resize_images)
+            # val_ds = val_ds.map(self.resize_images)
+
+            
+        model = self.CNN_model(update, CNN_name, pre_image.shape[1:], outputs)
+
+    
+        # breakpoint()
+        # for layer in model.layers[:-4]: layer.trainable = False 
+        # print(eval('model'))
+        #learning_rate=0.001
+        model.compile(optimizer=self._CNN_optimizer, loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=["Accuracy"])#if softmaxt then from_logits=False otherwise True
+            
+
+
+        # TensorBoard_logs =  os.path.join( os.getcwd(), "logs", "TensorBoard_logs", "_".join(("FS", str(os.getpid()), pre_image_name, str(self._test_id)) )  )
+        path = os.path.join( os.getcwd(), "results", model.name, "best.h5")
+
+        checkpoint = [
+                tf.keras.callbacks.ModelCheckpoint(    path, save_best_only=True, monitor="val_loss", verbose=1, save_weights_only = False),
+                # tf.keras.callbacks.ReduceLROnPlateau(  monitor="val_loss", factor=0.5, patience=30, min_lr=0.00001),
+                # tf.keras.callbacks.EarlyStopping(      monitor="val_loss", patience=20, verbose=1),
+                # tf.keras.callbacks.TensorBoard(        log_dir=TensorBoard_logs+str(self._test_id))   
+                ]    
+
+        history = model.fit(
+            train_ds,    
+            batch_size=self._CNN_batch_size,
+            callbacks=[checkpoint],
+            epochs=self._CNN_epochs,
+            validation_data=test_ds,
+            verbose=self._verbose,
+        )
+
+        logger.info("best_model")
+        best_model = load_model(path)
+        test_loss, test_acc = best_model.evaluate(test_ds, verbose=2)
+        logger.info(f"  test_loss: {np.round(test_loss)}, test_acc: {int(np.round(test_acc*100))}%")
+
+
+        # breakpoint()
+        path = os.path.join( os.getcwd(), "results", model.name, "earlystop_model.h5")
+        model.save(path)
+
+        logger.info("earlystop_model")
+        earlystop_model = load_model(path)
+        test_loss, test_acc = earlystop_model.evaluate(test_ds, verbose=2)
+        logger.info(f"  test_loss: {np.round(test_loss)}, test_acc: {int(np.round(test_acc*100))}%")
+
+        if update==True:
+            path = os.path.join( os.getcwd(), "results", model.name, 'history.csv')
+            temp = pd.read_csv(path).drop('Unnamed: 0', axis=1)
+            hist_df = pd.DataFrame(history.history) 
+            hist_df = pd.concat((temp, hist_df), axis=0).reset_index(drop=True)
+            path = os.path.join( os.getcwd(), "results", model.name, 'history.csv')
+            hist_df.to_csv(path)
+            
+            
+        else:
+            hist_df = pd.DataFrame(history.history) 
+            path = os.path.join( os.getcwd(), "results", model.name, 'history.csv')
+            hist_df.to_csv(path)
+
+        fig, ax = plt.subplots(1,2,figsize=(10,6))
+        ax[0].plot(hist_df['Accuracy'], label='Train Accuracy')
+        ax[0].plot(hist_df['val_Accuracy'], label = 'Val Accuracy')
+        
+        ax[0].set_title('Accuracy')
+        ax[0].set_xlabel('Epoch')
+        ax[0].set_ylabel('Accuracy')
+        ax[0].legend()
+
+
+        # summarize history for loss
+        ax[1].plot(hist_df['loss'], label='Train Loss')
+        ax[1].plot(hist_df['val_loss'], label='Val Loss')
+        ax[1].set_title('Loss')
+        ax[1].set_ylabel('loss')
+        ax[1].set_xlabel('epoch')
+        ax[1].legend()
+
+        path = os.path.join( os.getcwd(), "results", model.name, 'plot.png')
+        plt.savefig(path)   
+
+        return best_model
+    
+
+    def filtering_subjects_and_samples_deep(self, data:tuple) -> np.ndarray:
+        pre_image, labels = data[0], data[1]
+        
+        subjects, samples = np.unique(labels["ID"].values, return_counts=True)
+
+        ss = [a[0] for a in list(zip(subjects, samples)) if a[1]>=self._min_number_of_sample]
+        if self._known_imposter + self._unknown_imposter > len(ss):
+            raise Exception(f"Invalid _known_imposter and _unknown_imposter!!! self._known_imposter:{self._known_imposter}, self._unknown_imposter:{self._unknown_imposter}, len(ss):{len(ss)}")
+
+        self._known_imposter_list   = ss[:self._known_imposter] 
+        self._unknown_imposter_list = ss[-self._unknown_imposter:] 
+
+        if self._unknown_imposter==0:
+            self._unknown_imposter_list = []
+
+        unknown_imposter =  pre_image[labels["ID"].isin(self._unknown_imposter_list)], labels[labels["ID"].isin(self._unknown_imposter_list)]
+        known_imposter =    pre_image[labels["ID"].isin(self._known_imposter_list)], labels[labels["ID"].isin(self._known_imposter_list)]
+        
+        return known_imposter, unknown_imposter
+
+
+    def e2e_CNN_model(self, update, CNN_name, pre_image_shape, subject:int):
+        if update==True:
+            path = os.path.join( os.getcwd(), "results", "e2e", CNN_name, str(subject), "best.h5")
+            model = load_model(path)
+        else:
+            # model = self.lightweight_CNN(pre_image.shape[1:], outputs)
+            model = eval(f'self.{CNN_name}(pre_image_shape, 1)')
+        return model
+
+
+    def train_e2e(self, data:tuple, image_feature_name:list, CNN_name:str, subject:int, update:bool=False, U_data:tuple=None):
+        pre_image, labels = data
+
+        X_train, X_test, y_train, y_test = model_selection.train_test_split(pre_image, labels, test_size=0.2, random_state=self._random_state, stratify=labels)
+        X_train, X_val, y_train, y_val = model_selection.train_test_split(X_train, y_train, test_size=0.2, random_state=self._random_state, stratify=y_train)#todo
+
+        AUTOTUNE = tf.data.AUTOTUNE
+
+        train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(1000)
+        train_ds = train_ds.batch(self._CNN_batch_size)
+        train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)).shuffle(1000)
+        val_ds = val_ds.batch(self._CNN_batch_size)
+        val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        test_ds = tf.data.Dataset.from_tensor_slices((X_test, y_test))
+        test_ds = test_ds.batch(self._CNN_batch_size)
+        test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+         
+        model = self.e2e_CNN_model(update, CNN_name, pre_image.shape[1:], subject)
+        # model.summary()
+        # breakpoint()
+
+        # model.compile(optimizer=self._CNN_optimizer, loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=METRICS)#if softmaxt then from_logits=False otherwise True
+        model.compile(optimizer=self._CNN_optimizer, loss=tf.keras.losses.BinaryCrossentropy(from_logits=True), metrics=['Accuracy'])#if softmaxt then from_logits=False otherwise True
+            
+        # TensorBoard_logs =  os.path.join( os.getcwd(), "logs", "TensorBoard_logs", "_".join(("FS", str(os.getpid()), pre_image_name, str(self._test_id)) )  )
+        path = os.path.join( os.getcwd(), "results", "e2e", model.name, str(subject), "best.h5")
+
+        checkpoint = [
+                tf.keras.callbacks.ModelCheckpoint(    path, save_best_only=True, monitor="val_loss", verbose=1, save_weights_only = False),
+                # tf.keras.callbacks.ReduceLROnPlateau(  monitor="val_loss", factor=0.5, patience=30, min_lr=0.00001),
+                tf.keras.callbacks.EarlyStopping(      monitor="val_loss", patience=20, verbose=1),
+                # tf.keras.callbacks.TensorBoard(        log_dir=TensorBoard_logs+str(self._test_id))   
+                ]    
+        
+       
+        total = y_train.shape[0]
+        pos = y_train.sum() 
+        neg = total - pos
+
+        weight_for_0 = (1 / neg) * (total / 2.0)
+        weight_for_1 = (1 / pos) * (total / 2.0)
+
+        class_weight = {0: weight_for_0, 1: weight_for_1}                    
+
+        # breakpoint()
+        history = model.fit(
+            train_ds,    
+            batch_size=self._CNN_batch_size,
+            callbacks=[checkpoint],
+            epochs=self._CNN_epochs,
+            validation_data=val_ds,
+            verbose=self._verbose,
+            class_weight=class_weight,
+            use_multiprocessing=True
+        )
+        # breakpoint()
+        logger.info("best_model")
+        best_model = load_model(path)
+        test_loss, test_acc = best_model.evaluate(test_ds, verbose=2)
+        logger.info(f"  test_loss: {np.round(test_loss)}, test_acc: {int(np.round(test_acc*100))}%")
+
+
+        # breakpoint()
+        path = os.path.join( os.getcwd(), "results", "e2e", model.name, str(subject), "earlystop_model.h5")
+        model.save(path)
+
+        logger.info("earlystop_model")
+        earlystop_model = load_model(path)
+        test_loss, test_acc = earlystop_model.evaluate(test_ds, verbose=2)
+        logger.info(f"  test_loss: {np.round(test_loss)}, test_acc: {int(np.round(test_acc*100))}%")
+
+        if update==True:
+            path = os.path.join( os.getcwd(), "results", "e2e", model.name, str(subject), 'history.csv')
+            temp = pd.read_csv(path).drop('Unnamed: 0', axis=1)
+            hist_df = pd.DataFrame(history.history) 
+            hist_df = pd.concat((temp, hist_df), axis=0).reset_index(drop=True)
+            path = os.path.join( os.getcwd(), "results", "e2e", model.name, str(subject), 'history.csv')
+            hist_df.to_csv(path)
+            
+            
+        else:
+            hist_df = pd.DataFrame(history.history) 
+            path = os.path.join( os.getcwd(), "results", "e2e", model.name, str(subject), 'history.csv')
+            hist_df.to_csv(path)
+
+        fig, ax = plt.subplots(1,2,figsize=(10,6))
+        ax[0].plot(hist_df['Accuracy'], label='Train Accuracy')
+        ax[0].plot(hist_df['val_Accuracy'], label = 'Val Accuracy')
+        
+        ax[0].set_title('Accuracy')
+        ax[0].set_xlabel('Epoch')
+        ax[0].set_ylabel('Accuracy')
+        ax[0].legend()
+
+
+        # summarize history for loss
+        ax[1].plot(hist_df['loss'], label='Train Loss')
+        ax[1].plot(hist_df['val_loss'], label='Val Loss')
+        ax[1].set_title('Loss')
+        ax[1].set_ylabel('loss')
+        ax[1].set_xlabel('epoch')
+        ax[1].legend()
+
+        path = os.path.join( os.getcwd(), "results", "e2e", model.name, str(subject), 'plot.png')
+        plt.savefig(path)   
+        
+        return best_model
+        
+
+    def test_e2e(self, data:tuple, image_feature_name:list, CNN_name:str, subject:int, U_data:tuple=None):
+        pre_image, labels = data
+
+        X_train, X_test, y_train, y_test = model_selection.train_test_split(pre_image, labels, test_size=0.2, random_state=self._random_state, stratify=labels)
+        X_train, X_val, y_train, y_val = model_selection.train_test_split(X_train, y_train, test_size=0.2, random_state=self._random_state, stratify=y_train)#todo
+
+        AUTOTUNE = tf.data.AUTOTUNE
+
+        # train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(1000)
+        # train_ds = train_ds.batch(self._CNN_batch_size)
+        # train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        # val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)).shuffle(1000)
+        # val_ds = val_ds.batch(self._CNN_batch_size)
+        # val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        # test_ds = tf.data.Dataset.from_tensor_slices((X_test, y_test))
+        # test_ds = test_ds.batch(self._CNN_batch_size)
+        # test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
+        
+
+        path = os.path.join( os.getcwd(), "results", "e2e", CNN_name, str(subject), "best.h5")
+        best_model = load_model(path)
+            
+        
+        
+        y_pred_te = best_model.predict(X_test)
+        TH=0
+        y_pred_te[y_pred_te >= TH ] = 1
+        y_pred_te[y_pred_te <  TH ] = 0    
+
+        ACC_ud = accuracy_score(y_test, y_pred_te)*100 
+        CM_ud = confusion_matrix(y_test, y_pred_te)
+        spec = (CM_ud[0,0]/(CM_ud[0,1]+CM_ud[0,0]+1e-33))*100
+        sens = (CM_ud[1,1]/(CM_ud[1,0]+CM_ud[1,1]+1e-33))*100
+        BACC_ud = (spec + sens)/2 
+        FAR_ud = CM_ud[0,1]/CM_ud[0,:].sum()
+        FRR_ud = CM_ud[1,0]/CM_ud[1,:].sum()
+
+        AUS_All, FAU_All = 100, 0
+
+        if U_data != None:
+            X_test_U, y_test_U = U_data
+            y_pred_U = best_model.predict(X_test_U)
+
+            y_test_U = tf.zeros(y_test_U.shape)
+
+            y_pred_U[y_pred_U >= TH ] = 1.
+            y_pred_U[y_pred_U <  TH ] = 0.
+            AUS_All = accuracy_score(y_test_U, y_pred_U)*100 
+            FAU_All = np.where(y_pred_U==1)[0].shape[0]
+
+        # results = [EER, TH, ACC_bd, BACC_bd, FAR_bd, FRR_bd, ACC_ud, BACC_ud, FAR_ud, FRR_ud, AUS, FAU, x_test_U.shape[0], AUS_All, FAU_All]
+        results = ['-', '-', '-', '-', '-', '-', ACC_ud, BACC_ud, FAR_ud, FRR_ud, '-', '-', X_test_U.shape[0], AUS_All, FAU_All]
+
+        ss =  results + ['-', '-', '-', '-'] + CM_ud.reshape(1,-1).tolist()[0] + ["-"]
+        result = list()
+
+        result.append([
+            self._test_id,
+            subject, 
+            self._combination, 
+            'e2e', 
+            '-', 
+            '-', 
+            # configs["classifier"][CLS], 
+        ])
+
+        result.append(ss)
+        # breakpoint()
+        result.append([
+            1,
+            y_train.sum(),
+            self._train_ratio,
+            self._ratio,
+            # pos_te_samples, 
+            # neg_te_samples, 
+            self._known_imposter, 
+            self._unknown_imposter, 
+            self._min_number_of_sample,
+            self._number_of_unknown_imposter_samples,
+            y_train.shape[0],
+            y_train.sum(),
+            y_val.shape[0],
+            y_val.sum(),
+            y_test.shape[0],
+            y_test.sum(),
+        ])
+        return [val for sublist in result for val in sublist]
+        
+
+
+class Seamese(Deep_network):
+
+    def __init__(self, dataset_name,):
+        super().__init__(dataset_name)
+
+    def make_pairs(self, images, labels):
+        # initialize two empty lists to hold the (image, image) pairs and
+        # labels to indicate if a pair is positive or negative
+        pairImages = []
+        pairLabels = []
+        # calculate the total number of classes present in the dataset
+        # and then build a list of indexes for each class label that
+        # provides the indexes for all examples with a given label
+        numClasses = len(np.unique(labels))
+        idx = [np.where(labels == i)[0] for i in range(0, numClasses)]
+        # loop over all images
+        for idxA in range(len(images)):
+            # grab the current image and label belonging to the current
+            # iteration
+            currentImage = images[idxA]
+            label = labels[idxA]
+
+            # randomly pick an image that belongs to the *same* class
+            # label
+            idxB = np.random.choice(idx[label])
+            posImage = images[idxB]
+
+            # prepare a positive pair and update the images and labels
+            # lists, respectively
+            pairImages.append([currentImage, posImage])
+            pairLabels.append([1])
+
+            # grab the indices for each of the class labels *not* equal to
+            # the current label and randomly pick an image corresponding
+            # to a label *not* equal to the current label
+            negIdx = np.where(labels != label)[0]
+            negImage = images[np.random.choice(negIdx)]
+
+            # prepare a negative pair of images and update our lists
+            pairImages.append([currentImage, negImage])
+            pairLabels.append([0])
+        # return a 2-tuple of our image pairs and labels
+        return (np.array(pairImages), np.array(pairLabels))
+
+    def euclidean_distance(self, vectors):
+        # unpack the vectors into separate lists
+        (featsA, featsB) = vectors
+        # compute the sum of squared distances between the vectors
+        sumSquared = K.sum(K.square(featsA - featsB), axis=1,
+            keepdims=True)
+        # return the euclidean distance between the vectors
+        return K.sqrt(K.maximum(sumSquared, K.epsilon()))
+    
+    def plot_training(self, H, plotPath):
+        # construct a plot that plots and saves the training history
+        plt.style.use("ggplot")
+        plt.figure()
+        plt.plot(H.history["loss"], label="train_loss")
+        plt.plot(H.history["val_loss"], label="val_loss")
+        plt.title("Training Loss")
+        plt.xlabel("Epoch #")
+        plt.ylabel("Loss")
+        plt.legend(loc="lower left")
+        plt.savefig(plotPath)
+    
+    def build_siamese_model(self, inputShape, embeddingDim=48):
+        # specify the inputs for the feature extractor network
+        inputs = Input(inputShape)
+        # define the first set of CONV => RELU => POOL => DROPOUT layers
+        x = tf.keras.layers.Conv2D(64, (2, 2), padding="same", activation="relu")(inputs)
+        x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
+        x = tf.keras.layers.Dropout(0.3)(x)
+        # second set of CONV => RELU => POOL => DROPOUT layers
+        x = tf.keras.layers.Conv2D(64, (2, 2), padding="same", activation="relu")(x)
+        x = tf.keras.layers.MaxPooling2D(pool_size=2)(x)
+        x = tf.keras.layers.Dropout(0.3)(x)
+        # prepare the final outputs
+        pooledOutput = GlobalAveragePooling2D()(x)
+        outputs = Dense(embeddingDim)(pooledOutput)
+        # build the model
+        model = Model(inputs, outputs)
+        # return the model to the calling function
+        return model
+
+    def contrastive_loss(self, y, preds, margin=1):
+        # explicitly cast the true class label data type to the predicted
+        # class label data type (otherwise we run the risk of having two
+        # separate data types, causing TensorFlow to error out)
+        y = tf.cast(y, preds.dtype)
+        # calculate the contrastive loss between the true labels and
+        # the predicted labels
+        squaredPreds = K.square(preds)
+        squaredMargin = K.square(K.maximum(margin - preds, 0))
+        loss = K.mean(y * squaredPreds + (1 - y) * squaredMargin)
+        # return the computed contrastive loss to the calling function
+        return loss
+    
+    def train_Seamese_model(self, image_feature_name, dataset_name, update):
+        # define the training and validation data generators
+        pre_images, labels = self.loading_pre_features_image(dataset_name)
+        pre_image = self.loading_image_features_from_list(pre_images, image_feature_name)
+        
+
+        encoded_labels = self.label_encoding(labels)
+
+        outputs = len(labels['ID'].unique())
+
+        images_feat_norm = self.normalizing_image_features(pre_image)
+
+        X_train, X_test, y_train, y_test = model_selection.train_test_split(images_feat_norm, encoded_labels, test_size=0.15, random_state=self._random_state, stratify=encoded_labels)
+        X_train, X_val, y_train, y_val = model_selection.train_test_split(X_train, y_train, test_size=0.2, random_state=self._random_state, stratify=y_train)
+
+        # prepare the positive and negative pairs
+        print("[INFO] preparing positive and negative pairs...")
+        (pairTrain, labelTrain) = self.make_pairs(X_train, y_train)
+        (pairTest, labelTest) = self.make_pairs(X_test, y_test)
+        (pairval, labelval) = self.make_pairs(X_val, y_val)
+
+        IMG_SHAPE = (60, 40, 1)
+        
+        # configure the siamese network
+        print("[INFO] building siamese network...")
+        imgA = Input(shape=IMG_SHAPE)
+        imgB = Input(shape=IMG_SHAPE)
+        featureExtractor = self.build_siamese_model(IMG_SHAPE)
+        featsA = featureExtractor(imgA)
+        featsB = featureExtractor(imgB)
+        # finally, construct the siamese network
+        distance = tf.keras.layers.Lambda(self.euclidean_distance)([featsA, featsB])
+        model = Model(inputs=[imgA, imgB], outputs=distance, name="siamese")
+
+
+        if update==True:
+            path = os.path.join( os.getcwd(), "results", "siamese", "best.h5")
+            model.load_weights(path)
+        
+
+        print("[INFO] compiling model...")
+        model.compile(loss=self.contrastive_loss, optimizer="adam")
+
+        # train the model
+        print("[INFO] training model...")
+        history = model.fit(
+            [pairTrain[:, 0], pairTrain[:, 1]], labelTrain[:],
+            validation_data=([pairval[:, 0], pairval[:, 1]], labelval[:]),
+            callbacks=[calculating_threshold(train=([pairTrain[:, 0], pairTrain[:, 1]], labelTrain[:]),validation=([pairval[:, 0], pairval[:, 1]], labelval[:]))],
+            batch_size=self._CNN_batch_size,
+            epochs=self._CNN_epochs)
+
+
+        # serialize the model to disk
+        print("[INFO] saving siamese model...")
+        path = os.path.join( os.getcwd(), "results", model.name, "best.h5")
+        model.save(path)
+
+
+        # plot the training history
+        # print("[INFO] plotting training history...")
+        # path = os.path.join( os.getcwd(), "results", model.name, "plot.png")
+        # self.plot_training(history, path)
+
+        if update==True:
+            path = os.path.join( os.getcwd(), "results", model.name, 'history.csv')
+            temp = pd.read_csv(path).drop('Unnamed: 0', axis=1)
+            hist_df = pd.DataFrame(history.history) 
+            hist_df = pd.concat((temp, hist_df), axis=0).reset_index(drop=True)
+            path = os.path.join( os.getcwd(), "results", model.name, 'history.csv')
+            hist_df.to_csv(path)
+            
+            
+        else:
+            hist_df = pd.DataFrame(history.history) 
+            path = os.path.join( os.getcwd(), "results", model.name, 'history.csv')
+            hist_df.to_csv(path)
+
+        fig, ax = plt.subplots(1,2,figsize=(10,6))
+        ax[0].plot(hist_df['accuracy'], label='Train Accuracy')
+        ax[0].plot(hist_df['val_accuracy'], label = 'Val Accuracy')
+        
+        ax[0].set_title('Accuracy')
+        ax[0].set_xlabel('Epoch')
+        ax[0].set_ylabel('Accuracy')
+        ax[0].legend()
+
+
+        # summarize history for loss
+        ax[1].plot(hist_df['loss'], label='Train Loss')
+        ax[1].plot(hist_df['val_loss'], label='Val Loss')
+        ax[1].set_title('Loss')
+        ax[1].set_ylabel('loss')
+        ax[1].set_xlabel('epoch')
+        ax[1].legend()
+
+        path = os.path.join( os.getcwd(), "results", model.name, 'plot.png')
+        plt.savefig(path)   
+
+
+        plt.figure()
+        preds = model.predict([pairTest[:, 0], pairTest[:, 1]])
+        SS = pd.DataFrame(preds, np.squeeze(labelTest)).reset_index() 
+        SS.columns = ["Labels","test scores"]
+        sns.histplot(data=SS, x="test scores", hue="Labels", bins=100, kde=True)
+        # plt.plot([TH,TH],[0,13], 'r--', linewidth=2, label="unbalanced threshold")
+        # # axs[0].plot([TH1,TH1],[0,10], 'g:', linewidth=2, label="balanced threshold")
+        # plt.set_title(f"EER: {round(EER,2)}  Threshold: {round(TH,2)}  ")
+        # plt.savefig(PP+f"{str(self._known_imposter)}.png")
+        plt.show()
+        return model
+
+
+class Pipeline(Classifier, Seamese):
   
     _col = ["test_id",
         "subject", 
@@ -2052,6 +2660,12 @@ class Pipeline(Classifier):
         "unknown_imposter", 
         "min_number_of_sample",
         "number_of_unknown_imposter_samples",
+        "y_train.shape[0]",
+        "y_train.sum()",
+        "y_val.shape[0]",
+        "y_val.sum()",
+        "y_test.shape[0]",
+        "y_test.sum()",
     ]
 
     def __init__(self, kwargs):
@@ -2097,6 +2711,8 @@ class Pipeline(Classifier):
         self._unknown_imposter = 30
         self._number_of_unknown_imposter_samples = 1.0  # Must be less than 1
 
+        # self._known_imposter_list   = [] 
+        # self._unknown_imposter_list = []
 
         self._waveletname = "coif1"
         self._pywt_mode = "constant"
@@ -2184,16 +2800,16 @@ class Pipeline(Classifier):
             DF_known_imposter_binariezed, DF_unknown_imposter_binariezed = self.binarize_labels(DF_known_imposter, DF_unknown_imposter, subject)
 
 
-            #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-            # # applying template selection on known imposters
-            # # it is select only 200 samples from all knowwn imposters
-            #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-            A1 = DF_known_imposter_binariezed[DF_known_imposter_binariezed['ID'] == 1.0]
-            A2 = DF_known_imposter_binariezed[DF_known_imposter_binariezed['ID'] == 0.0]
-            A2 = self.template_selection(A2, 'DEND', 200, verbose=True)
-            DF_known_imposter_binariezed = pd.concat([A1, A2], axis=0)
-            # breakpoint()
-            #----------------------------------------------------------------
+            # #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            # # # applying template selection on known imposters
+            # # # it is select only 200 samples from all knowwn imposters
+            # #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            # A1 = DF_known_imposter_binariezed[DF_known_imposter_binariezed['ID'] == 1.0]
+            # A2 = DF_known_imposter_binariezed[DF_known_imposter_binariezed['ID'] == 0.0]
+            # A2 = self.template_selection(A2, 'DEND', 200, verbose=True)
+            # DF_known_imposter_binariezed = pd.concat([A1, A2], axis=0)
+            # # breakpoint()
+            # #----------------------------------------------------------------
 
             CV = model_selection.StratifiedKFold(n_splits=self._KFold, shuffle=False) # random_state=self._random_state,
             X = DF_known_imposter_binariezed
@@ -2205,12 +2821,16 @@ class Pipeline(Classifier):
             pool = multiprocessing.Pool(processes=ncpus)
 
             for fold, (train_index, test_index) in enumerate(CV.split(X.iloc[:,:-1], X.iloc[:,-1])):
-                pool.apply_async(self.fold_calculating, args=(feature_set_names, subject, X, U, train_index, test_index, fold), callback=cv_results.append)
-                # cv_results.append(self.fold_calculating(feature_set_names, subject, X, U, train_index, test_index, fold)) #todo: comment this line to run all folds
+                # breakpoint()
+                # res = pool.apply_async(self.fold_calculating, args=(feature_set_names, subject, X, U, train_index, test_index, fold,))#, callback=print)#cv_results.append)
+                # print(res.get())  # this will raise an exception if it happens within func
+
+                cv_results.append(self.fold_calculating(feature_set_names, subject, X, U, train_index, test_index, fold)) #todo: comment this line to run all folds
                 # break #todo: comment this line to run all folds
 
             pool.close()
             pool.join()
+            # breakpoint()
             result = self.compacting_results(cv_results, subject)
             results.append(result)
 
@@ -2257,7 +2877,7 @@ class Pipeline(Classifier):
             self._min_number_of_sample,
             self._number_of_unknown_imposter_samples,
         ])
-
+        
         return [val for sublist in result for val in sublist]
 
     def fold_calculating(self, feature_set_names:list, subject:int, X, U, train_index, test_index, fold):
@@ -2271,13 +2891,10 @@ class Pipeline(Classifier):
         df_train, df_test, df_test_U, num_pc = self.projector(df_train, df_test, df_test_U, feature_set_names)
         result, CM_bd, CM_ud = self.ML_classifier(df_train, df_test, df_test_U, subject)
 
-
-        
-
         return result + CM_ud.reshape(1,-1).tolist()[0] + CM_bd.reshape(1,-1).tolist()[0] + [num_pc]
 
     def collect_results(self, result: pd.DataFrame, pipeline_name: str) -> None:
-        result['pipeline'] = pipeline_name
+        # result['pipeline'] = pipeline_name
         test = os.environ.get('SLURM_JOB_NAME', default=pipeline_name)
         excel_path = os.path.join(os.getcwd(), "results", f"Result__{test}.xlsx")
 
@@ -2313,277 +2930,6 @@ class Pipeline(Classifier):
             feature_set.append(eval(f"{i}"))
 
         return pd.concat( feature_set + [labels], axis=1), feature_set_names
-
-
-class Deep_network(Pipeline):
-
-    def __init__(self, dataset_name, classifier_name, kwargs):
-        super().__init__(dataset_name, classifier_name, kwargs)
-        
-    
-    def label_encoding(self):
-
-        indices = self._labels["ID"]
-        logger.info("metadata shape: {}".format(indices.shape))
-
-        indices = self._labels["ID"]
-        le = sk_preprocessing.LabelEncoder()
-        le.fit(indices)
-
-        logger.info(f"Number of subjects: {len(np.unique(indices))}")
-
-        return le.transform(indices)
-
-
-    def deep_model_1(self, image_size):
-        CNN_name = "from_scratch"
-        Number_of_subjects = len(np.unique(self._labels["ID"]))
-
-        input = tf.keras.layers.Input(shape=image_size, dtype = tf.float64, name="original_img")
-        x = tf.cast(input, tf.float32)
-        x = tf.keras.layers.RandomFlip("horizontal_and_vertical")(x)
-        x = tf.keras.layers.RandomRotation(0.2)(x)
-        x = tf.keras.layers.RandomZoom(0.1)(x)
-        x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3), activation='relu')(x)
-        x = tf.keras.layers.BatchNormalization()(x)
-        x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), activation='relu')(x)
-        x = tf.keras.layers.BatchNormalization()(x)
-        x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
-        x = tf.keras.layers.Dropout(0.2)(x)
-        x = tf.keras.layers.Flatten()(x)
-        x = tf.keras.layers.Dense(128,  activation='relu', name="last_dense")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
-        x = tf.keras.layers.Dropout(0.2)(x)
-        output = tf.keras.layers.Dense(Number_of_subjects, name="prediction")(x) # activation='softmax',
-
-        ## The CNN Model
-        return tf.keras.models.Model(inputs=input, outputs=output, name=CNN_name)
-
-
-    def deep_training_1(self, pre_image_name):
-        encode_label = self.label_encoding()
-        pre_images_norm = self.normalizing_pre_image(pre_image_name)
-
-        pre_images_norm = pre_images_norm[...,tf.newaxis]
-        pre_images_norm = np.concatenate((pre_images_norm, pre_images_norm, pre_images_norm), axis=-1)
-
-        X_train, X_test, y_train, y_test = model_selection.train_test_split(pre_images_norm, encode_label, test_size=0.15, random_state=42, stratify=encode_label)
-        X_train, X_val, y_train, y_val = model_selection.train_test_split(X_train, y_train, test_size=0.1, random_state=42, stratify=y_train)
-
-        AUTOTUNE = tf.data.AUTOTUNE
-
-        train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(1000)
-        train_ds = train_ds.batch(self._CNN_batch_size)
-        train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-        val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)).shuffle(1000)
-        val_ds = val_ds.batch(self._CNN_batch_size)
-        val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-        test_ds = tf.data.Dataset.from_tensor_slices((X_test, y_test))
-        test_ds = test_ds.batch(self._CNN_batch_size)
-        test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-        image_size = X_train.shape[1:]
-        model = self.deep_model_1(image_size)
-
-        model.compile(
-            optimizer=tf.keras.optimizers.Adam(), #learning_rate=0.001
-            loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), 
-            metrics=["Accuracy"]
-            )
-
-        TensorBoard_logs =  os.path.join( os.getcwd(), "logs", "TensorBoard_logs", "_".join(("FS", str(os.getpid()), pre_image_name, str(self._test_id)) )  )
-        path = os.path.join( os.getcwd(), "results", "deep_model", "_".join( ("FS", str(os.getpid()), pre_image_name, "best.h5") ))
-
-        checkpoint = [
-                tf.keras.callbacks.ModelCheckpoint(    path, save_best_only=True, monitor="val_loss"),
-                tf.keras.callbacks.ReduceLROnPlateau(  monitor="val_loss", factor=0.5, patience=30, min_lr=0.00001),
-                tf.keras.callbacks.EarlyStopping(      monitor="val_loss", patience=90, verbose=1),
-                tf.keras.callbacks.TensorBoard(        log_dir=TensorBoard_logs+str(self._test_id))   
-            ]    
-
-        history = model.fit(
-            train_ds,    
-            batch_size=self._CNN_batch_size,
-            callbacks=[checkpoint],
-            epochs=self._CNN_epochs,
-            validation_data=val_ds,
-            verbose=self._verbose,
-        )
-
-        test_loss, test_acc = model.evaluate(test_ds, verbose=2)
-
-        path = os.path.join( os.getcwd(), "results", "deep_model", "_".join( ("FS", str(os.getpid()), pre_image_name, str(int(np.round(test_acc*100)))+"%.h5") ))
-        model.save(path)
-        
-        # plt.plot(history.history['accuracy'], label='accuracy')
-        # # plt.plot(history.history['val_accuracy'], label = 'val_accuracy')
-
-        # plt.xlabel('Epoch')
-        # plt.ylabel('Accuracy')
-        # plt.show()
-
-
-        logger.info(f"test_loss: {np.round(test_loss)}, test_acc: {int(np.round(test_acc*100))}%")
-
-
-    def deep_model_2(self, image_size):
-        CNN_name = "Omar-2017"
-        Number_of_subjects = len(np.unique(self._labels["ID"]))
-
-        input = tf.keras.layers.Input(shape=image_size, dtype = tf.float64, name="original_img")
-        x = tf.cast(input, tf.float32)
-
-        x = tf.keras.layers.RandomFlip("horizontal_and_vertical")(x)
-        x = tf.keras.layers.RandomRotation(0.2)(x)
-        x = tf.keras.layers.RandomZoom(0.1)(x)
-
-        x = tf.keras.layers.Conv2D(20, kernel_size=(7, 7), activation='relu')(x)
-        x = tf.keras.layers.BatchNormalization()(x)
-        x = tf.keras.layers.Conv2D(20, kernel_size=(7, 7), activation='relu')(x)
-        x = tf.keras.layers.BatchNormalization()(x)
-
-        x = tf.keras.layers.MaxPooling2D(pool_size=(4, 4))(x)
-        x = tf.keras.layers.AveragePooling2D(pool_size=(4, 4))(x)
-
-        # x = tf.keras.layers.Dropout(0.2)(x)
-        x = tf.keras.layers.Flatten()(x)
-        output = tf.keras.layers.Dense(127, activation='softmax', name="last_dense")(x) # kernel_regularizer=tf.keras.regularizers.l2(0.0001),
-        # x = tf.keras.layers.Dropout(0.2)(x)
-        # output = tf.keras.layers.Dense(Number_of_subjects, activation='softmax', name="prediction")(x) # 
-
-        ## The CNN Model
-        return tf.keras.models.Model(inputs=input, outputs=output, name=CNN_name)
-
-
-    def deep_training_2(self, pre_image_name):
-        self._CNN_batch_size = 16
-        encode_label = self.label_encoding()
-        pre_images_norm = self.normalizing_pre_image(pre_image_name)
-
-        pre_images_norm = pre_images_norm[...,tf.newaxis]
-        pre_images_norm = np.concatenate((pre_images_norm, pre_images_norm, pre_images_norm), axis=-1)
-
-        X_train, X_test, y_train, y_test = model_selection.train_test_split(pre_images_norm, encode_label, test_size=0.15, random_state=42, stratify=encode_label)
-        X_train, X_val, y_train, y_val = model_selection.train_test_split(X_train, y_train, test_size=0.1, random_state=42, stratify=y_train)
-
-        AUTOTUNE = tf.data.AUTOTUNE
-
-        train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(1000)
-        train_ds = train_ds.batch(self._CNN_batch_size)
-        train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-        val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)).shuffle(1000)
-        val_ds = val_ds.batch(self._CNN_batch_size)
-        val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-        test_ds = tf.data.Dataset.from_tensor_slices((X_test, y_test))
-        test_ds = test_ds.batch(self._CNN_batch_size)
-        test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-        image_size = X_train.shape[1:]
-        model = self.deep_model_2(image_size)
-
-        model.compile(
-            optimizer=tf.keras.optimizers.RMSprop(learning_rate=0.001), #learning_rate=0.001
-            loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), 
-            metrics=["Accuracy"]
-            )
-
-        TensorBoard_logs =  os.path.join( os.getcwd(), "logs", "TensorBoard_logs", "_".join(("FS", str(os.getpid()), pre_image_name, str(self._test_id)) )  )
-        path = os.path.join( os.getcwd(), "results", "deep_model", "_".join( ("FS", str(os.getpid()), pre_image_name, "best.h5") ))
-
-        checkpoint = [
-                tf.keras.callbacks.ModelCheckpoint(    path, save_best_only=True, monitor="val_loss"),
-                tf.keras.callbacks.ReduceLROnPlateau(  monitor="val_loss", factor=0.5, patience=10, min_lr=0.00001),
-                tf.keras.callbacks.EarlyStopping(      monitor="val_loss", patience=10, verbose=1),
-                tf.keras.callbacks.TensorBoard(        log_dir=TensorBoard_logs+str(self._test_id))   
-            ]    
-
-        history = model.fit(
-            train_ds,    
-            batch_size=self._CNN_batch_size,
-            callbacks=[checkpoint],
-            epochs=self._CNN_epochs,
-            validation_data=val_ds,
-            verbose=self._verbose,
-        )
-
-        test_loss, test_acc = model.evaluate(test_ds, verbose=2)
-
-        path = os.path.join( os.getcwd(), "results", "deep_model", "_".join( ("FS", str(os.getpid()), pre_image_name, str(int(np.round(test_acc*100)))+"%.h5") ))
-        model.save(path)
-        breakpoint()
-        plt.plot(history.history['accuracy'], label='accuracy')
-        # plt.plot(history.history['val_accuracy'], label = 'val_accuracy')
-
-        plt.xlabel('Epoch')
-        plt.ylabel('Accuracy')
-        plt.show()
-
-
-        logger.info(f"test_loss: {np.round(test_loss)}, test_acc: {int(np.round(test_acc*100))}%")
-
-
-    def deep_testing(self):
-        pass
-
-
-    def fine_tuning(self, CNN:str, dataset:str, pre_image_name:list):
-        logger.info("fine_tuning")
-
-        self.loading_pre_image_from_list(['P100', 'P80'])
-
-
-
-        # # ##################################################################
-        # #                phase 3: processing labels
-        # # ##################################################################
-        metadata = np.load(configs["paths"]["stepscan_image_label.npy"])
-        logger.info("metadata shape: {}".format(metadata.shape))
-
-
-
-        indices = metadata[:,0]
-        le = preprocessing.LabelEncoder()
-        le.fit(indices)
-
-        logger.info(f"Number of subjects: {len(np.unique(indices))}")
-
-        labels = le.transform(indices)
-
-        # labels = tf.keras.utils.to_categorical(labels, num_classes=len(np.unique(indices)))
-
-
-
-
-
-        # # ##################################################################
-        # #                phase 4: Loading Image features
-        # # ##################################################################
-        features = np.load(configs["paths"]["stepscan_image_feature.npy"])
-        logger.info("features shape: {}".format(features.shape))
-
-
-        # #CD, PTI, Tmax, Tmin, P50, P60, P70, P80, P90, P100
-        logger.info("batch_size: {}".format(configs["CNN"]["batch_size"]))
-
-        maxvalues = [np.max(features[...,ind]) for ind in range(len(cfg.image_feature_name))]
-
-        for i in range(len(cfg.image_feature_name)):
-            features[..., i] = features[..., i]/maxvalues[i]
-
-
-        if configs['CNN']["image_feature"]=="tile":
-            images = tile(features)
-
-        else:
-            image_feature_name = dict(zip(cfg.image_feature_name, range(len(cfg.image_feature_name))))
-            ind = image_feature_name[configs['CNN']["image_feature"]]
-            
-            images = features[...,ind]
-            images = images[...,tf.newaxis]
-            images = np.concatenate((images, images, images), axis=-1)
 
 
 class Specificity(tf.keras.metrics.Metric):
@@ -2654,6 +3000,102 @@ class F1_Score(tf.keras.metrics.Metric):
         self.f1.assign(0)
 
 
+class calculating_threshold(tf.keras.callbacks.Callback):
+    def __init__(self, train, validation=None):
+        super().__init__()
+        self.validation = validation
+        self.train = train
+
+    def FXR_calculater(self, y_tr, y_pred):
+        FRR = []
+        FAR = []
+        
+        for tx in self._THRESHOLDs:
+            far = 0
+            frr = 0
+            for i in range(len(y_pred)):
+                if (y_pred[i] >= tx) and (y_tr[i] == 0):
+                    far += 1
+                elif (y_pred[i] < tx) and (y_tr[i] == 1):
+                    frr += 1
+
+            ones = np.sum(y_tr)
+            zeros = len(y_tr) - ones
+            FRR.append(frr/ones)
+            FAR.append(far/zeros)
+
+            # E1 = np.zeros((y_pred.shape))
+            # E1[y_pred >= tx] = 1
+
+            # e = pd.DataFrame([y_tr, E1]).T
+            # e.columns = ["y", "pred"]
+            # e['FAR'] = e.apply(lambda x: 1 if x['y'] < x['pred'] else 0, axis=1)
+            # e['FRR'] = e.apply(lambda x: 1 if x['y'] > x['pred'] else 0, axis=1)
+            
+            # a1 = e.sum()
+            # N = e.shape[0]-a1["y"]
+            # P = a1["y"]
+            # FRR.append(a1['FRR']/P)
+            # FAR.append(a1['FAR']/N)
+
+        return FRR, FAR
+
+    def compute_eer(self, FAR, FRR):
+        """ Returns equal error rate (EER) and the corresponding threshold. """
+        abs_diffs = np.abs(np.subtract(FRR, FAR)) 
+        min_index = np.argmin(abs_diffs)
+        min_index = 99 - np.argmin(abs_diffs[::-1])
+        eer = np.mean((FAR[min_index], FRR[min_index]))
+        
+        return eer, min_index
+
+    def plot_eer(self, FAR, FRR):
+        """ Returns equal error rate (EER) and the corresponding threshold. """
+        abs_diffs = np.abs(np.subtract(FRR, FAR)) 
+        
+        min_index = np.argmin(abs_diffs)
+        # breakpoint()
+        min_index = 99 - np.argmin(abs_diffs[::-1])
+        plt.figure(figsize=(10,5))
+        eer = np.mean((FAR[min_index], FRR[min_index]))
+        plt.plot( self._THRESHOLDs, FRR, label = "FRR")
+        plt.plot( self._THRESHOLDs, FAR, label = "FAR")
+        plt.plot( self._THRESHOLDs[min_index], eer, "r*",label = "EER")
+        # plt.savefig(path, bbox_inches='tight')
+
+        # plt.show()
+        plt.legend()
+        plt.show()
+
+    def on_epoch_end(self, epoch, logs={}):
+        X_train, y_train = self.train[0], self.train[1]
+
+        y_pred = self.model.predict(X_train)
+        self._THRESHOLDs = np.linspace(min(y_pred), max(y_pred), num=100)
+        logs['max'] = max(y_pred)
+        logs['min'] = min(y_pred)
+
+        FAR, FRR = self.FXR_calculater(y_train.squeeze(), y_pred.squeeze())
+        eer, min_index = self.compute_eer(FAR, FRR)
+        TH = self._THRESHOLDs[min_index]
+        
+
+        y_pred[y_pred >= TH ] = 1
+        y_pred[y_pred <  TH ] = 0
+        accuracy = accuracy_score(y_train, y_pred)*100 
+        logs['accuracy'] = np.round(accuracy, 5)
+
+        X_valid, y_valid = self.validation[0], self.validation[1]
+        y_pred = self.model.predict(X_valid)
+        y_pred[y_pred >= TH ] = 1
+        y_pred[y_pred <  TH ] = 0
+
+        val_accuracy = accuracy_score(y_valid, y_pred)*100 
+        logs['val_accuracy'] = np.round(val_accuracy, 5)
+        logs['Threshold'] = np.round(TH, 5)
+        logs['EER'] = np.round(eer, 5)
+        
+
 class BalancedAccuracy(tf.keras.metrics.Metric):
     def __init__(self, name='bac', **kwargs):
         super().__init__(name=name, **kwargs)
@@ -2684,10 +3126,9 @@ class BalancedAccuracy(tf.keras.metrics.Metric):
 
 
 METRICS = [
-    tf.keras.metrics.SparseCategoricalCrossentropy(name='accuracy'),
+    # tf.keras.metrics.SparseCategoricalCrossentropy(name='accuracy'),
     # BalancedAccuracy(),
-    # Kappa(),
-    # tf.keras.metrics.Precision(name='precision'),
+    tf.keras.metrics.Precision(name='precision'),
     # tf.keras.metrics.Recall(name='recall'),
     # F1_Score(),
     # Specificity(),
@@ -2746,30 +3187,8 @@ def Participant_Count():
     A = Pipeline(setting)
     DF_feature_all, feature_set_names = A.extracting_feature_set1('casia')
 
-
-    p0 = [5, 10, 15, 20, 25, 30]
-    p1 = [5, 10, 15, 20, 25, 30]
-    p2 = ['TM', 'svm']
-
-    space = list(product(p0, p1, p2))
-    space = space[:]
-
-    for idx, parameters in enumerate(space):
-        # if parameters[1]+parameters[0]>15:
-        #     continue
-        logger.info(f'Starting [step {idx+1} out of {len(space)}], parameters: {parameters}')
-        
-        A._known_imposter     = parameters[1]
-        A._unknown_imposter   = parameters[0]
-        A._classifier_name    = parameters[2]
-
-        tic = timeit.default_timer()
-        A.collect_results(A.run( DF_feature_all, feature_set_names), 'COP1+DEND')
-        toc = timeit.default_timer()
-
-        logger.info(f'ending [step {idx+1} out of {len(space)}], parameters: {parameters}, process time: {round(toc-tic, 2)}')
-
-
+    A.collect_results(A.run( DF_feature_all, feature_set_names), 'COP1+DEND')
+    
 def Participant_Count_shod():
     setting = {
 
@@ -2837,8 +3256,6 @@ def Participant_Count_shod():
         toc = timeit.default_timer()
 
         logger.info(f'ending [step {idx+1} out of {len(space)}], parameters: {parameters}, process time: {round(toc-tic, 2)}')
-
-
 
 def Feature_Count():
     setting = {
@@ -2920,7 +3337,6 @@ def Feature_Count():
         toc = timeit.default_timer()
 
         logger.info(f'[step {idx+1} out of {len(space)}], parameters: {parameters}, process time: {round(toc-tic, 2)}')
-
 
 def template_Count():
 
@@ -3004,8 +3420,7 @@ def template_Count():
 
         logger.info(f'[step {idx+1} out of {len(space)}], parameters: {parameters}, process time: {round(toc-tic, 2)}')
 
-
-def FT():
+def lightweight():
 
     setting = {
 
@@ -3018,6 +3433,9 @@ def FT():
         "_verbose": True,
         "_CNN_batch_size": 32,
         "_CNN_base_model": '',
+        "_CNN_epochs": 500,
+        "_CNN_optimizer": 'adam',
+        "_val_size": 0.2,
 
         "_min_number_of_sample": 30,
         "_known_imposter": 3,
@@ -3050,57 +3468,696 @@ def FT():
     
     A = Pipeline(setting)
 
-   
-
-    GRFs, COPs, COAs, pre_images, labels = A.loading_pre_features('casia')
-    COA_handcrafted = A.loading_COA_handcrafted(COAs)
-    COP_handcrafted = A.loading_COP_handcrafted(COPs)
-    GRF_handcrafted = A.loading_GRF_handcrafted(GRFs)
-    COA_WPT = A.loading_COA_WPT(COAs)
-    COP_WPT = A.loading_COP_WPT(COPs)
-    GRF_WPT= A.loading_GRF_WPT(GRFs)
-
-    deep_features_list = A.loading_deep_features_from_list((pre_images, labels), ['P100', 'P80'], 'resnet50.ResNet50')
-    image_from_list = A.loading_pre_image_from_list(pre_images, ['P80', 'P100'])
-    # P70 = A.loading_pre_image(pre_images, 'P70')
-    # P90 = A.loading_deep_features((pre_images, labels), 'P90', 'resnet50.ResNet50')
     
-    A.FT_deep_features((pre_images, labels), 'stepscan', 'P100', 'resnet50.ResNet50')
+    A._CNN_batch_size = 64
+    A._CNN_epochs = 666
+    A._CNN_optimizer = tf.keras.optimizers.Adadelta()
+    A._val_size = 0.2
 
-    feature_set_names = ['COP_handcrafted', 'COPs', 'COP_WPT', 'GRF_handcrafted', 'GRFs', 'GRF_WPT']
-    feature_set =[]
-    for i in feature_set_names:
-        feature_set.append(eval(f"{i}"))
+    A._known_imposter = 32
+        
+    image_feature_name = ['P100']#["CD", "PTI", "Tmin", "Tmax", "P50", "P60", "P70", "P80", "P90", "P100"]
+    dataset_name = "casia"
+    CNN_name = "lightweight_CNN"
 
-    p0 = [5, 30]
+    
+    # model = A.train_deep_CNN(dataset_name, image_feature_name, CNN_name, update=True)
+    # model = A.train_Seamese_model(image_feature_name, dataset_name, update=True)
+  
+
+    path = os.path.join( os.getcwd(), "results", CNN_name, "best.h5")
+    logger.info("best_model")
+    model = load_model(path)
+    model.summary()
+    
+    # breakpoint()
+    pre_images, labels = A.loading_pre_features_image(dataset_name)
+    pre_image = A.loading_image_features_from_list(pre_images, image_feature_name)
+    known_imposters, _ = A.filtering_subjects_and_samples_deep((pre_image, labels)) 
+
+    # pre_image, labels = known_imposters[0], known_imposters[1]
+
+    data = pre_image[~labels["ID"].isin(A._known_imposter_list)], labels[~labels["ID"].isin(A._known_imposter_list)]
+    
+    
+    deep_features = A.loading_deep_feature_from_model(model, 'last_dense', data, image_feature_name)
+
+    A._known_imposter = 32
+    A._unknown_imposter = 0
+
+    DF_feature_all = pd.concat([deep_features, data[1].reset_index(drop=True)], axis=1)
+
+    feature_set_names = ['deep_P100_lightweight_CNN']
+
+    p0 = [5, 10, 15, 20, 25, 30]
     p1 = [5, 10, 15, 20, 25, 30]
-    # p1 = [5, 30]
+    p2 = ['TM']
 
-    space = list(product(p0, p1))
+    space = list(product(p0, p1, p2))
     space = space[:]
-
+    # i=0
     for idx, parameters in enumerate(space):
+        if parameters[1]+parameters[0]>32:
+            continue
+        logger.info(f'Starting [step {idx+1} out of {len(space)}], parameters: {parameters}')
         
         A._known_imposter     = parameters[1]
         A._unknown_imposter   = parameters[0]
-        A._classifier_name    = 'TM'
+        A._classifier_name    = parameters[2]
 
         tic = timeit.default_timer()
-        A.collect_results(A.run( feature_set, labels, feature_set_names), 'COP+GRF')
+        # print(parameters, i)
+        # i += 1
+        A.collect_results(A.run( DF_feature_all, feature_set_names), 'LWCNN')
         toc = timeit.default_timer()
 
-        logger.info(f'[step {idx+1} out of {len(space)}], parameters: {parameters}, process time: {round(toc-tic, 2)}')
+        logger.info(f'ending [step {idx+1} out of {len(space)}], parameters: {parameters}, process time: {round(toc-tic, 2)}')
+
+    breakpoint()
+    
+def FT():
+    setting = {
+
+        "dataset_name": 'casia',
+
+        "_classifier_name": 'TM',
+        "_combination": True,
+
+        "_CNN_weights": 'imagenet',
+        "_verbose": True,
+        "_CNN_batch_size": 32,
+        "_CNN_base_model": '',
+        "_CNN_epochs": 500,
+        "_CNN_optimizer": 'adam',
+        "_val_size": 0.2,
+
+        "_min_number_of_sample": 30,
+        "_known_imposter": 3,
+        "_unknown_imposter": 5,
+        "_number_of_unknown_imposter_samples": 1.0,  # Must be less than 1
 
 
+        "_waveletname": 'coif1',
+        "_pywt_mode": 'constant',
+        "_wavelet_level": 4,
+
+
+        "_p_training_samples": 11,
+        "_train_ratio": 34,
+        "_ratio": False,
+
+
+        "_KNN_n_neighbors": 5,
+        "_KNN_metric": 'euclidean',
+        "_KNN_weights": 'uniform',
+        "_SVM_kernel": 'linear',
+
+
+        "_KFold": 10,
+        "_random_runs": 20,
+        "_persentage": 0.95,
+        "_normilizing": 'z-score',
+
+    }
+    
+    A = Pipeline(setting)
+
+    
+    A._CNN_batch_size = 64
+    A._CNN_epochs = 1000
+    A._CNN_optimizer = tf.keras.optimizers.Adadelta()
+    A._val_size = 0.2
+
+    A._known_imposter = 32
+        
+    image_feature_name = ['P100']#["CD", "PTI", "Tmin", "Tmax", "P50", "P60", "P70", "P80", "P90", "P100"]
+    dataset_name = "casia"
+    CNN_name = "ResNet50"
+
+    
+
+    model = A.train_deep_CNN(dataset_name, image_feature_name, CNN_name, update=True)
+    breakpoint()
+    
+def test_all_pipelines():
+    setting = {
+
+        "dataset_name": 'casia',
+
+        "_classifier_name": 'TM',
+        "_combination": True,
+
+        "_CNN_weights": 'imagenet',
+        "_verbose": True,
+        "_CNN_batch_size": 32,
+        "_CNN_base_model": '',
+        "_CNN_epochs": 500,
+        "_CNN_optimizer": 'adam',
+        "_val_size": 0.2,
+
+        "_min_number_of_sample": 30,
+        "_known_imposter": 32,
+        "_unknown_imposter": 32,
+        "_number_of_unknown_imposter_samples": 1.0,  # Must be less than 1
+
+
+        "_waveletname": 'coif1',
+        "_pywt_mode": 'constant',
+        "_wavelet_level": 4,
+
+
+        "_p_training_samples": 11,
+        "_train_ratio": 34,
+        "_ratio": False,
+
+
+        "_KNN_n_neighbors": 5,
+        "_KNN_metric": 'euclidean',
+        "_KNN_weights": 'uniform',
+        "_SVM_kernel": 'linear',
+
+
+        "_KFold": 10,
+        "_random_runs": 20,
+        "_persentage": 0.95,
+        "_normilizing": 'z-score',
+
+    }
+    
+    A = Pipeline(setting)
+
+    
+    A._known_imposter = 23
+    A._unknown_imposter = 10
+    A._classifier_name= 'knn'
+    nam = 'All'
+        
+    image_feature_name = ['P100']#["CD", "PTI", "Tmin", "Tmax", "P50", "P60", "P70", "P80", "P90", "P100"]
+    dataset_name = "casia"
+
+    GRFs, COPs, COAs, pre_images, labels = A.loading_pre_features(dataset_name)
+
+    ####################################################################################################################
+    # pipeline 1: COP and GRf
+    COP_handcrafted = A.loading_COP_handcrafted(COPs)
+    GRF_handcrafted = A.loading_GRF_handcrafted(GRFs)
+    COP_WPT = A.loading_COP_WPT(COPs)
+    GRF_WPT= A.loading_GRF_WPT(GRFs)
+
+    feature_set_names = ['COP_handcrafted', 'COPs', 'COP_WPT', 'GRF_handcrafted', 'GRFs', 'GRF_WPT']
+    DF_feature_all = pd.concat( [COP_handcrafted, COPs, COP_WPT, GRF_handcrafted, GRFs, GRF_WPT, labels], axis=1)
+
+    result = get_results(A, feature_set_names, DF_feature_all)
+    result['pipeline'] = 'pipeline 1: COP and GRf'
+    A.collect_results(result, nam)
+
+
+    # breakpoint()
+
+    ####################################################################################################################
+    # pipeline 2: P100 and P80
+    image_from_list = A.loading_pre_image_from_list(pre_images, image_feature_name)
+    feature_set_names = ['P100']
+    DF_feature_all = pd.concat( [i for i in image_from_list] + [labels], axis=1)
+
+    result = get_results(A, feature_set_names, DF_feature_all)
+    result['pipeline'] = 'pipeline 2: P100'
+    A.collect_results(result, nam)
+
+    # breakpoint()
+
+    ####################################################################################################################
+    # pipeline 3: pre_trained CNN (Resnet50)
+    deep_features_list = A.loading_deep_features_from_list((pre_images, labels), image_feature_name, 'resnet50.ResNet50')
+    feature_set_names = ['deep_P100_resnet50']
+    DF_feature_all = pd.concat( [i for i in deep_features_list] + [labels], axis=1)
+
+    result = get_results(A, feature_set_names, DF_feature_all)
+    result['pipeline'] = 'pipeline 3: pre_trained CNN'
+    A.collect_results(result, nam)
+    
+    # breakpoint()
+
+    ##################################################################################################################
+    # pipeline 4: lightweight CNN 
+
+    # model = A.train_deep_CNN(dataset_name, image_feature_name, CNN_name, update=True)
+    # A._persentage= 1.0
+    CNN_name = "lightweight_CNN"
+    path = os.path.join( os.getcwd(), "results", CNN_name, "best.h5")
+    model = load_model(path)
+    
+    pre_image = A.loading_image_features_from_list(pre_images, image_feature_name)
+
+    data = pre_image, labels
+
+    deep_features = A.loading_deep_feature_from_model(model, 'last_dense', data, image_feature_name)
+    DF_feature_all = pd.concat([deep_features, data[1].reset_index(drop=True)], axis=1)
+    feature_set_names = ['deep_P100_lightweight_CNN_trained']
+
+    result = get_results(A, feature_set_names, DF_feature_all)
+    result['pipeline'] = 'pipeline 4: lightweight CNN'
+    A.collect_results(result, nam)
+
+    # breakpoint()
+
+    ####################################################################################################################
+    # pipeline 5: Fine-tuning Resnet50
+    
+    path = os.path.join( os.getcwd(), "results", "ResNet50_FT", "best.h5")
+    model = load_model(path)
+    
+    pre_image = A.loading_image_features_from_list(pre_images, image_feature_name)
+    
+    data = pre_image, labels
+
+    CNN_name = "ResNet50_FT"
+    deep_features = A.loading_deep_feature_from_model(model, 'last_dense', data, image_feature_name)
+    DF_feature_all = pd.concat([deep_features, data[1].reset_index(drop=True)], axis=1)
+    feature_set_names = ['deep_P100_ResNet50_trained']
+
+    result = get_results(A, feature_set_names, DF_feature_all)
+    result['pipeline'] = 'pipeline 5: Fine-tuning Resnet50'
+    A.collect_results(result, nam)
+
+    breakpoint()
+
+def get_results(A, feature_set_names, DF_feature_all):
+    subjects, samples = np.unique(DF_feature_all["ID"].values, return_counts=True)
+
+    ss = [a[0] for a in list(zip(subjects, samples)) if a[1]>=A._min_number_of_sample]
+    
+    known_imposter_list = ss[32:32+A._known_imposter] 
+    unknown_imposter_list = ss[-A._unknown_imposter:] 
+
+    
+    DF_unknown_imposter =  DF_feature_all[DF_feature_all["ID"].isin(unknown_imposter_list)]
+    DF_known_imposter =    DF_feature_all[DF_feature_all["ID"].isin(known_imposter_list)]
+
+
+    results = list()
+    for idx, subject in enumerate(DF_known_imposter['ID'].unique()):
+        # if idx not in [0, 1]: #todo: remove this block to run for all subjects.
+        #     break
+        logger.info(f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})")
+        X, U = A.binarize_labels(DF_known_imposter, DF_unknown_imposter, subject)
+
+
+        CV = model_selection.StratifiedKFold(n_splits=A._KFold, shuffle=False) # random_state=self._random_state,
+       
+        cv_results = list()
+
+        ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK', default=multiprocessing.cpu_count()))
+        pool = multiprocessing.Pool(processes=ncpus)
+        # breakpoinqt()
+        for fold, (train_index, test_index) in enumerate(CV.split(X.iloc[:,:-1], X.iloc[:,-1])):
+            # breakpoint()
+            res = pool.apply_async(A.fold_calculating, args=(feature_set_names, subject, X, U, train_index, test_index, fold,), callback=cv_results.append)
+            # print(res.get())  # this will raise an exception if it happens within func
+
+            # cv_results.append(A.fold_calculating(feature_set_names, subject, X, U, train_index, test_index, fold)) #todo: comment this line to run all folds
+            # break #todo: comment this line to run all folds
+
+        pool.close()
+        pool.join()
+        
+        result = A.compacting_results(cv_results, subject)
+        results.append(result)
+        # breakpoint()
+    return pd.DataFrame(results, columns=A._col)
+
+def train_e2e_CNN():
+    setting = {
+
+        "dataset_name": 'casia',
+
+        "_classifier_name": 'TM',
+        "_combination": True,
+
+        "_CNN_weights": 'imagenet',
+        "_verbose": False,
+        "_CNN_batch_size": 32,
+        "_CNN_base_model": '',
+        "_CNN_epochs": 500,
+        "_CNN_optimizer": 'adam',
+        "_val_size": 0.2,
+
+        "_min_number_of_sample": 30,
+        "_known_imposter": 32,
+        "_unknown_imposter": 32,
+        "_number_of_unknown_imposter_samples": 1.0,  # Must be less than 1
+
+
+        "_waveletname": 'coif1',
+        "_pywt_mode": 'constant',
+        "_wavelet_level": 4,
+
+
+        "_p_training_samples": 11,
+        "_train_ratio": 34,
+        "_ratio": False,
+
+
+        "_KNN_n_neighbors": 5,
+        "_KNN_metric": 'euclidean',
+        "_KNN_weights": 'uniform',
+        "_SVM_kernel": 'linear',
+
+
+        "_KFold": 10,
+        "_random_runs": 20,
+        "_persentage": 0.95,
+        "_normilizing": 'z-score',
+
+    }
+    
+    A = Pipeline(setting)
+
+    
+    A._known_imposter = 23
+    A._unknown_imposter = 10
+    A._classifier_name= 'svm'
+    nam = 'All'
+    A._CNN_epochs = 120
+        
+    image_feature_name = ['P100']#["CD", "PTI", "Tmin", "Tmax", "P50", "P60", "P70", "P80", "P90", "P100"]
+    dataset_name = "casia"
+    CNN_name = "lightweight_CNN"
+
+    GRFs, COPs, COAs, pre_images, labels = A.loading_pre_features(dataset_name)
+    pre_image1 = A.loading_image_features_from_list(pre_images, image_feature_name)
+
+    
+    subjects, samples = np.unique(labels["ID"].values, return_counts=True)
+
+    ss = [a[0] for a in list(zip(subjects, samples)) if a[1]>=A._min_number_of_sample]
+    
+    known_imposter_list = ss[32:32+A._known_imposter] 
+    unknown_imposter_list = ss[-A._unknown_imposter:] 
+
+    
+    label = labels[labels["ID"].isin(known_imposter_list)]
+    pre_image = pre_image1[label.index,:,:,:]
+
+    # DF_unknown_imposter =  DF_feature_all[DF_feature_all["ID"].isin(unknown_imposter_list)]
+    # DF_known_imposter =    DF_feature_all[DF_feature_all["ID"].isin(known_imposter_list)]
+    U_label = labels[labels["ID"].isin(unknown_imposter_list)]
+    U_pre_image = pre_image1[U_label.index,:,:,:]
+
+    results = list()
+    for idx, subject in enumerate(known_imposter_list):
+        # if idx not in [0, 1]: #todo: remove this block to run for all subjects.
+        #     break
+        logger.info(f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})")
+
+        label_binariezed = tf.keras.utils.to_categorical(A.label_encoding( label) )
+
+
+        # label_binariezed = label.copy().drop(["side"], axis=1)
+        # label_binariezed["ID"] = label_binariezed["ID"].map(lambda x: 1 if x==subject else 0)
+        # label_binariezed = label_binariezed.values.astype(np.float32).squeeze()
+
+        label_ = np.expand_dims(label_binariezed[:,idx], axis=1)
+        model = A.train_e2e( (pre_image, label_), image_feature_name, CNN_name, subject, update=False, U_data=(U_pre_image, U_label['ID'].values))
+        result = A.test_e2e( (pre_image, label_), image_feature_name, CNN_name, subject, U_data=(U_pre_image, U_label['ID'].values))
+
+        results.append(result)
+        breakpoint()
+    
+    path = os.path.join( os.getcwd(), "results", "e2e", "result.xlsx")
+    pd.DataFrame(results, columns=A._col).to_excel(path)
+    return pd.DataFrame(results, columns=A._col)
+        
+def Toon_p100():
+    setting = {
+
+        "dataset_name": 'casia',
+
+        "_classifier_name": 'TM',
+        "_combination": True,
+
+        "_CNN_weights": 'imagenet',
+        "_verbose": True,
+        "_CNN_batch_size": 32,
+        "_CNN_base_model": '',
+        "_CNN_epochs": 500,
+        "_CNN_optimizer": 'adam',
+        "_val_size": 0.2,
+
+        "_min_number_of_sample": 30,
+        "_known_imposter": 32,
+        "_unknown_imposter": 32,
+        "_number_of_unknown_imposter_samples": 1.0,  # Must be less than 1
+
+
+        "_waveletname": 'coif1',
+        "_pywt_mode": 'constant',
+        "_wavelet_level": 4,
+
+
+        "_p_training_samples": 11,
+        "_train_ratio": 34,
+        "_ratio": False,
+
+
+        "_KNN_n_neighbors": 5,
+        "_KNN_metric": 'euclidean',
+        "_KNN_weights": 'uniform',
+        "_SVM_kernel": 'linear',
+
+
+        "_KFold": 10,
+        "_random_runs": 20,
+        "_persentage": 0.99,
+        "_normilizing": 'z-mean',
+
+    }
+    
+    A = Pipeline(setting)
+
+    
+    A._known_imposter = 55
+    A._unknown_imposter = 10
+    A._classifier_name= 'TM'
+    nam = 'All'
+        
+    image_feature_name = ['P100']#["CD", "PTI", "Tmin", "Tmax", "P50", "P60", "P70", "P80", "P90", "P100"]
+    dataset_name = "casia"
+
+    GRFs, COPs, COAs, pre_images, labels = A.loading_pre_features(dataset_name)
+
+    # pipeline 2: P100 and P80
+    image_from_list = A.loading_pre_image_from_list(pre_images, image_feature_name)
+    feature_set_names = ['P100']
+    DF_feature_all = pd.concat( [i for i in image_from_list] + [labels], axis=1)
+
+    subjects, samples = np.unique(DF_feature_all["ID"].values, return_counts=True)
+
+    ss = [a[0] for a in list(zip(subjects, samples)) if a[1]>=A._min_number_of_sample]
+    
+    known_imposter_list = ss[0:0+A._known_imposter] 
+    unknown_imposter_list = ss[-A._unknown_imposter:] 
+
+    
+    DF_unknown_imposter =  DF_feature_all[DF_feature_all["ID"].isin(unknown_imposter_list)]
+    DF_known_imposter =    DF_feature_all[DF_feature_all["ID"].isin(known_imposter_list)]
+
+
+    results = list()
+    for idx, subject in enumerate(DF_known_imposter['ID'].unique()):
+        
+        logger.info(f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})")
+
+        X, U = A.binarize_labels(DF_known_imposter, DF_unknown_imposter, subject)
+        
+
+        X_train, X_test = model_selection.train_test_split(X, test_size=0.2, random_state=A._random_state, stratify=X.iloc[:,-1])
+        # X_train, X_val = model_selection.train_test_split(X_train, test_size=0.2, random_state=A._random_state, stratify=X_train.iloc[:,-1])#todo
+        # breakpoint()
+
+        df_train, df_test, df_test_U = A.scaler(X_train, X_test, U)
+        
+        df_train, df_test, df_test_U, num_pc = A.projector(df_train, df_test, df_test_U, feature_set_names)
+        result, CM_bd, CM_ud = A.ML_classifier(df_train, df_test, df_test_U, subject)
+
+        cv_results = result + CM_ud.reshape(1,-1).tolist()[0] + CM_bd.reshape(1,-1).tolist()[0] + [num_pc]
+        
+       
+        result = list()
+
+        result.append([
+            A._test_id,
+            subject, 
+            A._combination, 
+            A._classifier_name, 
+            A._normilizing, 
+            A._persentage, 
+            # configs["classifier"][CLS], 
+        ])
+
+        result.append(cv_results)
+        # result.append([np.array(CM_bd).mean(axis=0), np.array(CM_ud).mean(axis=0)])
+        
+
+        # _CNN_weights = 'imagenet'
+        # _CNN_base_model = ""
+
+        result.append([
+            A._KFold,
+            A._p_training_samples,
+            A._train_ratio,
+            A._ratio,
+            # pos_te_samples, 
+            # neg_te_samples, 
+            A._known_imposter, 
+            A._unknown_imposter, 
+            A._min_number_of_sample,
+            A._number_of_unknown_imposter_samples,
+            X_train.shape[0],
+            X_train.iloc[:,-1].sum(),
+            '-',
+            '-',
+            X_test.shape[0],
+            X_test.iloc[:,-1].sum(),
+        ])
+        
+        results.append([val for sublist in result for val in sublist])
+    
+    return pd.DataFrame(results, columns=A._col)
+
+
+
+def new_image():
+    setting = {
+
+        "dataset_name": 'casia',
+
+        "_classifier_name": 'TM',
+        "_combination": True,
+
+        "_CNN_weights": 'imagenet',
+        "_verbose": True,
+        "_CNN_batch_size": 32,
+        "_CNN_base_model": '',
+        "_CNN_epochs": 500,
+        "_CNN_optimizer": 'adam',
+        "_val_size": 0.2,
+
+        "_min_number_of_sample": 30,
+        "_known_imposter": 32,
+        "_unknown_imposter": 32,
+        "_number_of_unknown_imposter_samples": 1.0,  # Must be less than 1
+
+
+        "_waveletname": 'coif1',
+        "_pywt_mode": 'constant',
+        "_wavelet_level": 4,
+
+
+        "_p_training_samples": 11,
+        "_train_ratio": 34,
+        "_ratio": False,
+
+
+        "_KNN_n_neighbors": 5,
+        "_KNN_metric": 'euclidean',
+        "_KNN_weights": 'uniform',
+        "_SVM_kernel": 'linear',
+
+
+        "_KFold": 10,
+        "_random_runs": 20,
+        "_persentage": 0.95,
+        "_normilizing": 'z-score',
+
+    }
+    
+    A = Pipeline(setting)
+
+    
+    A._known_imposter = 23
+    A._unknown_imposter = 10
+    A._classifier_name= 'knn'
+    nam = 'All'
+        
+    image_feature_name = ['P100']#["CD", "PTI", "Tmin", "Tmax", "P50", "P60", "P70", "P80", "P90", "P100"]
+    dataset_name = "casia"
+
+    GRFs, COPs, COAs, pre_images, labels = A.loading_pre_features(dataset_name)
+
+
+    ####################################################################################################################
+    # pipeline 2: P100 and P80
+    image_from_list = A.loading_pre_image_from_list(pre_images, image_feature_name)
+    feature_set_names = ['P100']
+    DF_feature_all = pd.concat( [i for i in image_from_list] + [labels], axis=1)
+
+    
+
+    subjects, samples = np.unique(DF_feature_all["ID"].values, return_counts=True)
+
+    ss = [a[0] for a in list(zip(subjects, samples)) if a[1]>= 30]# A._min_number_of_sample]
+    
+    known_imposter_list = ss[32:32+A._known_imposter] 
+    unknown_imposter_list = ss[-A._unknown_imposter:] 
+
+    
+    DF_unknown_imposter =  DF_feature_all[DF_feature_all["ID"].isin(unknown_imposter_list)]
+    DF_known_imposter =    DF_feature_all[DF_feature_all["ID"].isin(known_imposter_list)]
+
+    results = list()
+    for idx, subject in enumerate(DF_known_imposter['ID'].unique()):
+        # if idx not in [0, 1]: #todo: remove this block to run for all subjects.
+        #     break
+        logger.info(f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})")
+
+        X, U = A.binarize_labels(DF_known_imposter, DF_unknown_imposter, subject)
+
+        breakpoint()
+        X_train, X_test, y_train, y_test = model_selection.train_test_split(X.iloc[:,:-1], X.iloc[:,-1], test_size=0.2, stratify=X.iloc[:,-1], random_state=A._random_state)
+       
+
+        cv_results = list()
+
+        ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK', default=multiprocessing.cpu_count()))
+        pool = multiprocessing.Pool(processes=ncpus)
+        # breakpoinqt()
+        for fold, (train_index, test_index) in enumerate(CV.split(X.iloc[:,:-1], X.iloc[:,-1])):
+            # breakpoint()
+            res = pool.apply_async(A.fold_calculating, args=(feature_set_names, subject, X, U, train_index, test_index, fold,), callback=cv_results.append)
+            # print(res.get())  # this will raise an exception if it happens within func
+
+            # cv_results.append(A.fold_calculating(feature_set_names, subject, X, U, train_index, test_index, fold)) #todo: comment this line to run all folds
+            # break #todo: comment this line to run all folds
+
+        pool.close()
+        pool.join()
+        
+        result = A.compacting_results(cv_results, subject)
+        results.append(result)
+    
+    result = get_results(A, feature_set_names, DF_feature_all)
+    result['pipeline'] = 'pipeline 2: P100'
+    A.collect_results(result, nam)
 
 if __name__ == "__main__":
     logger.info("Starting !!!")
     tic1 = timeit.default_timer()
 
     # main()
-    Participant_Count()
+    # Participant_Count()
+
+    # lightweight()
     # FT()
-    
+    # test_all_pipelines()
+    # new_image()
+    aa = Toon_p100()
+    path = os.path.join( os.getcwd(), "results", "e2e", "TM.xlsx")
+    aa.to_excel(path)
+
+    breakpoint()
+    # train_e2e_CNN()
+    breakpoint()
 
     toc1 = timeit.default_timer()
     logger.info("Done ({:2.2f} process time)!!!\n\n\n".format(toc1-tic1))
