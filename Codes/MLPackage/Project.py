@@ -1416,7 +1416,29 @@ class Features(PreFeatures):
         #     unknown_imposter =  pre_image[labels["ID"].isin(self._unknown_imposter_list)], labels[labels["ID"].isin(self._unknown_imposter_list)]
         #     known_imposter =    pre_image[labels["ID"].isin(self._known_imposter_list)], labels[labels["ID"].isin(self._known_imposter_list)]
         return DF_known_imposter, DF_unknown_imposter
-   
+    
+    def extract_deep_features(self, train_ds, binary_model1):
+        Deep_features = np.zeros((1, binary_model1.layers[-1].output_shape[1]))
+        temp1 = np.zeros((1, 1))
+        for image_batch, label_batch in train_ds:
+            feature = binary_model1(image_batch)
+            Deep_features = np.append(Deep_features, feature, axis=0)
+            temp1 = np.append(temp1, label_batch, axis=0)
+
+            if (Deep_features.shape[0]-1) % 256 == 0:
+                logger.info(f" ->>> ({os.getpid()}) completed images: " + str(Deep_features.shape[0]))
+                
+                
+        Deep_features = Deep_features[1:, :]
+        temp1 = temp1[1:, :]
+        df = pd.DataFrame(np.concatenate((Deep_features, temp1), axis=1), columns=['Deep_'+str(i) for i in range(Deep_features.shape[1])]+['ID'])
+        self._features_set[f'deep_second_trained'] = {
+            "columns": df.columns[:-1],
+            "number_of_features": df.shape[1], 
+            "number_of_samples": df.shape[0],           
+        }
+        return df
+
 
 class Classifier(Features):
     
@@ -1453,7 +1475,7 @@ class Classifier(Features):
 
         return pd.concat([DF_positive_samples_train, DF_negative_samples_train], axis=0)
     
-    def scaler(self, df_train, df_test, df_test_U):
+    def scaler(self, df_train, *args):
 
         if self._normilizing == "minmax":
             scaling = sk_preprocessing.MinMaxScaler()
@@ -1469,40 +1491,27 @@ class Classifier(Features):
 
 
         Scaled_train = scaling.fit_transform(df_train.iloc[:, :-1])
-        Scaled_test = scaling.transform(df_test.iloc[:, :-1])            
-
         Scaled_train = pd.DataFrame(np.concatenate((Scaled_train, df_train.iloc[:, -1:].values), axis = 1), columns=df_train.columns)
-        Scaled_test  = pd.DataFrame(np.concatenate((Scaled_test,  df_test.iloc[:, -1:].values),  axis = 1), columns=df_test.columns)
+
+        Scaled_df = list()
+        Scaled_df.append(Scaled_train)
+        for df in args:
+            Scaled_test = scaling.transform(df.iloc[:, :-1])            
+            Scaled_df.append( pd.DataFrame(np.concatenate((Scaled_test, df.iloc[:, -1:].values), axis=1), columns=df.columns))
+
+        # Scaled_val = scaling.transform(df_val.iloc[:, :-1]) 
+        # Scaled_val  = pd.DataFrame(np.concatenate((Scaled_val,  df_val.iloc[:, -1:].values),  axis = 1), columns=df_val.columns)
         
-        Scaled_test_U = pd.DataFrame(columns=df_test_U.columns)
+        # Scaled_test_U = pd.DataFrame(columns=df_U.columns)
        
-        if df_test_U.shape[0] != 0:
-            Scaled_test_U = scaling.transform(df_test_U.iloc[:, :-1])
-            Scaled_test_U  = pd.DataFrame(np.concatenate((Scaled_test_U,  df_test_U.iloc[:, -1:].values),  axis = 1), columns=df_test_U.columns)
+        # if df_U.shape[0] != 0:
+        #     Scaled_test_U = scaling.transform(df_U.iloc[:, :-1])
+        #     Scaled_test_U  = pd.DataFrame(np.concatenate((Scaled_test_U,  df_U.iloc[:, -1:].values),  axis = 1), columns=df_U.columns)
 
-        return Scaled_train, Scaled_test, Scaled_test_U
+        # return Scaled_train, Scaled_test, Scaled_test_U, Scaled_val
+        return tuple(Scaled_df)
         
-    def projector(self, df_train, df_test, df_test_U, listn):
-        # elif persentage != 1.0:
-        #     principal = PCA(svd_solver="full")
-        #     PCA_out_train = principal.fit_transform(df_train.iloc[:,:-1])
-        #     PCA_out_test = principal.transform(df_test.iloc[:,:-1])
-
-        #     variance_ratio = np.cumsum(principal.explained_variance_ratio_)
-        #     high_var_PC = np.zeros(variance_ratio.shape)
-        #     high_var_PC[variance_ratio <= persentage] = 1
-
-        #     num_pc = int(np.sum(high_var_PC))
-
-        #     columnsName = ["PC"+str(i) for i in list(range(1, num_pc+1))] + ["ID"]
-
-        #     df_train_pc = pd.DataFrame(np.concatenate((PCA_out_train[:,:num_pc], df_train.iloc[:, -1:].values), axis = 1), columns = columnsName)
-        #     df_test_pc  = pd.DataFrame(np.concatenate(( PCA_out_test[:,:num_pc],  df_test.iloc[:, -1:].values), axis = 1), columns = columnsName)
-
-        #     self._num_pc = num_pc
-
-        #     return df_train_pc, df_test_pc
-
+    def projector_archive(self, df_train, df_test, df_test_U, listn):
         if self._persentage == 1.0:
             num_pc = df_train.shape[1]-1
             columnsName = ["PC"+str(i) for i in list(range(1, num_pc+1))] + ["ID"]
@@ -1551,6 +1560,64 @@ class Classifier(Features):
             num_pc = np.sum(N)
 
             return eval("df_train_pc"), eval("df_test_pc"), eval("df_test_U_pc"), num_pc
+
+    def projector(self, listn, df_train, *args ):
+        if self._persentage == 1.0:
+            num_pc = df_train.shape[1]-1
+            columnsName = ["PC"+str(i) for i in list(range(1, num_pc+1))] + ["ID"]
+
+            df_train.columns = columnsName
+            projected_df = list()
+            projected_df.append(df_train)
+            for df in args:
+                df.columns = columnsName
+                projected_df.append(df)
+
+            projected_df.append(num_pc)
+            return tuple(projected_df)
+
+        elif self._persentage != 1.0:
+
+            principal = PCA(svd_solver="full")
+            N = list()
+            for ind, feat in enumerate(listn):
+                # breakpoint()
+                col = self._features_set[feat]["columns"]
+            
+                PCA_out_train = principal.fit_transform(df_train.loc[:, col])
+                
+                
+                variance_ratio = np.cumsum(principal.explained_variance_ratio_)
+                high_var_PC = np.zeros(variance_ratio.shape)
+                high_var_PC[variance_ratio <= self._persentage] = 1
+
+                N.append( int(np.sum(high_var_PC))  )
+                columnsName = [listn[ind]+"_PC"+str(i) for i in list(range(1, N[ind]+1))]
+
+                exec( f"df_train_pc_{ind} = pd.DataFrame(PCA_out_train[:,:N[ind]], columns = columnsName)" )
+
+                for i, df in enumerate(args):
+                    PCA_out_df = principal.transform(df.loc[:, col])
+                    exec( f"df{i}_pc_{ind} = pd.DataFrame(PCA_out_df[:,:N[ind]], columns=columnsName)" )
+                    
+           
+            tem = [("df_train_pc_"+str(i)) for i in range(len(listn))] + ['df_train["ID"]']
+            exec( f"df_train_pc = pd.concat({tem}, axis=1)".replace("'",""))
+            h=list()
+            h.append(eval("df_train_pc"))
+            for ii, df in enumerate(args):
+                tem = [(f"df{ii}_pc_"+str(i)) for i in range(len(listn))] + ['df["ID"]']
+                exec( f"df{ii}_pc = pd.concat({tem}, axis=1)".replace("'",""))
+                h.append(eval(f"df{ii}_pc "))
+
+            # exec( f"df_test_U_pc = pd.DataFrame(columns = columnsName)".replace("'",""))
+            # if df_test_U.shape[0] != 0:
+            #     tem = [("df_test_U_pc_"+str(i)) for i in range(len(listn))] + ['df_test_U["ID"]']
+            #     exec( f"df_test_U_pc = pd.concat({tem}, axis=1)".replace("'",""))
+
+            num_pc = np.sum(N)
+            h.append(num_pc)
+            return tuple(h)
 
     def FXR_calculater(self, x_train, y_pred):
         FRR = list()
@@ -1633,7 +1700,7 @@ class Classifier(Features):
             logger.info(f"\tApplying template selection with method '{method}' [orginal shape: {DF.shape}, output shape{DF_clustered.shape}]")
         return DF_clustered
 
-    def ML_classifier(self, x_train, x_test, x_test_U, a):
+    def ML_classifier_archive(self, a, x_train, *args,):
         PP = f"./temp/shod1-dend/{self._classifier_name}/{str(a)}/{str(self._unknown_imposter)}/"
 
         if self._classifier_name=="knn":
@@ -1877,6 +1944,101 @@ class Classifier(Features):
         results = [EER, TH, ACC_bd, BACC_bd, FAR_bd, FRR_bd, ACC_ud, BACC_ud, FAR_ud, FRR_ud, AUS, FAU, x_test_U.shape[0], AUS_All, FAU_All]
 
         return results, CM_bd, CM_ud      
+
+    def ML_classifier(self, a, **kwargs,):
+        
+
+        if 'x_train' in kwargs.keys(): x_train = kwargs['x_train'] 
+        if 'x_val' in kwargs.keys(): x_val = kwargs['x_val'] 
+        if 'x_test' in kwargs.keys(): x_test = kwargs['x_test'] 
+        if 'x_test_U' in kwargs.keys(): x_test_U = kwargs['x_test_U'] 
+
+        
+       
+
+        if self._classifier_name=="knn":
+            classifier = knn(n_neighbors=self._KNN_n_neighbors, metric=self._KNN_metric, weights=self._KNN_weights)
+
+            best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
+            y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
+            FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
+            EER, t_idx = self.compute_eer(FRR_t, FAR_t)
+            TH = self._THRESHOLDs[t_idx]
+
+        elif self._classifier_name=="TM":
+            positives = x_train[x_train["ID"]== 1.0] 
+            negatives = x_train[x_train["ID"]== 0.0] 
+            similarity_matrix_positives, similarity_matrix_negatives = self.compute_score_matrix(positives, negatives)
+            client_scores, imposter_scores = self.compute_scores(similarity_matrix_positives, similarity_matrix_negatives, criteria="min")
+            y_pred_tr = np.append(client_scores.data, imposter_scores.data)
+
+            FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
+            EER, t_idx = self.compute_eer(FRR_t, FAR_t)
+            TH = self._THRESHOLDs[t_idx]
+                   
+        elif self._classifier_name=="svm":
+            classifier = svm.SVC(kernel=self._SVM_kernel , probability=True, random_state=self._random_state)
+            best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
+            y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
+            
+            FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
+            EER, t_idx = self.compute_eer(FRR_t, FAR_t)
+            TH = self._THRESHOLDs[t_idx]
+
+        else:
+            raise Exception(f"_classifier_name ({self._classifier_name}) is not valid!!")
+        
+        
+        
+        if self._classifier_name=="TM":
+            positives = x_train[x_train["ID"]== 1.0]
+            similarity_matrix_positives, similarity_matrix_negatives = self.compute_score_matrix(positives, x_test)
+            client_scores, imposter_scores = self.compute_scores(similarity_matrix_positives, similarity_matrix_negatives, criteria="min")
+            y_pred = imposter_scores.data
+
+        else:
+            y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
+        
+        y_pred[y_pred >= TH ] = 1
+        y_pred[y_pred <  TH ] = 0
+
+
+        ACC_ud = accuracy_score(x_test["ID"].values, y_pred)*100 
+        CM_ud = confusion_matrix(x_test.iloc[:,-1].values, y_pred)
+        spec = (CM_ud[0,0]/(CM_ud[0,1]+CM_ud[0,0]+1e-33))*100
+        sens = (CM_ud[1,1]/(CM_ud[1,0]+CM_ud[1,1]+1e-33))*100
+        BACC_ud = (spec + sens)/2 
+        FAR_ud = CM_ud[0,1]/CM_ud[0,:].sum()
+        FRR_ud = CM_ud[1,0]/CM_ud[1,:].sum()
+
+        AUS_All, FAU_All = '-', '-'
+
+
+        if 'x_test_U' in kwargs.keys():
+            
+            if self._classifier_name=="TM":
+                positives = x_train[x_train["ID"]== 1.0]
+                similarity_matrix_positives, similarity_matrix_negatives = self.compute_score_matrix(positives, x_test_U)
+                client_scores, imposter_scores = self.compute_scores(similarity_matrix_positives, similarity_matrix_negatives, criteria="min")
+                y_pred_U = imposter_scores.data
+
+            else:
+                y_pred_U = best_model.predict_proba(x_test_U.iloc[:, :-1].values)[:, 1]
+
+
+            y_pred_U[y_pred_U >= TH ] = 1.
+            y_pred_U[y_pred_U <  TH ] = 0.
+            AUS_All = accuracy_score(x_test_U["ID"].values, y_pred_U)*100 
+            FAU_All = np.where(y_pred_U==1)[0].shape[0]
+
+        results = [EER, TH, ACC_ud, BACC_ud, FAR_ud, FRR_ud, x_test_U.shape[0], AUS_All, FAU_All]+CM_ud.reshape(1,-1).tolist()[0]
+        results_name = ['EER', 'TH', 'ACC_ud', 'BACC_ud', 'FAR_ud', 'FRR_ud', 'unknown samples', 'AUS_All', 'FAU_All', 'CM_ud_TN', 'CM_ud_FP', 'CM_ud_FN', 'CM_ud_TP']
+        
+
+        
+        return dict( zip(results_name, results) )
+
+    
 
     @staticmethod
     def compute_score_matrix(positive_samples, negative_samples):
@@ -2283,7 +2445,6 @@ class Deep_network(PreFeatures):
             temp = pd.read_csv(path).drop('Unnamed: 0', axis=1)
             hist_df = pd.DataFrame(history.history) 
             hist_df = pd.concat((temp, hist_df), axis=0).reset_index(drop=True)
-            path = os.path.join( os.getcwd(), "results", "e2e", model.name, str(subject), 'history.csv')
             hist_df.to_csv(path)
             
             
@@ -2406,6 +2567,112 @@ class Deep_network(PreFeatures):
         ])
         return [val for sublist in result for val in sublist]
         
+
+    def second_training(self, A, model, subject, train_ds, val_ds, test_ds, class_weight, update):
+        # AUTOTUNE = tf.data.AUTOTUNE
+
+        # train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(1000)
+        # train_ds = train_ds.batch(A._CNN_batch_size)
+        # train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        # val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)).shuffle(1000)
+        # val_ds = val_ds.batch(A._CNN_batch_size)
+        # val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        # test_ds = tf.data.Dataset.from_tensor_slices((X_test, y_test))
+        # test_ds = test_ds.batch(A._CNN_batch_size)
+        # test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
+            
+            
+
+            # if CNN_name == "ResNet50":
+            #     train_ds = train_ds.map(self.resize_images)
+            #     test_ds = test_ds.map(self.resize_images)
+                # val_ds = val_ds.map(self.resize_images)
+        if update == True:
+            path = os.path.join( os.getcwd(), "results", "results", "second_train", model.name, str(subject), "best")
+            binary_model = load_model(path)
+            
+        else:
+            x = model.layers[-2].output  
+            output = tf.keras.layers.Dense(1, name="prediction1")(x)   
+            binary_model = Model(inputs=model.input, outputs=output)
+
+        binary_model.compile(optimizer=A._CNN_optimizer, loss=tf.keras.losses.BinaryCrossentropy(from_logits=True), metrics=["Accuracy"])#if softmaxt then from_logits=False otherwise True
+
+            # TensorBoard_logs =  os.path.join( os.getcwd(), "logs", "TensorBoard_logs", "_".join(("FS", str(os.getpid()), pre_image_name, str(self._test_id)) )  )
+        path = os.path.join( os.getcwd(), "results", "results", "second_train", model.name, str(subject), "best")
+
+        checkpoint = [
+                    tf.keras.callbacks.ModelCheckpoint(    path, save_best_only=True, monitor="val_loss", verbose=1, save_weights_only = False),
+                    # tf.keras.callbacks.ReduceLROnPlateau(  monitor="val_loss", factor=0.5, patience=30, min_lr=0.00001),
+                    # tf.keras.callbacks.EarlyStopping(      monitor="val_loss", patience=20, verbose=1),
+                    # tf.keras.callbacks.TensorBoard(        log_dir=TensorBoard_logs+str(self._test_id))   
+                    ]    
+
+        
+
+
+        history = binary_model.fit(
+                train_ds,    
+                batch_size=A._CNN_batch_size,
+                callbacks=[checkpoint],
+                epochs=A._CNN_epochs,
+                validation_data=val_ds,
+                verbose=A._verbose,
+                class_weight=class_weight,
+                use_multiprocessing=True
+            )
+
+        logger.info("best_model")
+        best_model = load_model(path)
+        test_loss, test_acc = best_model.evaluate(test_ds, verbose=2)
+        logger.info(f"  test_loss: {np.round(test_loss)}, test_acc: {int(np.round(test_acc*100))}%")
+
+
+            # breakpoint()
+        path = os.path.join( os.getcwd(), "results", "results", "second_train", model.name, str(subject), "earlystop_model")
+        binary_model.save(path)
+
+        logger.info("earlystop_model")
+        earlystop_model = load_model(path)
+        test_loss, test_acc = earlystop_model.evaluate(test_ds, verbose=2)
+        logger.info(f"  test_loss: {np.round(test_loss)}, test_acc: {int(np.round(test_acc*100))}%")
+
+        if update==True:
+            path = os.path.join( os.getcwd(), "results", "results", "second_train", model.name, str(subject), "history.csv")
+            temp = pd.read_csv(path).drop('Unnamed: 0', axis=1)
+            hist_df = pd.DataFrame(history.history) 
+            hist_df = pd.concat((temp, hist_df), axis=0).reset_index(drop=True)
+            hist_df.to_csv(path)
+        else:
+            hist_df = pd.DataFrame(history.history) 
+            path = os.path.join( os.getcwd(), "results", "results", "second_train", model.name, str(subject), "history.csv")
+            hist_df.to_csv(path)
+
+        fig, ax = plt.subplots(1,2,figsize=(10,6))
+        ax[0].plot(hist_df['Accuracy'], label='Train Accuracy')
+        ax[0].plot(hist_df['val_Accuracy'], label = 'Val Accuracy')
+            
+        ax[0].set_title('Accuracy')
+        ax[0].set_xlabel('Epoch')
+        ax[0].set_ylabel('Accuracy')
+        ax[0].legend()
+
+
+            # summarize history for loss
+        ax[1].plot(hist_df['loss'], label='Train Loss')
+        ax[1].plot(hist_df['val_loss'], label='Val Loss')
+        ax[1].set_title('Loss')
+        ax[1].set_ylabel('loss')
+        ax[1].set_xlabel('epoch')
+        ax[1].legend()
+
+        path = os.path.join( os.getcwd(), "results", "results", "second_train", model.name, str(subject), "plot.png")
+        plt.savefig(path)   
+        plt.close()
+            
+        return best_model
 
 
 class Seamese(Deep_network):
@@ -4025,6 +4292,182 @@ def Toon_p100():
     
     return pd.DataFrame(results, columns=A._col)
 
+def second_retrain():
+    setting = {
+
+        "dataset_name": 'casia',
+
+        "_classifier_name": 'TM',
+        "_combination": True,
+
+        "_CNN_weights": 'imagenet',
+        "_verbose": True,
+        "_CNN_batch_size": 32,
+        "_CNN_base_model": '',
+        "_CNN_epochs": 500,
+        "_CNN_optimizer": 'adam',
+        "_val_size": 0.2,
+
+        "_min_number_of_sample": 30,
+        "_known_imposter": 3,
+        "_unknown_imposter": 5,
+        "_number_of_unknown_imposter_samples": 1.0,  # Must be less than 1
+
+
+        "_waveletname": 'coif1',
+        "_pywt_mode": 'constant',
+        "_wavelet_level": 4,
+
+
+        "_p_training_samples": 11,
+        "_train_ratio": 34,
+        "_ratio": False,
+
+
+        "_KNN_n_neighbors": 5,
+        "_KNN_metric": 'euclidean',
+        "_KNN_weights": 'uniform',
+        "_SVM_kernel": 'linear',
+
+
+        "_KFold": 10,
+        "_random_runs": 20,
+        "_persentage": 0.95,
+        "_normilizing": 'z-score',
+
+    }
+    
+    A = Pipeline(setting)
+
+    
+    A._CNN_batch_size = 64
+    A._CNN_epochs = 1
+    A._CNN_optimizer = tf.keras.optimizers.Adadelta()
+    A._val_size = 0.2
+
+    A._known_imposter = 23
+    A._unknown_imposter = 10
+        
+    image_feature_name = ['P100']#["CD", "PTI", "Tmin", "Tmax", "P50", "P60", "P70", "P80", "P90", "P100"]
+    dataset_name = "casia"
+    CNN_name = "lightweight_CNN"
+
+    GRFs, COPs, COAs, pre_images, labels = A.loading_pre_features(dataset_name)
+    pre_image1 = A.loading_image_features_from_list(pre_images, image_feature_name)
+
+    images_feat_norm = A.normalizing_image_features(pre_image1)
+
+
+    subjects, samples = np.unique(labels["ID"].values, return_counts=True)
+
+    ss = [a[0] for a in list(zip(subjects, samples)) if a[1]>=A._min_number_of_sample]
+    
+    known_imposter_list = ss[32:32+A._known_imposter] 
+    unknown_imposter_list = ss[-A._unknown_imposter:] 
+
+    
+    label = labels[labels["ID"].isin(known_imposter_list)]
+    pre_image = images_feat_norm[label.index,:,:,:]
+
+    # DF_unknown_imposter =  DF_feature_all[DF_feature_all["ID"].isin(unknown_imposter_list)]
+    # DF_known_imposter =    DF_feature_all[DF_feature_all["ID"].isin(known_imposter_list)]
+    U_label = labels[labels["ID"].isin(unknown_imposter_list)]
+    U_pre_image = images_feat_norm[U_label.index,:,:,:]
+
+    path = os.path.join( os.getcwd(), "results", "results", CNN_name, "best.h5")
+    model = load_model(path)
+
+    label_binariezed = tf.keras.utils.to_categorical(A.label_encoding( label) )
+
+    results = list()
+    for idx, subject in enumerate(known_imposter_list):
+        # if idx == 0:
+        #     continue
+
+        logger.info(f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})")
+
+        
+
+        label_ = np.expand_dims(label_binariezed[:,idx], axis=1)
+
+        X_train, X_test, y_train, y_test = model_selection.train_test_split(pre_image, label_, test_size=0.2, random_state=A._random_state, stratify=label_)
+        X_train, X_val, y_train, y_val = model_selection.train_test_split(X_train, y_train, test_size=0.2, random_state=A._random_state, stratify=y_train)#todo
+
+        AUTOTUNE = tf.data.AUTOTUNE
+
+        train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(1000)
+        train_ds = train_ds.batch(A._CNN_batch_size)
+        train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)).shuffle(1000)
+        val_ds = val_ds.batch(A._CNN_batch_size)
+        val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        test_ds = tf.data.Dataset.from_tensor_slices((X_test, y_test))
+        test_ds = test_ds.batch(A._CNN_batch_size)
+        test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        U_ds = tf.data.Dataset.from_tensor_slices((U_pre_image, np.zeros((U_label['ID'].shape[0],1))))
+        U_ds = U_ds.batch(A._CNN_batch_size)
+        U_ds = U_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        np.zeros((U_label['ID'].shape[0],1))
+
+        total = y_train.shape[0]
+        pos = y_train.sum() 
+        neg = total - pos
+        weight_for_0 = (1 / neg) * (total / 2.0)
+        weight_for_1 = (1 / pos) * (total / 2.0)
+        class_weight = {0: weight_for_0, 1: weight_for_1}
+
+        binary_model = A.second_training(A, model, subject, train_ds, val_ds, test_ds, class_weight, update=True)
+
+
+    #     x = binary_model.layers[-2].output  
+    #     binary_model1 = Model(inputs=binary_model.input, outputs=x)
+
+    #     train_features = A.extract_deep_features(train_ds, binary_model1)
+    #     val_features = A.extract_deep_features(val_ds, binary_model1)
+    #     test_features = A.extract_deep_features(test_ds, binary_model1)
+    #     U_features = A.extract_deep_features(U_ds, binary_model1)
+        
+    #     train_features, val_features, test_features, U_features = A.scaler(train_features, val_features, test_features, U_features)
+
+    #     train_features, val_features, test_features, U_features, num_pc = A.projector(['deep_second_trained'], train_features, val_features, test_features, U_features)
+        
+    #     result = A.ML_classifier(subject, x_train=train_features, x_val=val_features, x_test=test_features, x_test_U=U_features)
+    #     result['num_pc']=num_pc
+
+    #     results = {
+    #         "test_id": A._test_id,
+    #         "subject": subject, 
+    #         "combination": A._combination, 
+    #         "classifier_name": A._classifier_name, 
+    #         "normilizing": A._normilizing, 
+    #         "persentage": A._persentage, 
+    #         "KFold": "-",
+    #         "known_imposter": A._known_imposter, 
+    #         "unknown_imposter": A._unknown_imposter, 
+    #         "min_number_of_sample": A._min_number_of_sample,
+    #         "training_samples": y_train.shape[0],
+    #         "pos_training_samples": y_train.sum(),
+    #         "validation_samples": y_val.shape[0],
+    #         "pos_validation_samples": y_val.sum(),
+    #         "testing_samples": y_test.shape[0],
+    #         "pos_testing_samples": y_test.sum(),
+    #     }
+    #     results.update(result)
+
+    #     for i in results:
+    #         try:
+    #             results_dict[i].append(results[i])
+    #         except UnboundLocalError:
+    #             results_dict={i:[] for i in results.keys()}
+    #             results_dict[i].append(results[i])
+
+
+    # results = pd.DataFrame.from_dict(results_dict)
+
 
 
 def new_image():
@@ -4140,6 +4583,216 @@ def new_image():
     result['pipeline'] = 'pipeline 2: P100'
     A.collect_results(result, nam)
 
+def two_stage():
+    setting = {
+
+        "dataset_name": 'casia',
+
+        "_classifier_name": 'TM',
+        "_combination": True,
+
+        "_CNN_weights": 'imagenet',
+        "_verbose": True,
+        "_CNN_batch_size": 32,
+        "_CNN_base_model": '',
+        "_CNN_epochs": 500,
+        "_CNN_optimizer": 'adam',
+        "_val_size": 0.2,
+
+        "_min_number_of_sample": 30,
+        "_known_imposter": 32,
+        "_unknown_imposter": 32,
+        "_number_of_unknown_imposter_samples": 1.0,  # Must be less than 1
+
+
+        "_waveletname": 'coif1',
+        "_pywt_mode": 'constant',
+        "_wavelet_level": 4,
+
+
+        "_p_training_samples": 11,
+        "_train_ratio": 34,
+        "_ratio": False,
+
+
+        "_KNN_n_neighbors": 5,
+        "_KNN_metric": 'euclidean',
+        "_KNN_weights": 'uniform',
+        "_SVM_kernel": 'linear',
+
+
+        "_KFold": 10,
+        "_random_runs": 20,
+        "_persentage": 0.95,
+        "_normilizing": 'z-score',
+
+    }
+    
+    A = Pipeline(setting)
+
+    
+    A._known_imposter = 23
+    A._unknown_imposter = 10
+    A._classifier_name= 'knn'
+    nam = 'All'
+        
+    dataset_name = "casia"
+
+    GRFs, COPs, COAs, pre_images, labels = A.loading_pre_features(dataset_name)
+
+    ####################################################################################################################
+    # pipeline 1: COP and GRf
+    COP_handcrafted = A.loading_COP_handcrafted(COPs)
+    GRF_handcrafted = A.loading_GRF_handcrafted(GRFs)
+    COP_WPT = A.loading_COP_WPT(COPs)
+    GRF_WPT= A.loading_GRF_WPT(GRFs)
+
+    feature_set_names = ['COP_handcrafted', 'COPs', 'COP_WPT', 'GRF_handcrafted', 'GRFs', 'GRF_WPT']
+    DF_feature_all = pd.concat( [COP_handcrafted, COPs, COP_WPT, GRF_handcrafted, GRFs, GRF_WPT, labels], axis=1)
+
+    subjects, samples = np.unique(DF_feature_all["ID"].values, return_counts=True)
+
+    ss = [a[0] for a in list(zip(subjects, samples)) if a[1]>=A._min_number_of_sample]
+    
+    known_imposter_list = ss[32:32+A._known_imposter] 
+    unknown_imposter_list = ss[-A._unknown_imposter:] 
+
+    
+    DF_unknown_imposter =  DF_feature_all[DF_feature_all["ID"].isin(unknown_imposter_list)]
+    DF_known_imposter =    DF_feature_all[DF_feature_all["ID"].isin(known_imposter_list)]
+
+    
+    results = list()
+    for idx, subject in enumerate(DF_known_imposter['ID'].unique()):
+        # if idx not in [0, 1]: #todo: remove this block to run for all subjects.
+        #     break
+        logger.info(f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})")
+        X, U = A.binarize_labels(DF_known_imposter, DF_unknown_imposter, subject)
+
+
+        X_train, X_test = model_selection.train_test_split(X, test_size=0.2, random_state=A._random_state, stratify=X['ID'])
+        # X_train, X_val  = model_selection.train_test_split(X_train, test_size=0.2, random_state=A._random_state, stratify=X_train['ID'])#todo
+
+        # X_test = pd.concat([X_test, U], axis=0)
+        
+        X_train, X_test, U = A.scaler(X_train, X_test, U)
+        
+        X_train, X_test, U, num_pc = A.projector(X_train, X_test, U, feature_set_names)
+
+
+        
+        classifier = svm.SVC(kernel=A._SVM_kernel , probability=True, random_state=A._random_state)
+
+        best_model_svm = classifier.fit(X_train.iloc[:, :-1].values, X_train.iloc[:, -1].values)
+        y_pred_tr = best_model_svm.predict_proba(X_train.iloc[:, :-1].values)[:, 1]
+        FRR_t, FAR_t = A.FXR_calculater(X_train["ID"], y_pred_tr)
+        EER_svm, t_idx = A.compute_eer(FRR_t, FAR_t)
+        TH_svm = A._THRESHOLDs[t_idx]
+        
+
+
+        positives = X_train[X_train["ID"]== 1.0] 
+        negatives = X_train[X_train["ID"]== 0.0] 
+        similarity_matrix_positives, similarity_matrix_negatives = A.compute_score_matrix(positives, negatives)
+        client_scores, imposter_scores = A.compute_scores(similarity_matrix_positives, similarity_matrix_negatives, criteria="min")
+        y_pred_tr = np.append(client_scores.data, imposter_scores.data)
+
+        FRR_t, FAR_t = A.FXR_calculater(X_train["ID"], y_pred_tr)
+        EER_tm, t_idx = A.compute_eer(FRR_t, FAR_t)
+        TH_tm = A._THRESHOLDs[t_idx]
+        
+        breakpoint()
+        y_pred = best_model_svm.predict_proba(X_test.iloc[:, :-1].values)[:, 1]
+
+        y_pred1 = y_pred.copy()
+        y_pred[y_pred >= TH_svm ] = 1
+        y_pred[y_pred <  TH_svm ] = 0
+
+        y_pred_U = best_model_svm.predict_proba(U.iloc[:, :-1].values)[:, 1]
+        y_pred_U[y_pred_U >= TH_svm ] = 1.
+        y_pred_U[y_pred_U <  TH_svm ] = 0.
+
+        AUS, FAU = [], []
+            
+
+            
+        if self._classifier_name=="TM":
+            positives = x_train[x_train["ID"]== 1.0]
+            similarity_matrix_positives, similarity_matrix_negatives = self.compute_score_matrix(positives, x_test_U)
+            client_scores, imposter_scores = self.compute_scores(similarity_matrix_positives, similarity_matrix_negatives, criteria="min")
+            y_pred_U = imposter_scores.data
+
+        else:
+            
+
+            y_pred_U1 = y_pred_U.copy()
+
+            y_pred_U[y_pred_U >= TH ] = 1.
+            y_pred_U[y_pred_U <  TH ] = 0.
+            AUS_All = accuracy_score(x_test_U["ID"].values, y_pred_U)*100 
+            FAU_All = np.where(y_pred_U==1)[0].shape[0]
+
+        
+        
+        if self._classifier_name=="TM":
+            positives = x_train[x_train["ID"]== 1.0]
+            similarity_matrix_positives, similarity_matrix_negatives = A.compute_score_matrix(positives, x_test)
+            client_scores, imposter_scores = A.compute_scores(similarity_matrix_positives, similarity_matrix_negatives, criteria="min")
+            y_pred = imposter_scores.data
+
+            
+        
+        y_pred1 = y_pred.copy()
+        y_pred[y_pred >= TH ] = 1
+        y_pred[y_pred <  TH ] = 0
+
+
+        ACC_ud = accuracy_score(x_test["ID"].values, y_pred)*100 
+        CM_ud = confusion_matrix(x_test.iloc[:,-1].values, y_pred)
+        spec = (CM_ud[0,0]/(CM_ud[0,1]+CM_ud[0,0]+1e-33))*100
+        sens = (CM_ud[1,1]/(CM_ud[1,0]+CM_ud[1,1]+1e-33))*100
+        BACC_ud = (spec + sens)/2 
+        FAR_ud = CM_ud[0,1]/CM_ud[0,:].sum()
+        FRR_ud = CM_ud[1,0]/CM_ud[1,:].sum()
+
+        AUS, FAU = 100, 0
+        AUS_All, FAU_All = 100, 0
+
+
+
+
+            
+        # #todo
+        result, CM_bd, CM_ud = A.ML_classifier(X_train, X_test, U, subject)
+
+        return result + CM_ud.reshape(1,-1).tolist()[0] + CM_bd.reshape(1,-1).tolist()[0] + [num_pc]
+       
+        
+
+        ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK', default=multiprocessing.cpu_count()))
+        pool = multiprocessing.Pool(processes=ncpus)
+        # breakpoinqt()
+        for fold, (train_index, test_index) in enumerate(CV.split(X.iloc[:,:-1], X.iloc[:,-1])):
+            # breakpoint()
+            res = pool.apply_async(A.fold_calculating, args=(feature_set_names, subject, X, U, train_index, test_index, fold,), callback=cv_results.append)
+            # print(res.get())  # this will raise an exception if it happens within func
+
+            # cv_results.append(A.fold_calculating(feature_set_names, subject, X, U, train_index, test_index, fold)) #todo: comment this line to run all folds
+            # break #todo: comment this line to run all folds
+
+        pool.close()
+        pool.join()
+        
+        result = A.compacting_results(cv_results, subject)
+        results.append(result)
+        # breakpoint()
+    return pd.DataFrame(results, columns=A._col)
+
+    result = get_results(A, feature_set_names, DF_feature_all)
+    result['pipeline'] = 'pipeline 1: COP and GRf'
+    A.collect_results(result, nam)
+
+
 if __name__ == "__main__":
     logger.info("Starting !!!")
     tic1 = timeit.default_timer()
@@ -4151,6 +4804,9 @@ if __name__ == "__main__":
     # FT()
     # test_all_pipelines()
     # new_image()
+    dd = second_retrain()
+    breakpoint()
+
     aa = Toon_p100()
     path = os.path.join( os.getcwd(), "results", "e2e", "TM.xlsx")
     aa.to_excel(path)
