@@ -2399,7 +2399,7 @@ class Deep_network(PreFeatures):
         checkpoint = [
                 tf.keras.callbacks.ModelCheckpoint(    path, save_best_only=True, monitor="val_loss", verbose=1, save_weights_only = False),
                 # tf.keras.callbacks.ReduceLROnPlateau(  monitor="val_loss", factor=0.5, patience=30, min_lr=0.00001),
-                tf.keras.callbacks.EarlyStopping(      monitor="val_loss", patience=20, verbose=1),
+                # tf.keras.callbacks.EarlyStopping(      monitor="val_loss", patience=20, verbose=1),
                 # tf.keras.callbacks.TensorBoard(        log_dir=TensorBoard_logs+str(self._test_id))   
                 ]    
         
@@ -2569,39 +2569,34 @@ class Deep_network(PreFeatures):
         
 
     def second_training(self, A, model, subject, train_ds, val_ds, test_ds, class_weight, update):
-        # AUTOTUNE = tf.data.AUTOTUNE
-
-        # train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(1000)
-        # train_ds = train_ds.batch(A._CNN_batch_size)
-        # train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-        # val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)).shuffle(1000)
-        # val_ds = val_ds.batch(A._CNN_batch_size)
-        # val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-        # test_ds = tf.data.Dataset.from_tensor_slices((X_test, y_test))
-        # test_ds = test_ds.batch(A._CNN_batch_size)
-        # test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
-            
-            
-
-            # if CNN_name == "ResNet50":
-            #     train_ds = train_ds.map(self.resize_images)
-            #     test_ds = test_ds.map(self.resize_images)
-                # val_ds = val_ds.map(self.resize_images)
+        
         if update == True:
             path = os.path.join( os.getcwd(), "results", "results", "second_train", model.name, str(subject), "best")
             binary_model = load_model(path)
             
         else:
             x = model.layers[-2].output  
-            output = tf.keras.layers.Dense(1, name="prediction1")(x)   
+            output = tf.keras.layers.Dense(1, activation='softmax', name="prediction1")(x)   
             binary_model = Model(inputs=model.input, outputs=output)
 
-        binary_model.compile(optimizer=A._CNN_optimizer, loss=tf.keras.losses.BinaryCrossentropy(from_logits=True), metrics=["Accuracy"])#if softmaxt then from_logits=False otherwise True
 
-            # TensorBoard_logs =  os.path.join( os.getcwd(), "logs", "TensorBoard_logs", "_".join(("FS", str(os.getpid()), pre_image_name, str(self._test_id)) )  )
-        path = os.path.join( os.getcwd(), "results", "results", "second_train", model.name, str(subject), "best")
+        METRICS = [
+            tf.keras.metrics.TrueNegatives(name='tn'),
+            tf.keras.metrics.FalseNegatives(name='fn'), 
+            tf.keras.metrics.FalsePositives(name='fp'),
+            tf.keras.metrics.TruePositives(name='tp'),
+            tf.keras.metrics.BinaryAccuracy(name='accuracy'),
+            tf.keras.metrics.Precision(name='precision'),
+            tf.keras.metrics.Recall(name='recall'),
+            tf.keras.metrics.AUC(name='auc'),
+            tf.keras.metrics.AUC(name='prc', curve='PR'), # precision-recall curve
+        ]
+
+
+        binary_model.compile(optimizer=A._CNN_optimizer, loss=tf.keras.losses.BinaryCrossentropy(), metrics=METRICS)#if softmaxt then from_logits=False otherwise True
+
+        # TensorBoard_logs =  os.path.join( os.getcwd(), "logs", "TensorBoard_logs", "_".join(("FS", str(os.getpid()), pre_image_name, str(self._test_id)) )  )
+        path = os.path.join( os.getcwd(), "results", "results", "second_train", model.name, str(subject), "best.h5")
 
         checkpoint = [
                     tf.keras.callbacks.ModelCheckpoint(    path, save_best_only=True, monitor="val_loss", verbose=1, save_weights_only = False),
@@ -2619,25 +2614,30 @@ class Deep_network(PreFeatures):
                 callbacks=[checkpoint],
                 epochs=A._CNN_epochs,
                 validation_data=val_ds,
-                verbose=A._verbose,
+                verbose=2,#A._verbose,
                 class_weight=class_weight,
                 use_multiprocessing=True
             )
+        
+        
 
         logger.info("best_model")
         best_model = load_model(path)
-        test_loss, test_acc = best_model.evaluate(test_ds, verbose=2)
-        logger.info(f"  test_loss: {np.round(test_loss)}, test_acc: {int(np.round(test_acc*100))}%")
+        results = best_model.evaluate(test_ds, verbose=0)
 
+        for name, value in zip(best_model.metrics_names, results):
+            print(name, ': ', value)
+        print()
 
-            # breakpoint()
-        path = os.path.join( os.getcwd(), "results", "results", "second_train", model.name, str(subject), "earlystop_model")
-        binary_model.save(path)
+        
+        history.history['spec'] = [ history.history['tn'][k] / (history.history['tn'][k] + history.history['fp'][k] + 1e-6) for k in range(len(history.history['tn'])) ]
+        history.history['sen'] = [ history.history['tp'][k] / (history.history['tp'][k] + history.history['fn'][k] + 1e-6) for k in range(len(history.history['tp'])) ]
+        history.history['bac'] = [ (history.history['sen'][k] + history.history['spec'][k])/2 for k in range(len(history.history['sen'])) ]
 
-        logger.info("earlystop_model")
-        earlystop_model = load_model(path)
-        test_loss, test_acc = earlystop_model.evaluate(test_ds, verbose=2)
-        logger.info(f"  test_loss: {np.round(test_loss)}, test_acc: {int(np.round(test_acc*100))}%")
+        history.history['val_spec'] = [ history.history['val_tn'][k] / (history.history['val_tn'][k] + history.history['val_fp'][k] + 1e-6) for k in range(len(history.history['val_tn'])) ]
+        history.history['val_sen'] = [ history.history['val_tp'][k] / (history.history['val_tp'][k] + history.history['val_fn'][k] + 1e-6) for k in range(len(history.history['val_tp'])) ]
+        history.history['val_bac'] = [ (history.history['val_sen'][k] + history.history['val_spec'][k])/2 for k in range(len(history.history['val_sen'])) ]
+        
 
         if update==True:
             path = os.path.join( os.getcwd(), "results", "results", "second_train", model.name, str(subject), "history.csv")
@@ -2645,34 +2645,89 @@ class Deep_network(PreFeatures):
             hist_df = pd.DataFrame(history.history) 
             hist_df = pd.concat((temp, hist_df), axis=0).reset_index(drop=True)
             hist_df.to_csv(path)
+
+
         else:
             hist_df = pd.DataFrame(history.history) 
             path = os.path.join( os.getcwd(), "results", "results", "second_train", model.name, str(subject), "history.csv")
             hist_df.to_csv(path)
 
-        fig, ax = plt.subplots(1,2,figsize=(10,6))
-        ax[0].plot(hist_df['Accuracy'], label='Train Accuracy')
-        ax[0].plot(hist_df['val_Accuracy'], label = 'Val Accuracy')
+        self.plot_metrics(hist_df)
+
+
+        # fig, ax = plt.subplots(1,2,figsize=(10,6))
+        # ax[0].plot(hist_df['Accuracy'], label='Train Accuracy')
+        # ax[0].plot(hist_df['val_Accuracy'], label = 'Val Accuracy')
             
-        ax[0].set_title('Accuracy')
-        ax[0].set_xlabel('Epoch')
-        ax[0].set_ylabel('Accuracy')
-        ax[0].legend()
+        # ax[0].set_title('Accuracy')
+        # ax[0].set_xlabel('Epoch')
+        # ax[0].set_ylabel('Accuracy')
+        # ax[0].legend()
 
 
-            # summarize history for loss
-        ax[1].plot(hist_df['loss'], label='Train Loss')
-        ax[1].plot(hist_df['val_loss'], label='Val Loss')
-        ax[1].set_title('Loss')
-        ax[1].set_ylabel('loss')
-        ax[1].set_xlabel('epoch')
-        ax[1].legend()
+        #     # summarize history for loss
+        # ax[1].plot(hist_df['loss'], label='Train Loss')
+        # ax[1].plot(hist_df['val_loss'], label='Val Loss')
+        # ax[1].set_title('Loss')
+        # ax[1].set_ylabel('loss')
+        # ax[1].set_xlabel('epoch')
+        # ax[1].legend()
 
-        path = os.path.join( os.getcwd(), "results", "results", "second_train", model.name, str(subject), "plot.png")
+        path = os.path.join( os.getcwd(), "results", "results", "second_train", model.name, str(subject), "metric.png")
         plt.savefig(path)   
+
+
+        predictions = np.array([])
+        labels =  np.array([])
+        for x, y in test_ds:
+            predictions = np.concatenate([predictions, best_model.predict(x).squeeze()])
+            labels = np.concatenate([labels, y.numpy().squeeze()])
+
+
+        self.plot_cm(labels, predictions, p=0.5)
+        path = os.path.join( os.getcwd(), "results", "results", "second_train", model.name, str(subject), "cm.png")
+        plt.savefig(path)
         plt.close()
-            
+    
         return best_model
+
+
+    def plot_cm(self, labels, predictions, p=0.5):
+        cm = confusion_matrix(labels, predictions > p)
+        plt.figure(figsize=(5,5))
+        sns.heatmap(cm, annot=True, fmt="d")
+        plt.title('Confusion matrix @{:.2f}'.format(p))
+        plt.ylabel('Actual label')
+        plt.xlabel('Predicted label')
+
+        print('Legitimate Transactions Detected (True Negatives): ', cm[0][0])
+        print('Legitimate Transactions Incorrectly Detected (False Positives): ', cm[0][1])
+        print('Fraudulent Transactions Missed (False Negatives): ', cm[1][0])
+        print('Fraudulent Transactions Detected (True Positives): ', cm[1][1])
+        print('Total Fraudulent Transactions: ', np.sum(cm[1]))
+
+
+    def plot_metrics(self, history):
+        metrics = ['loss', 'bac']
+        colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+
+        for n, metric in enumerate(metrics):
+            name = metric.replace("_"," ").capitalize()
+            plt.subplot(2,1,n+1)
+            plt.plot(history[metric], color=colors[0], label='Train')
+            plt.plot(history['val_'+metric],
+                    color=colors[0], linestyle="--", label='Val')
+            plt.xlabel('Epoch')
+            plt.ylabel(name)
+            if metric == 'loss':
+                plt.ylim([0, plt.ylim()[1]])
+            elif metric == 'bac':
+                plt.ylim([0.8,1])
+            else:
+                plt.ylim([0,1])
+
+            plt.legend()
+
 
 
 class Seamese(Deep_network):
@@ -3392,22 +3447,6 @@ class BalancedAccuracy(tf.keras.metrics.Metric):
         self.bac.assign(0)
 
 
-METRICS = [
-    # tf.keras.metrics.SparseCategoricalCrossentropy(name='accuracy'),
-    # BalancedAccuracy(),
-    tf.keras.metrics.Precision(name='precision'),
-    # tf.keras.metrics.Recall(name='recall'),
-    # F1_Score(),
-    # Specificity(),
-    # Sensitivity(),
-    # tf.keras.metrics.TruePositives(name='tp'),
-    # tf.keras.metrics.FalsePositives(name='fp'),
-    # tf.keras.metrics.TrueNegatives(name='tn'),
-    # tf.keras.metrics.FalseNegatives(name='fn'),
-    # tf.keras.metrics.AUC(name='auc'),
-
-]
-
 
 def Participant_Count():
     setting = {
@@ -4062,7 +4101,7 @@ def train_e2e_CNN():
         "_combination": True,
 
         "_CNN_weights": 'imagenet',
-        "_verbose": False,
+        "_verbose": True,
         "_CNN_batch_size": 32,
         "_CNN_base_model": '',
         "_CNN_epochs": 500,
@@ -4114,7 +4153,9 @@ def train_e2e_CNN():
     GRFs, COPs, COAs, pre_images, labels = A.loading_pre_features(dataset_name)
     pre_image1 = A.loading_image_features_from_list(pre_images, image_feature_name)
 
-    
+    pre_image1 = A.normalizing_image_features(pre_image1)
+
+
     subjects, samples = np.unique(labels["ID"].values, return_counts=True)
 
     ss = [a[0] for a in list(zip(subjects, samples)) if a[1]>=A._min_number_of_sample]
@@ -4149,7 +4190,7 @@ def train_e2e_CNN():
         result = A.test_e2e( (pre_image, label_), image_feature_name, CNN_name, subject, U_data=(U_pre_image, U_label['ID'].values))
 
         results.append(result)
-        breakpoint()
+        # breakpoint()
     
     path = os.path.join( os.getcwd(), "results", "e2e", "result.xlsx")
     pd.DataFrame(results, columns=A._col).to_excel(path)
@@ -4297,7 +4338,7 @@ def second_retrain():
 
         "dataset_name": 'casia',
 
-        "_classifier_name": 'TM',
+        "_classifier_name": 'svm',
         "_combination": True,
 
         "_CNN_weights": 'imagenet',
@@ -4341,7 +4382,7 @@ def second_retrain():
 
     
     A._CNN_batch_size = 64
-    A._CNN_epochs = 1
+    A._CNN_epochs = 100
     A._CNN_optimizer = tf.keras.optimizers.Adadelta()
     A._val_size = 0.2
 
@@ -4355,14 +4396,14 @@ def second_retrain():
     GRFs, COPs, COAs, pre_images, labels = A.loading_pre_features(dataset_name)
     pre_image1 = A.loading_image_features_from_list(pre_images, image_feature_name)
 
-    images_feat_norm = A.normalizing_image_features(pre_image1)
+    images_feat_norm = pre_image1/255
 
 
     subjects, samples = np.unique(labels["ID"].values, return_counts=True)
 
     ss = [a[0] for a in list(zip(subjects, samples)) if a[1]>=A._min_number_of_sample]
     
-    known_imposter_list = ss[32:32+A._known_imposter] 
+    known_imposter_list = ss[ 32:32+A._known_imposter ] 
     unknown_imposter_list = ss[-A._unknown_imposter:] 
 
     
@@ -4381,12 +4422,10 @@ def second_retrain():
 
     results = list()
     for idx, subject in enumerate(known_imposter_list):
-        # if idx == 0:
+        # if idx < 23:
         #     continue
 
         logger.info(f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})")
-
-        
 
         label_ = np.expand_dims(label_binariezed[:,idx], axis=1)
 
@@ -4420,53 +4459,58 @@ def second_retrain():
         weight_for_1 = (1 / pos) * (total / 2.0)
         class_weight = {0: weight_for_0, 1: weight_for_1}
 
-        binary_model = A.second_training(A, model, subject, train_ds, val_ds, test_ds, class_weight, update=True)
+        binary_model = A.second_training(A, model, subject, train_ds, val_ds, test_ds, class_weight, update=False)
+        # logger.info(f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})")
+        # sys.exit()
 
+        path = os.path.join( os.getcwd(), "results", "results", "second_train", model.name, str(subject), "best.h5")
+        binary_model = load_model(path)
 
-    #     x = binary_model.layers[-2].output  
-    #     binary_model1 = Model(inputs=binary_model.input, outputs=x)
+        x = binary_model.layers[-2].output  
+        binary_model1 = Model(inputs=binary_model.input, outputs=x)
 
-    #     train_features = A.extract_deep_features(train_ds, binary_model1)
-    #     val_features = A.extract_deep_features(val_ds, binary_model1)
-    #     test_features = A.extract_deep_features(test_ds, binary_model1)
-    #     U_features = A.extract_deep_features(U_ds, binary_model1)
+        train_features = A.extract_deep_features(train_ds, binary_model1)
+        val_features = A.extract_deep_features(val_ds, binary_model1)
+        test_features = A.extract_deep_features(test_ds, binary_model1)
+        U_features = A.extract_deep_features(U_ds, binary_model1)
         
-    #     train_features, val_features, test_features, U_features = A.scaler(train_features, val_features, test_features, U_features)
+        train_features, val_features, test_features, U_features = A.scaler(train_features, val_features, test_features, U_features)
 
-    #     train_features, val_features, test_features, U_features, num_pc = A.projector(['deep_second_trained'], train_features, val_features, test_features, U_features)
+        train_features, val_features, test_features, U_features, num_pc = A.projector(['deep_second_trained'], train_features, val_features, test_features, U_features)
         
-    #     result = A.ML_classifier(subject, x_train=train_features, x_val=val_features, x_test=test_features, x_test_U=U_features)
-    #     result['num_pc']=num_pc
+        result = A.ML_classifier(subject, x_train=train_features, x_val=val_features, x_test=test_features, x_test_U=U_features)
+        result['num_pc']=num_pc
 
-    #     results = {
-    #         "test_id": A._test_id,
-    #         "subject": subject, 
-    #         "combination": A._combination, 
-    #         "classifier_name": A._classifier_name, 
-    #         "normilizing": A._normilizing, 
-    #         "persentage": A._persentage, 
-    #         "KFold": "-",
-    #         "known_imposter": A._known_imposter, 
-    #         "unknown_imposter": A._unknown_imposter, 
-    #         "min_number_of_sample": A._min_number_of_sample,
-    #         "training_samples": y_train.shape[0],
-    #         "pos_training_samples": y_train.sum(),
-    #         "validation_samples": y_val.shape[0],
-    #         "pos_validation_samples": y_val.sum(),
-    #         "testing_samples": y_test.shape[0],
-    #         "pos_testing_samples": y_test.sum(),
-    #     }
-    #     results.update(result)
+        results = {
+            "test_id": A._test_id,
+            "subject": subject, 
+            "combination": A._combination, 
+            "classifier_name": A._classifier_name, 
+            "normilizing": A._normilizing, 
+            "persentage": A._persentage, 
+            "KFold": "-",
+            "known_imposter": A._known_imposter, 
+            "unknown_imposter": A._unknown_imposter, 
+            "min_number_of_sample": A._min_number_of_sample,
+            "training_samples": y_train.shape[0],
+            "pos_training_samples": y_train.sum(),
+            "validation_samples": y_val.shape[0],
+            "pos_validation_samples": y_val.sum(),
+            "testing_samples": y_test.shape[0],
+            "pos_testing_samples": y_test.sum(),
+        }
+        results.update(result)
 
-    #     for i in results:
-    #         try:
-    #             results_dict[i].append(results[i])
-    #         except UnboundLocalError:
-    #             results_dict={i:[] for i in results.keys()}
-    #             results_dict[i].append(results[i])
+        for i in results:
+            try:
+                results_dict[i].append(results[i])
+            except UnboundLocalError:
+                results_dict={i:[] for i in results.keys()}
+                results_dict[i].append(results[i])
 
 
-    # results = pd.DataFrame.from_dict(results_dict)
+    results = pd.DataFrame.from_dict(results_dict)
+    return results
 
 
 
@@ -4804,16 +4848,19 @@ if __name__ == "__main__":
     # FT()
     # test_all_pipelines()
     # new_image()
+
     dd = second_retrain()
+    path = os.path.join( os.getcwd(), "results", "results", "second_train", "lightweight_CNN", "best.xlsx")
+    dd.to_excel(path)
     breakpoint()
 
-    aa = Toon_p100()
-    path = os.path.join( os.getcwd(), "results", "e2e", "TM.xlsx")
-    aa.to_excel(path)
+    # aa = Toon_p100()
+    # path = os.path.join( os.getcwd(), "results", "e2e", "TM.xlsx")
+    # aa.to_excel(path)
+    # breakpoint()
 
-    breakpoint()
     # train_e2e_CNN()
-    breakpoint()
+    # breakpoint()
 
     toc1 = timeit.default_timer()
     logger.info("Done ({:2.2f} process time)!!!\n\n\n".format(toc1-tic1))
