@@ -1,12 +1,15 @@
 {
     "workbench.colorTheme": "Default Dark+",
+    "files.autoSave": "onFocusChange",
     "editor.fontSize": 14,
     "editor.fontWeight": "500",
-    "debug.console.fontSize": 14,
-    "terminal.integrated.fontSize": 14,
+    "debug.console.fontSize": 13,
+    "terminal.integrated.fontFamily": "Consolas, 'Courier New', monospace",
+    "editor.fontFamily": "Consolas, 'Courier New', monospace",
+    "terminal.integrated.fontSize": 13,
     "terminal.integrated.fontWeight": "500",
-    "window.zoomLevel": 2,
-    "python.defaultInterpreterPath": "c:/Users/skazemi1/AppData/Local/Programs/Python/Python39/python.exe",
+    "window.zoomLevel": 1,
+    "python.defaultInterpreterPath": "c:/Users/skazemi1/AppData/Local/Programs/Python/Python310/python.exe",
     "python.formatting.provider": "black",
     "editor.formatOnSave": false,
     "python.linting.enabled": false,
@@ -21,7 +24,7 @@
     // Controls whether opened editors show as preview. Preview editors do not keep open and are reused until explicitly set to be kept open (e.g. via double click or editing) and show up with an italic font style.
     "workbench.editor.enablePreview": true,
     "[plaintext]": {
-        "editor.quickSuggestions": false
+        "editor.quickSuggestions": true,
     },
     "editor.quickSuggestionsDelay": 100,
     "zenMode.centerLayout": false,

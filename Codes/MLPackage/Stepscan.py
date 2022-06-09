@@ -14,12 +14,12 @@ from itertools import product
 
 # keras imports
 import tensorflow as tf
+from tensorflow import keras 
 
-
-from tensorflow.keras import preprocessing, callbacks
-from tensorflow.keras.models import Model, load_model
-from tensorflow.keras.layers import Input, Dense, GlobalAveragePooling2D, Flatten
-import tensorflow.keras.backend as K
+from keras import preprocessing, callbacks
+from keras.models import Model, load_model
+from keras.layers import Input, Dense, GlobalAveragePooling2D, Flatten
+import keras.backend as K
 
 from sklearn.cluster import KMeans
 from sklearn import model_selection
@@ -32,7 +32,6 @@ from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, roc_curv
 
 import matplotlib.pyplot as plt
 import seaborn as sns
-
 
 sys.path.append('C:\Project\master-project\Codes\MLPackage')
 import Butterworth

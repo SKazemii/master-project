@@ -909,9 +909,7 @@ def second_retrain():
     A._known_imposter = 23
     A._unknown_imposter = 10
 
-    image_feature_name = [
-        "P100"
-    ]  # ["CD", "PTI", "Tmin", "Tmax", "P50", "P60", "P70", "P80", "P90", "P100"]
+    image_feature_name = ["P100"]  # ["CD", "PTI", "Tmin", "Tmax", "P50", "P60", "P70", "P80", "P90", "P100"]
     dataset_name = "casia"
     CNN_name = "lightweight_CNN"
 
@@ -944,9 +942,7 @@ def second_retrain():
         # if idx < 23:
         #     continue
 
-        logger.info(
-            f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})"
-        )
+        logger.info(f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})")
 
         label_ = np.expand_dims(label_binariezed[:, idx], axis=1)
 
