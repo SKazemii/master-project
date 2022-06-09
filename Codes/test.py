@@ -902,7 +902,7 @@ def second_retrain():
     A = Pipeline(setting)
 
     A._CNN_batch_size = 64
-    A._CNN_epochs = 100
+    A._CNN_epochs = 400
     A._CNN_optimizer = tf.keras.optimizers.Adadelta()
     A._val_size = 0.2
 
@@ -933,7 +933,6 @@ def second_retrain():
 
     path = os.path.join(os.getcwd(), "results", "results", CNN_name, "best.h5")
     model = load_model(path)
-    breakpoint()
 
     label_binariezed = tf.keras.utils.to_categorical(A.label_encoding(label))
 
@@ -946,20 +945,8 @@ def second_retrain():
 
         label_ = np.expand_dims(label_binariezed[:, idx], axis=1)
 
-        X_train, X_test, y_train, y_test = model_selection.train_test_split(
-            pre_image,
-            label_,
-            test_size=0.2,
-            random_state=A._random_state,
-            stratify=label_,
-        )
-        X_train, X_val, y_train, y_val = model_selection.train_test_split(
-            X_train,
-            y_train,
-            test_size=0.2,
-            random_state=A._random_state,
-            stratify=y_train,
-        )  # todo
+        X_train, X_test, y_train, y_test = model_selection.train_test_split( pre_image, label_, test_size=0.2, random_state=A._random_state, stratify=label_, )
+        X_train, X_val, y_train, y_val = model_selection.train_test_split(  X_train,  y_train, test_size=0.2,  random_state=A._random_state,  stratify=y_train, )  # todo
 
         AUTOTUNE = tf.data.AUTOTUNE
 
@@ -975,9 +962,7 @@ def second_retrain():
         test_ds = test_ds.batch(A._CNN_batch_size)
         test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
 
-        U_ds = tf.data.Dataset.from_tensor_slices(
-            (U_pre_image, np.zeros((U_label["ID"].shape[0], 1)))
-        )
+        U_ds = tf.data.Dataset.from_tensor_slices((U_pre_image, np.zeros((U_label["ID"].shape[0], 1))))
         U_ds = U_ds.batch(A._CNN_batch_size)
         U_ds = U_ds.cache().prefetch(buffer_size=AUTOTUNE)
 
@@ -991,23 +976,12 @@ def second_retrain():
         class_weight = {0: weight_for_0, 1: weight_for_1}
 
         
-        
+        binary_model = A.second_training(model, subject, train_ds, val_ds, test_ds, class_weight, update=False)
+        logger.info(f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})")
+        sys.exit()
 
-
-        binary_model = A.second_training(model, subject, train_ds, val_ds, test_ds, class_weight, update=True)
-        # logger.info(f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})")
-        # sys.exit()
-
-        path = os.path.join(
-            os.getcwd(),
-            "results",
-            "results",
-            "second_train",
-            model.name,
-            str(subject),
-            "best.h5",
-        )
-        binary_model = load_model(path)
+        path = os.path.join(os.getcwd(), "results", "results", "second_train", model.name, str(subject), "best.h5")
+        binary_model = load_model(path, custom_objects={"BalancedAccuracy": BalancedAccuracy()})
 
         x = binary_model.layers[-2].output
         binary_model1 = Model(inputs=binary_model.input, outputs=x)
@@ -1017,25 +991,11 @@ def second_retrain():
         test_features = A.extract_deep_features(test_ds, binary_model1)
         U_features = A.extract_deep_features(U_ds, binary_model1)
 
-        train_features, val_features, test_features, U_features = A.scaler(
-            train_features, val_features, test_features, U_features
-        )
+        train_features, val_features, test_features, U_features = A.scaler( train_features, val_features, test_features, U_features)
 
-        train_features, val_features, test_features, U_features, num_pc = A.projector(
-            ["deep_second_trained"],
-            train_features,
-            val_features,
-            test_features,
-            U_features,
-        )
+        train_features, val_features, test_features, U_features, num_pc = A.projector(["deep_second_trained"], train_features,val_features, test_features, U_features,)
 
-        result = A.ML_classifier(
-            subject,
-            x_train=train_features,
-            x_val=val_features,
-            x_test=test_features,
-            x_test_U=U_features,
-        )
+        result = A.ML_classifier(subject, x_train=train_features, x_val=val_features, x_test=test_features, x_test_U=U_features)
         result["num_pc"] = num_pc
 
         results = {
@@ -1064,8 +1024,9 @@ def second_retrain():
             except UnboundLocalError:
                 results_dict = {i: [] for i in results.keys()}
                 results_dict[i].append(results[i])
+        # breakpoint()
 
-    results = pd.DataFrame.from_dict(results_dict)
+    # results = pd.DataFrame.from_dict(results_dict)
     return results
 
 

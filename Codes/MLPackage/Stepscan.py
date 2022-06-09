@@ -33,7 +33,7 @@ from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, roc_curv
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-sys.path.append('C:\Project\master-project\Codes\MLPackage')
+sys.path.append(os.path.join(os.getcwd(), "Codes", "MLPackage"))
 import Butterworth
 import convertGS2BW
 
@@ -90,6 +90,35 @@ def create_logger(level):
 
 
 logger = create_logger(logging.DEBUG)
+
+
+class BalancedAccuracy(tf.keras.metrics.Metric):
+    def __init__(self, name="bac", **kwargs):
+        super().__init__(name=name, **kwargs)
+        self.tp = tf.keras.metrics.TruePositives()
+        self.tn = tf.keras.metrics.TrueNegatives()
+        self.fp = tf.keras.metrics.FalsePositives()
+        self.fn = tf.keras.metrics.FalseNegatives()
+        self.bac = self.add_weight(name="bac", initializer="zeros")
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        tp = self.tp(y_true, y_pred)
+        tn = self.tn(y_true, y_pred)
+        fp = self.fp(y_true, y_pred)
+        fn = self.fn(y_true, y_pred)
+        spec = (tn) / (fp + tn + 1e-6)
+        sen = (tp) / (tp + fn + 1e-6)
+        self.bac.assign((sen + spec) / 2)
+
+    def result(self):
+        return self.bac
+
+    def reset_state(self):
+        self.tp.reset_states()
+        self.tn.reset_states()
+        self.fp.reset_states()
+        self.fn.reset_states()
+        self.bac.assign(0)
 
 
 class Database(object):
@@ -3253,46 +3282,39 @@ class Deep_network(PreFeatures):
 
         if update == True:
             path = os.path.join( os.getcwd(), "results", "results", "second_train", model.name, str(subject), "best.h5", )
-            binary_model = load_model(path)
+            binary_model = load_model(path, custom_objects={"BalancedAccuracy": BalancedAccuracy() })
 
         else:
-            # x = model.layers[-2].output
-            # output = tf.keras.layers.Dense(1, activation="softmax", name="prediction1")(x)
-            # binary_model = Model(inputs=model.input, outputs=output)
-            binary_model = self.lightweight_CNN((60,40,1), 1)
+            x = model.layers[-2].output
+            output = tf.keras.layers.Dense(1, activation="sigmoid", name="prediction1")(x)
+            binary_model = Model(inputs=model.input, outputs=output)
+            # breakpoint()
+            # binary_model = self.lightweight_CNN((60,40,1), 1)
 
         METRICS = [
             tf.keras.metrics.TrueNegatives(name="tn"),
-            tf.keras.metrics.FalseNegatives(name="fn"),
             tf.keras.metrics.FalsePositives(name="fp"),
+            tf.keras.metrics.FalseNegatives(name="fn"),
             tf.keras.metrics.TruePositives(name="tp"),
             tf.keras.metrics.BinaryAccuracy(name="accuracy"),
             tf.keras.metrics.Precision(name="precision"),
             tf.keras.metrics.Recall(name="recall"),
             tf.keras.metrics.AUC(name="auc"),
             tf.keras.metrics.AUC(name="prc", curve="PR"),  # precision-recall curve
+            BalancedAccuracy(name="bacc"),
         ]
 
-        binary_model.compile(
-            optimizer=self._CNN_optimizer,
-            loss=tf.keras.losses.BinaryCrossentropy(),
-            metrics=METRICS,
-        )  # if softmaxt then from_logits=False otherwise True
+        binary_model.compile(optimizer=self._CNN_optimizer, loss=tf.keras.losses.BinaryCrossentropy(), metrics=METRICS)  # if softmaxt then from_logits=False otherwise True
 
-        path = os.path.join( os.getcwd(), "results", "results", "second_train", model.name, str(subject), "best.h5",)
+        path = os.path.join( os.getcwd(), "results", "results", "second_train", model.name, str(subject), "best.h5")
         checkpoint = [
-            tf.keras.callbacks.ModelCheckpoint(
-                path,
-                save_best_only=True,
-                monitor="val_loss",
-                verbose=1,
-                save_weights_only=False,
-            ),
+            tf.keras.callbacks.ModelCheckpoint( path, save_best_only=True, monitor="val_loss", verbose=1, save_weights_only=False),
             # tf.keras.callbacks.ReduceLROnPlateau(  monitor="val_loss", factor=0.5, patience=30, min_lr=0.00001),
             # tf.keras.callbacks.EarlyStopping(      monitor="val_loss", patience=20, verbose=1),
             # tf.keras.callbacks.TensorBoard(        log_dir=TensorBoard_logs+str(self._test_id))
         ]
-
+        
+        
         history = binary_model.fit(
             train_ds,
             batch_size=self._CNN_batch_size,
@@ -3305,53 +3327,23 @@ class Deep_network(PreFeatures):
         )
 
         logger.info("best_model")
-        best_model = load_model(path)
+        best_model = load_model(path, custom_objects={"BalancedAccuracy": BalancedAccuracy()})
         results = best_model.evaluate(test_ds, verbose=0)
 
         for name, value in zip(best_model.metrics_names, results):
             print(name, ": ", value)
         print()
 
-        history.history["spec"] = [
-            history.history["tn"][k]
-            / (history.history["tn"][k] + history.history["fp"][k] + 1e-6)
-            for k in range(len(history.history["tn"]))
-        ]
-        history.history["sen"] = [
-            history.history["tp"][k]
-            / (history.history["tp"][k] + history.history["fn"][k] + 1e-6)
-            for k in range(len(history.history["tp"]))
-        ]
-        history.history["bac"] = [
-            (history.history["sen"][k] + history.history["spec"][k]) / 2
-            for k in range(len(history.history["sen"]))
-        ]
+        # history.history["spec"] = [history.history["tn"][k] / (history.history["tn"][k] + history.history["fp"][k] + 1e-6) for k in range(len(history.history["tn"])) ]
+        # history.history["sen"] = [ history.history["tp"][k] / (history.history["tp"][k] + history.history["fn"][k] + 1e-6) for k in range(len(history.history["tp"])) ]
+        # history.history["bac"] = [(history.history["sen"][k] + history.history["spec"][k]) / 2 for k in range(len(history.history["sen"])) ]
 
-        history.history["val_spec"] = [
-            history.history["val_tn"][k]
-            / (history.history["val_tn"][k] + history.history["val_fp"][k] + 1e-6)
-            for k in range(len(history.history["val_tn"]))
-        ]
-        history.history["val_sen"] = [
-            history.history["val_tp"][k]
-            / (history.history["val_tp"][k] + history.history["val_fn"][k] + 1e-6)
-            for k in range(len(history.history["val_tp"]))
-        ]
-        history.history["val_bac"] = [
-            (history.history["val_sen"][k] + history.history["val_spec"][k]) / 2
-            for k in range(len(history.history["val_sen"]))
-        ]
+        # history.history["val_spec"] = [history.history["val_tn"][k] / (history.history["val_tn"][k] + history.history["val_fp"][k] + 1e-6) for k in range(len(history.history["val_tn"]))]
+        # history.history["val_sen"] = [ history.history["val_tp"][k] / (history.history["val_tp"][k] + history.history["val_fn"][k] + 1e-6) for k in range(len(history.history["val_tp"])) ]
+        # history.history["val_bac"] = [ (history.history["val_sen"][k] + history.history["val_spec"][k]) / 2 for k in range(len(history.history["val_sen"])) ]
 
         if update == True:
-            path = os.path.join(
-                os.getcwd(),
-                "results",
-                "results",
-                "second_train",
-                model.name,
-                str(subject),
-                "history.csv",
-            )
+            path = os.path.join( os.getcwd(), "results", "results", "second_train", model.name, str(subject), "history.csv")
             temp = pd.read_csv(path).drop("Unnamed: 0", axis=1)
             hist_df = pd.DataFrame(history.history)
             hist_df = pd.concat((temp, hist_df), axis=0).reset_index(drop=True)
@@ -3359,28 +3351,15 @@ class Deep_network(PreFeatures):
 
         else:
             hist_df = pd.DataFrame(history.history)
-            path = os.path.join(
-                os.getcwd(),
-                "results",
-                "results",
-                "second_train",
-                model.name,
-                str(subject),
-                "history.csv",
-            )
+            path = os.path.join(os.getcwd(), "results", "results", "second_train", model.name, str(subject), "history.csv")
             hist_df.to_csv(path)
 
         self.plot_metrics(hist_df)
-        path = os.path.join(
-            os.getcwd(),
-            "results",
-            "results",
-            "second_train",
-            model.name,
-            str(subject),
-            "metric.png",
-        )
+        path = os.path.join(os.getcwd(), "results", "results", "second_train", model.name, str(subject), "metric.png")
         plt.savefig(path)
+
+        # TH = self.treshold_CNN(best_model, train_ds)
+        TH = 0.5
 
         predictions = np.array([])
         labels = np.array([])
@@ -3388,20 +3367,32 @@ class Deep_network(PreFeatures):
             predictions = np.concatenate([predictions, best_model.predict(x).squeeze()])
             labels = np.concatenate([labels, y.numpy().squeeze()])
 
-        self.plot_cm(labels, predictions, p=0.5)
-        path = os.path.join(
-            os.getcwd(),
-            "results",
-            "results",
-            "second_train",
-            model.name,
-            str(subject),
-            "cm.png",
-        )
+
+        self.plot_cm(labels, predictions, p=TH)
+        best_model.evaluate(test_ds)
+        path = os.path.join(os.getcwd(), "results", "results", "second_train", model.name, str(subject), "cm.png")
         plt.savefig(path)
         plt.close()
 
         return best_model
+
+
+    def treshold_CNN(self, best_model, train_ds):
+
+        predictions = np.array([])
+        labels = np.array([])
+        for x, y in train_ds:
+            predictions = np.concatenate([predictions, best_model.predict(x).squeeze()])
+            labels = np.concatenate([labels, y.numpy().squeeze()])
+        FAR = []
+        FRR = []
+        for i in np.linspace(0, 1, 100): 
+            cm = confusion_matrix(labels, predictions > i)
+            FAR.append(cm[0][1] / (cm[0][1] + cm[0][0] + 1e-6))
+            FRR.append(cm[1][0] / (cm[1][0] + cm[1][1] + 1e-6))
+        eer, min_index = self.compute_eer(FAR, FRR)
+        return np.linspace(0, 1, 100)[min_index]
+        
 
     def plot_cm(self, labels, predictions, p=0.5):
         cm = confusion_matrix(labels, predictions > p)
@@ -3412,24 +3403,20 @@ class Deep_network(PreFeatures):
         plt.xlabel("Predicted label")
 
         print("Legitimate Transactions Detected (True Negatives): ", cm[0][0])
-        print(
-            "Legitimate Transactions Incorrectly Detected (False Positives): ", cm[0][1]
-        )
+        print("Legitimate Transactions Incorrectly Detected (False Positives): ", cm[0][1])
         print("Fraudulent Transactions Missed (False Negatives): ", cm[1][0])
         print("Fraudulent Transactions Detected (True Positives): ", cm[1][1])
         print("Total Fraudulent Transactions: ", np.sum(cm[1]))
 
     def plot_metrics(self, history):
-        metrics = ["loss", "bac"]
+        metrics = ["loss", "bacc", "accuracy"]
         colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 
         for n, metric in enumerate(metrics):
             name = metric.replace("_", " ").capitalize()
-            plt.subplot(2, 1, n + 1)
+            plt.subplot(3, 1, n + 1)
             plt.plot(history[metric], color=colors[0], label="Train")
-            plt.plot(
-                history["val_" + metric], color=colors[0], linestyle="--", label="Val"
-            )
+            plt.plot(history["val_" + metric], color=colors[0], linestyle="--", label="Val")
             plt.xlabel("Epoch")
             plt.ylabel(name)
             if metric == "loss":
@@ -3438,7 +3425,6 @@ class Deep_network(PreFeatures):
                 plt.ylim([0.4, 1])
             else:
                 plt.ylim([0, 1])
-
             plt.legend()
 
 
