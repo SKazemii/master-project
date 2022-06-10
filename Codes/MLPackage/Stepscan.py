@@ -2450,11 +2450,7 @@ class Classifier(Features):
 
         return results, CM_bd, CM_ud
 
-    def ML_classifier(
-        self,
-        a,
-        **kwargs,
-    ):
+    def ML_classifier(self, a, **kwargs):
 
         if "x_train" in kwargs.keys():
             x_train = kwargs["x_train"]
@@ -2466,70 +2462,48 @@ class Classifier(Features):
             x_test_U = kwargs["x_test_U"]
 
         if self._classifier_name == "knn":
-            classifier = knn(
-                n_neighbors=self._KNN_n_neighbors,
-                metric=self._KNN_metric,
-                weights=self._KNN_weights,
-            )
+            classifier = knn(n_neighbors=self._KNN_n_neighbors, metric=self._KNN_metric, weights=self._KNN_weights)
 
-            best_model = classifier.fit(
-                x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values
-            )
+            best_model = classifier.fit( x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values )
             y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
             FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
             EER, t_idx = self.compute_eer(FRR_t, FAR_t)
             TH = self._THRESHOLDs[t_idx]
 
+            y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
+
         elif self._classifier_name == "TM":
             positives = x_train[x_train["ID"] == 1.0]
             negatives = x_train[x_train["ID"] == 0.0]
-            (
-                similarity_matrix_positives,
-                similarity_matrix_negatives,
-            ) = self.compute_score_matrix(positives, negatives)
-            client_scores, imposter_scores = self.compute_scores(
-                similarity_matrix_positives, similarity_matrix_negatives, criteria="min"
-            )
+            similarity_matrix_positives, similarity_matrix_negatives = self.compute_score_matrix(positives, negatives)
+            client_scores, imposter_scores = self.compute_scores(similarity_matrix_positives, similarity_matrix_negatives, criteria="min")
             y_pred_tr = np.append(client_scores.data, imposter_scores.data)
 
             FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
             EER, t_idx = self.compute_eer(FRR_t, FAR_t)
             TH = self._THRESHOLDs[t_idx]
 
+            similarity_matrix_positives, similarity_matrix_negatives = self.compute_score_matrix(positives, x_test)
+            client_scores, imposter_scores = self.compute_scores( similarity_matrix_positives, similarity_matrix_negatives, criteria="min")
+            y_pred = imposter_scores.data
+
         elif self._classifier_name == "svm":
-            classifier = svm.SVC(
-                kernel=self._SVM_kernel,
-                probability=True,
-                random_state=self._random_state,
-            )
-            best_model = classifier.fit(
-                x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values
-            )
+            classifier = svm.SVC(kernel=self._SVM_kernel, probability=True, random_state=self._random_state )
+            best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
             y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
 
             FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
             EER, t_idx = self.compute_eer(FRR_t, FAR_t)
             TH = self._THRESHOLDs[t_idx]
 
+            y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
+
         else:
             raise Exception(
                 f"_classifier_name ({self._classifier_name}) is not valid!!"
             )
 
-        if self._classifier_name == "TM":
-            positives = x_train[x_train["ID"] == 1.0]
-            (
-                similarity_matrix_positives,
-                similarity_matrix_negatives,
-            ) = self.compute_score_matrix(positives, x_test)
-            client_scores, imposter_scores = self.compute_scores(
-                similarity_matrix_positives, similarity_matrix_negatives, criteria="min"
-            )
-            y_pred = imposter_scores.data
-
-        else:
-            y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
-
+        
         y_pred[y_pred >= TH] = 1
         y_pred[y_pred < TH] = 0
 
@@ -2807,13 +2781,7 @@ class Deep_network(PreFeatures):
             model = eval(f"self.{CNN_name}(pre_image_shape, outputs)")
         return model
 
-    def train_deep_CNN(
-        self,
-        dataset_name: str,
-        image_feature_name: list,
-        CNN_name: str,
-        update: bool = False,
-    ):
+    def train_deep_CNN( self, dataset_name: str, image_feature_name: list, CNN_name: str,  update: bool = False):
         pre_images, labels = self.loading_pre_features_image(dataset_name)
         pre_image = self.loading_image_features_from_list(
             pre_images, image_feature_name
@@ -2830,13 +2798,7 @@ class Deep_network(PreFeatures):
 
         images_feat_norm = self.normalizing_image_features(pre_image)
 
-        X_train, X_test, y_train, y_test = model_selection.train_test_split(
-            images_feat_norm,
-            encoded_labels,
-            test_size=0.2,
-            random_state=self._random_state,
-            stratify=encoded_labels,
-        )
+        X_train, X_test, y_train, y_test = model_selection.train_test_split(images_feat_norm, encoded_labels, test_size=0.2, random_state=self._random_state, stratify=encoded_labels)
         # X_train, X_val, y_train, y_val = model_selection.train_test_split(X_train, y_train, test_size=0.2, random_state=self._random_state, stratify=y_train)#todo
 
         AUTOTUNE = tf.data.AUTOTUNE
@@ -2870,7 +2832,7 @@ class Deep_network(PreFeatures):
         # learning_rate=0.001
         model.compile(
             optimizer=self._CNN_optimizer,
-            loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+            loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),
             metrics=["Accuracy"],
         )  # if softmaxt then from_logits=False otherwise True
 
@@ -2986,40 +2948,18 @@ class Deep_network(PreFeatures):
 
     def e2e_CNN_model(self, update, CNN_name, pre_image_shape, subject: int):
         if update == True:
-            path = os.path.join(
-                os.getcwd(), "results", "e2e", CNN_name, str(subject), "best.h5"
-            )
+            path = os.path.join(os.getcwd(), "results", "e2e", CNN_name, str(subject), "best.h5")
             model = load_model(path)
         else:
             # model = self.lightweight_CNN(pre_image.shape[1:], outputs)
             model = eval(f"self.{CNN_name}(pre_image_shape, 1)")
         return model
 
-    def train_e2e(
-        self,
-        data: tuple,
-        image_feature_name: list,
-        CNN_name: str,
-        subject: int,
-        update: bool = False,
-        U_data: tuple = None,
-    ):
+    def train_e2e(self, data: tuple, image_feature_name: list, CNN_name: str, subject: int, update: bool = False):
         pre_image, labels = data
 
-        X_train, X_test, y_train, y_test = model_selection.train_test_split(
-            pre_image,
-            labels,
-            test_size=0.2,
-            random_state=self._random_state,
-            stratify=labels,
-        )
-        X_train, X_val, y_train, y_val = model_selection.train_test_split(
-            X_train,
-            y_train,
-            test_size=0.2,
-            random_state=self._random_state,
-            stratify=y_train,
-        )  # todo
+        X_train, X_test, y_train, y_test = model_selection.train_test_split( pre_image, labels, test_size=0.2, random_state=self._random_state, stratify=labels, )
+        X_train, X_val, y_train, y_val = model_selection.train_test_split( X_train, y_train,  test_size=0.2, random_state=self._random_state, stratify=y_train, )  # todo
 
         AUTOTUNE = tf.data.AUTOTUNE
 
@@ -3039,17 +2979,26 @@ class Deep_network(PreFeatures):
         # model.summary()
         # breakpoint()
 
-        # model.compile(optimizer=self._CNN_optimizer, loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=METRICS)#if softmaxt then from_logits=False otherwise True
+        METRICS = [
+            tf.keras.metrics.TrueNegatives(name="tn"),
+            tf.keras.metrics.FalsePositives(name="fp"),
+            tf.keras.metrics.FalseNegatives(name="fn"),
+            tf.keras.metrics.TruePositives(name="tp"),
+            tf.keras.metrics.BinaryAccuracy(name="accuracy"),
+            tf.keras.metrics.Precision(name="precision"),
+            tf.keras.metrics.Recall(name="recall"),
+            tf.keras.metrics.AUC(name="auc"),
+            tf.keras.metrics.AUC(name="prc", curve="PR"),  # precision-recall curve
+            BalancedAccuracy(name="bacc"),
+        ]
         model.compile(
             optimizer=self._CNN_optimizer,
-            loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
-            metrics=["Accuracy"],
+            loss=tf.keras.losses.BinaryCrossentropy(from_logits=False),
+            metrics=METRICS,
         )  # if softmaxt then from_logits=False otherwise True
 
         # TensorBoard_logs =  os.path.join( os.getcwd(), "logs", "TensorBoard_logs", "_".join(("FS", str(os.getpid()), pre_image_name, str(self._test_id)) )  )
-        path = os.path.join(
-            os.getcwd(), "results", "e2e", model.name, str(subject), "best.h5"
-        )
+        path = os.path.join(os.getcwd(), "results", "e2e", model.name, str(subject), "best.h5")
 
         checkpoint = [
             tf.keras.callbacks.ModelCheckpoint(
@@ -3073,7 +3022,7 @@ class Deep_network(PreFeatures):
 
         class_weight = {0: weight_for_0, 1: weight_for_1}
 
-        # breakpoint()
+        # 
         history = model.fit(
             train_ds,
             batch_size=self._CNN_batch_size,
@@ -3084,36 +3033,16 @@ class Deep_network(PreFeatures):
             class_weight=class_weight,
             use_multiprocessing=True,
         )
+
         # breakpoint()
         logger.info("best_model")
-        best_model = load_model(path)
-        test_loss, test_acc = best_model.evaluate(test_ds, verbose=2)
-        logger.info(
-            f"  test_loss: {np.round(test_loss)}, test_acc: {int(np.round(test_acc*100))}%"
-        )
+        best_model = load_model(path, custom_objects={"BalancedAccuracy": BalancedAccuracy()})
+        results = best_model.evaluate(test_ds, verbose=2)
+        logger.info(f"metrics pf test dataset: {dict(zip(best_model.metrics_names, np.round(results, 3)))}")
 
-        # breakpoint()
-        path = os.path.join(
-            os.getcwd(),
-            "results",
-            "e2e",
-            model.name,
-            str(subject),
-            "earlystop_model.h5",
-        )
-        model.save(path)
-
-        logger.info("earlystop_model")
-        earlystop_model = load_model(path)
-        test_loss, test_acc = earlystop_model.evaluate(test_ds, verbose=2)
-        logger.info(
-            f"  test_loss: {np.round(test_loss)}, test_acc: {int(np.round(test_acc*100))}%"
-        )
-
+        
         if update == True:
-            path = os.path.join(
-                os.getcwd(), "results", "e2e", model.name, str(subject), "history.csv"
-            )
+            path = os.path.join(os.getcwd(), "results", "e2e", model.name, str(subject), "history.csv")
             temp = pd.read_csv(path).drop("Unnamed: 0", axis=1)
             hist_df = pd.DataFrame(history.history)
             hist_df = pd.concat((temp, hist_df), axis=0).reset_index(drop=True)
@@ -3121,59 +3050,35 @@ class Deep_network(PreFeatures):
 
         else:
             hist_df = pd.DataFrame(history.history)
-            path = os.path.join(
-                os.getcwd(), "results", "e2e", model.name, str(subject), "history.csv"
-            )
+            path = os.path.join(os.getcwd(), "results", "e2e", model.name, str(subject), "history.csv")
             hist_df.to_csv(path)
 
-        fig, ax = plt.subplots(1, 2, figsize=(10, 6))
-        ax[0].plot(hist_df["Accuracy"], label="Train Accuracy")
-        ax[0].plot(hist_df["val_Accuracy"], label="Val Accuracy")
-
-        ax[0].set_title("Accuracy")
-        ax[0].set_xlabel("Epoch")
-        ax[0].set_ylabel("Accuracy")
-        ax[0].legend()
-
-        # summarize history for loss
-        ax[1].plot(hist_df["loss"], label="Train Loss")
-        ax[1].plot(hist_df["val_loss"], label="Val Loss")
-        ax[1].set_title("Loss")
-        ax[1].set_ylabel("loss")
-        ax[1].set_xlabel("epoch")
-        ax[1].legend()
-
-        path = os.path.join(
-            os.getcwd(), "results", "e2e", model.name, str(subject), "plot.png"
-        )
+        self.plot_metrics(hist_df)
+        path = os.path.join(os.getcwd(), "results", "e2e", model.name, str(subject), "metric.png")
         plt.savefig(path)
+
+        # TH = self.treshold_CNN(best_model, train_ds)
+        TH = 0.5
+
+        predictions = np.array([])
+        labels = np.array([])
+        for x, y in test_ds:
+            predictions = np.concatenate([predictions, best_model.predict(x).squeeze()])
+            labels = np.concatenate([labels, y.numpy().squeeze()])
+
+
+        self.plot_cm(labels, predictions, p=TH)
+        path = os.path.join(os.getcwd(), "results", "e2e", model.name, str(subject), "cm.png")
+        plt.savefig(path)
+        plt.close()
 
         return best_model
 
-    def test_e2e(
-        self,
-        data: tuple,
-        image_feature_name: list,
-        CNN_name: str,
-        subject: int,
-        U_data: tuple = None,
-    ):
+    def test_e2e(self, data: tuple, image_feature_name: list, CNN_name: str, subject: int, U_data: tuple = None ):
         pre_image, labels = data
 
-        X_train, X_test, y_train, y_test = model_selection.train_test_split(
-            pre_image,
-            labels,
-            test_size=0.2,
-            random_state=self._random_state,
-            stratify=labels,
-        )
-        X_train, X_val, y_train, y_val = model_selection.train_test_split(
-            X_train,
-            y_train,
-            test_size=0.2,
-            random_state=self._random_state,
-            stratify=y_train,
-        )  # todo
+        X_train, X_test, y_train, y_test = model_selection.train_test_split( pre_image, labels, test_size=0.2, random_state=self._random_state, stratify=labels )
+        X_train, X_val, y_train, y_val = model_selection.train_test_split( X_train, y_train, test_size=0.2, random_state=self._random_state, stratify=y_train)  # todo
 
         AUTOTUNE = tf.data.AUTOTUNE
 
@@ -3185,40 +3090,71 @@ class Deep_network(PreFeatures):
         # val_ds = val_ds.batch(self._CNN_batch_size)
         # val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
 
-        # test_ds = tf.data.Dataset.from_tensor_slices((X_test, y_test))
-        # test_ds = test_ds.batch(self._CNN_batch_size)
-        # test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
+        test_ds = tf.data.Dataset.from_tensor_slices((X_test, y_test))
+        test_ds = test_ds.batch(self._CNN_batch_size)
+        test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
 
-        path = os.path.join(
-            os.getcwd(), "results", "e2e", CNN_name, str(subject), "best.h5"
-        )
-        best_model = load_model(path)
 
-        y_pred_te = best_model.predict(X_test)
-        TH = 0
-        y_pred_te[y_pred_te >= TH] = 1
-        y_pred_te[y_pred_te < TH] = 0
+        path = os.path.join(os.getcwd(), "results", "e2e", CNN_name, str(subject), "best.h5")
+        best_model = load_model(path, custom_objects={"BalancedAccuracy": BalancedAccuracy()})
+        results = best_model.evaluate(test_ds, verbose=2)
+        logger.info(f"metrics pf test dataset: {dict(zip(best_model.metrics_names, np.round(results, 3)))}")
+        results = dict(zip(best_model.metrics_names, np.round(results, 3)))
 
-        ACC_ud = accuracy_score(y_test, y_pred_te) * 100
-        CM_ud = confusion_matrix(y_test, y_pred_te)
-        spec = (CM_ud[0, 0] / (CM_ud[0, 1] + CM_ud[0, 0] + 1e-33)) * 100
-        sens = (CM_ud[1, 1] / (CM_ud[1, 0] + CM_ud[1, 1] + 1e-33)) * 100
-        BACC_ud = (spec + sens) / 2
-        FAR_ud = CM_ud[0, 1] / CM_ud[0, :].sum()
-        FRR_ud = CM_ud[1, 0] / CM_ud[1, :].sum()
-
-        AUS_All, FAU_All = 100, 0
+        results_dict = {
+            "EER": "-", 
+            "TH": "-",
+            "ACC_ud": results['accuracy'],
+            "BACC_ud": results['bacc'],
+            "FAR_ud": results['fp']/(results['fp']+results['tn']),#todo
+            "FRR_ud": results['fn']/(results['fn']+results['tp']),
+            "unknown samples": "-",
+            "AUS_All": "-",
+            "FAU_All": "-",
+            "CM_ud_TN": results['tn'],
+            "CM_ud_FP": results['fp'],
+            "CM_ud_FN": results['fn'],
+            "CM_ud_TP": results['tp'],
+            "training_samples": y_train.shape[0],
+            "pos_training_samples": y_train.sum(),
+            "validation_samples": y_val.shape[0],
+            "pos_validation_samples": y_val.sum(),
+            "testing_samples": y_test.shape[0],
+            "pos_testing_samples": y_test.sum()
+        }
 
         if U_data != None:
-            X_test_U, y_test_U = U_data
-            y_pred_U = best_model.predict(X_test_U)
+            U_ds = tf.data.Dataset.from_tensor_slices((U_data[0], U_data[1]))
+            U_ds = U_ds.batch(self._CNN_batch_size)
+            U_ds = U_ds.cache().prefetch(buffer_size=AUTOTUNE)
 
-            y_test_U = tf.zeros(y_test_U.shape)
+            U_results = best_model.evaluate(U_ds, verbose=2)
+            logger.info(f"metrics pf test dataset: {dict(zip(best_model.metrics_names, np.round(U_results, 3)))}")
 
-            y_pred_U[y_pred_U >= TH] = 1.0
-            y_pred_U[y_pred_U < TH] = 0.0
-            AUS_All = accuracy_score(y_test_U, y_pred_U) * 100
-            FAU_All = np.where(y_pred_U == 1)[0].shape[0]
+            U_results = dict(zip(best_model.metrics_names, np.round(U_results, 3)))
+            results_dict["AUS_All"] = U_results['accuracy']
+            results_dict["FAU_All"] = U_results['fp']
+            results_dict["unknown samples"] = U_data[0].shape[0]
+
+        results_dict["num_pc"] = '-'
+
+        results_dict.update( {
+            "test_id": self._test_id,
+            "subject": subject,
+            "combination": self._combination,
+            "classifier_name": self._classifier_name,
+            "normilizing": self._normilizing,
+            "persentage": self._persentage,
+            "KFold": "-",
+            "known_imposter": self._known_imposter,
+            "unknown_imposter": self._unknown_imposter,
+            "min_number_of_sample": self._min_number_of_sample,
+        })     
+        return results_dict
+
+        
+
+        
 
         # results = [EER, TH, ACC_bd, BACC_bd, FAR_bd, FRR_bd, ACC_ud, BACC_ud, FAR_ud, FRR_ud, AUS, FAU, x_test_U.shape[0], AUS_All, FAU_All]
         results = [
@@ -3376,7 +3312,6 @@ class Deep_network(PreFeatures):
 
         return best_model
 
-
     def treshold_CNN(self, best_model, train_ds):
 
         predictions = np.array([])
@@ -3393,7 +3328,6 @@ class Deep_network(PreFeatures):
         eer, min_index = self.compute_eer(FAR, FRR)
         return np.linspace(0, 1, 100)[min_index]
         
-
     def plot_cm(self, labels, predictions, p=0.5):
         cm = confusion_matrix(labels, predictions > p)
         plt.figure(figsize=(5, 5))

@@ -662,11 +662,9 @@ def train_e2e_CNN():
     A._unknown_imposter = 10
     A._classifier_name = "svm"
     nam = "All"
-    A._CNN_epochs = 120
+    A._CNN_epochs = 2
 
-    image_feature_name = [
-        "P100"
-    ]  # ["CD", "PTI", "Tmin", "Tmax", "P50", "P60", "P70", "P80", "P90", "P100"]
+    image_feature_name = ["P100"]  # ["CD", "PTI", "Tmin", "Tmax", "P50", "P60", "P70", "P80", "P90", "P100"]
     dataset_name = "casia"
     CNN_name = "lightweight_CNN"
 
@@ -674,6 +672,7 @@ def train_e2e_CNN():
     pre_image1 = A.loading_image_features_from_list(pre_images, image_feature_name)
 
     pre_image1 = A.normalizing_image_features(pre_image1)
+    pre_image1 = pre_image1/255
 
     subjects, samples = np.unique(labels["ID"].values, return_counts=True)
 
@@ -686,47 +685,32 @@ def train_e2e_CNN():
     pre_image = pre_image1[label.index, :, :, :]
 
     # DF_unknown_imposter =  DF_feature_all[DF_feature_all["ID"].isin(unknown_imposter_list)]
-    # DF_known_imposter =    DF_feature_all[DF_feature_all["ID"].isin(known_imposter_list)]
     U_label = labels[labels["ID"].isin(unknown_imposter_list)]
     U_pre_image = pre_image1[U_label.index, :, :, :]
 
     results = list()
     for idx, subject in enumerate(known_imposter_list):
-        # if idx not in [0, 1]: #todo: remove this block to run for all subjects.
-        #     break
-        logger.info(
-            f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})"
-        )
+        if idx <= 13:
+            continue
+        logger.info(f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})")
 
         label_binariezed = tf.keras.utils.to_categorical(A.label_encoding(label))
 
-        # label_binariezed = label.copy().drop(["side"], axis=1)
-        # label_binariezed["ID"] = label_binariezed["ID"].map(lambda x: 1 if x==subject else 0)
-        # label_binariezed = label_binariezed.values.astype(np.float32).squeeze()
-
         label_ = np.expand_dims(label_binariezed[:, idx], axis=1)
-        model = A.train_e2e(
-            (pre_image, label_),
-            image_feature_name,
-            CNN_name,
-            subject,
-            update=False,
-            U_data=(U_pre_image, U_label["ID"].values),
-        )
-        result = A.test_e2e(
-            (pre_image, label_),
-            image_feature_name,
-            CNN_name,
-            subject,
-            U_data=(U_pre_image, U_label["ID"].values),
-        )
+        model = A.train_e2e( (pre_image, label_), image_feature_name, CNN_name, subject, update=False )
+        results = A.test_e2e( (pre_image, label_), image_feature_name, CNN_name, subject, U_data=(U_pre_image, U_label["ID"].values) )
 
-        results.append(result)
-        # breakpoint()
+        for i in results:
+            try:
+                results_dict[i].append(results[i])
+            except UnboundLocalError:
+                results_dict = {i: [] for i in results.keys()}
+                results_dict[i].append(results[i])
 
+    results = pd.DataFrame.from_dict(results_dict)
     path = os.path.join(os.getcwd(), "results", "e2e", "result.xlsx")
-    pd.DataFrame(results, columns=A._col).to_excel(path)
-    return pd.DataFrame(results, columns=A._col)
+    results.to_excel(path)
+    return results
 
 
 def Toon_p100():
@@ -870,7 +854,7 @@ def Toon_p100():
 def second_retrain():
     setting = {
         "dataset_name": "casia",
-        "_classifier_name": "svm",
+        "_classifier_name": "knn",
         "_combination": True,
         "_CNN_weights": "imagenet",
         "_verbose": True,
@@ -895,7 +879,7 @@ def second_retrain():
         "_SVM_kernel": "linear",
         "_KFold": 10,
         "_random_runs": 20,
-        "_persentage": 0.95,
+        "_persentage": 1.0,
         "_normilizing": "z-score",
     }
 
@@ -938,7 +922,7 @@ def second_retrain():
 
     results = list()
     for idx, subject in enumerate(known_imposter_list):
-        # if idx < 23:
+        # if idx < 11:
         #     continue
 
         logger.info(f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})")
@@ -976,15 +960,16 @@ def second_retrain():
         class_weight = {0: weight_for_0, 1: weight_for_1}
 
         
-        binary_model = A.second_training(model, subject, train_ds, val_ds, test_ds, class_weight, update=False)
-        logger.info(f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})")
-        sys.exit()
+        # binary_model = A.second_training(model, subject, train_ds, val_ds, test_ds, class_weight, update=False)
+        # logger.info(f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})")
+        # sys.exit()
 
         path = os.path.join(os.getcwd(), "results", "results", "second_train", model.name, str(subject), "best.h5")
         binary_model = load_model(path, custom_objects={"BalancedAccuracy": BalancedAccuracy()})
 
         x = binary_model.layers[-2].output
         binary_model1 = Model(inputs=binary_model.input, outputs=x)
+        # breakpoint()
 
         train_features = A.extract_deep_features(train_ds, binary_model1)
         val_features = A.extract_deep_features(val_ds, binary_model1)
@@ -1026,7 +1011,7 @@ def second_retrain():
                 results_dict[i].append(results[i])
         # breakpoint()
 
-    # results = pd.DataFrame.from_dict(results_dict)
+    results = pd.DataFrame.from_dict(results_dict)
     return results
 
 
@@ -1397,24 +1382,17 @@ if __name__ == "__main__":
     # test_all_pipelines()
     # new_image()
 
-    dd = second_retrain()
-    path = os.path.join(
-        os.getcwd(),
-        "results",
-        "results",
-        "second_train",
-        "lightweight_CNN",
-        "best.xlsx",
-    )
-    dd.to_excel(path)
-    breakpoint()
+    # dd = second_retrain()
+    # path = os.path.join( os.getcwd(), "results", "results", "second_train", "lightweight_CNN", "best.xlsx")
+    # dd.to_excel(path)
+    # breakpoint()
 
     # aa = Toon_p100()
     # path = os.path.join( os.getcwd(), "results", "e2e", "TM.xlsx")
     # aa.to_excel(path)
     # breakpoint()
 
-    # train_e2e_CNN()
+    train_e2e_CNN()
     # breakpoint()
 
     toc1 = timeit.default_timer()
