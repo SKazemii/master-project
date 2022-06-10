@@ -630,7 +630,7 @@ def train_e2e_CNN():
         "_classifier_name": "TM",
         "_combination": True,
         "_CNN_weights": "imagenet",
-        "_verbose": True,
+        "_verbose": False,
         "_CNN_batch_size": 32,
         "_CNN_base_model": "",
         "_CNN_epochs": 500,
@@ -697,8 +697,52 @@ def train_e2e_CNN():
         label_binariezed = tf.keras.utils.to_categorical(A.label_encoding(label))
 
         label_ = np.expand_dims(label_binariezed[:, idx], axis=1)
-        model = A.train_e2e( (pre_image, label_), image_feature_name, CNN_name, subject, update=False )
-        results = A.test_e2e( (pre_image, label_), image_feature_name, CNN_name, subject, U_data=(U_pre_image, U_label["ID"].values) )
+
+
+        X_train, X_test, y_train, y_test = model_selection.train_test_split( pre_image, label_, test_size=0.2, random_state=A._random_state, stratify=label_, )
+        X_train, X_val, y_train, y_val = model_selection.train_test_split( X_train, y_train,  test_size=0.2, random_state=A._random_state, stratify=y_train, )  # todo
+
+        AUTOTUNE = tf.data.AUTOTUNE
+
+        train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(1000)
+        train_ds = train_ds.batch(A._CNN_batch_size)
+        train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)).shuffle(1000)
+        val_ds = val_ds.batch(A._CNN_batch_size)
+        val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        test_ds = tf.data.Dataset.from_tensor_slices((X_test, y_test))
+        test_ds = test_ds.batch(A._CNN_batch_size)
+        test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
+        
+        U_ds = tf.data.Dataset.from_tensor_slices((U_pre_image, np.zeros((U_label.shape[0], 1))))
+        U_ds = U_ds.batch(A._CNN_batch_size)
+        U_ds = U_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        total = y_train.shape[0]
+        pos = y_train.sum()
+        neg = total - pos
+
+        weight_for_0 = (1 / neg) * (total / 2.0)
+        weight_for_1 = (1 / pos) * (total / 2.0)
+
+        class_weight = {0: weight_for_0, 1: weight_for_1}
+
+
+        model = A.train_e2e(train_ds, val_ds, test_ds, CNN_name, subject, class_weight, update=False )
+        results = A.test_e2e( train_ds, val_ds, test_ds, CNN_name, subject, U_data=U_ds)
+
+        results.update({
+            "training_samples": y_train.shape[0],
+            "pos_training_samples": y_train.sum(),
+            "validation_samples": y_val.shape[0],
+            "pos_validation_samples": y_val.sum(),
+            "testing_samples": y_test.shape[0],
+            "pos_testing_samples": y_test.sum(),
+            "unknown samples": U_label.shape[0],
+
+        })
 
         for i in results:
             try:

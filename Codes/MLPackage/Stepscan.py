@@ -2955,27 +2955,9 @@ class Deep_network(PreFeatures):
             model = eval(f"self.{CNN_name}(pre_image_shape, 1)")
         return model
 
-    def train_e2e(self, data: tuple, image_feature_name: list, CNN_name: str, subject: int, update: bool = False):
-        pre_image, labels = data
+    def train_e2e(self, train_ds:tf.data.Dataset, val_ds:tf.data.Dataset, test_ds:tf.data.Dataset, CNN_name: str, subject: int, class_weight, update: bool = False):      
 
-        X_train, X_test, y_train, y_test = model_selection.train_test_split( pre_image, labels, test_size=0.2, random_state=self._random_state, stratify=labels, )
-        X_train, X_val, y_train, y_val = model_selection.train_test_split( X_train, y_train,  test_size=0.2, random_state=self._random_state, stratify=y_train, )  # todo
-
-        AUTOTUNE = tf.data.AUTOTUNE
-
-        train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(1000)
-        train_ds = train_ds.batch(self._CNN_batch_size)
-        train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-        val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)).shuffle(1000)
-        val_ds = val_ds.batch(self._CNN_batch_size)
-        val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-        test_ds = tf.data.Dataset.from_tensor_slices((X_test, y_test))
-        test_ds = test_ds.batch(self._CNN_batch_size)
-        test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-        model = self.e2e_CNN_model(update, CNN_name, pre_image.shape[1:], subject)
+        model = self.e2e_CNN_model(update, CNN_name, test_ds.element_spec[0].shape[1:] , subject)
         # model.summary()
         # breakpoint()
 
@@ -3001,26 +2983,13 @@ class Deep_network(PreFeatures):
         path = os.path.join(os.getcwd(), "results", "e2e", model.name, str(subject), "best.h5")
 
         checkpoint = [
-            tf.keras.callbacks.ModelCheckpoint(
-                path,
-                save_best_only=True,
-                monitor="val_loss",
-                verbose=1,
-                save_weights_only=False,
-            ),
+            tf.keras.callbacks.ModelCheckpoint(path, save_best_only=True, monitor="val_loss", verbose=1, save_weights_only=False),
             # tf.keras.callbacks.ReduceLROnPlateau(  monitor="val_loss", factor=0.5, patience=30, min_lr=0.00001),
             # tf.keras.callbacks.EarlyStopping(      monitor="val_loss", patience=20, verbose=1),
             # tf.keras.callbacks.TensorBoard(        log_dir=TensorBoard_logs+str(self._test_id))
         ]
 
-        total = y_train.shape[0]
-        pos = y_train.sum()
-        neg = total - pos
-
-        weight_for_0 = (1 / neg) * (total / 2.0)
-        weight_for_1 = (1 / pos) * (total / 2.0)
-
-        class_weight = {0: weight_for_0, 1: weight_for_1}
+        
 
         # 
         history = model.fit(
@@ -3038,7 +3007,6 @@ class Deep_network(PreFeatures):
         logger.info("best_model")
         best_model = load_model(path, custom_objects={"BalancedAccuracy": BalancedAccuracy()})
         results = best_model.evaluate(test_ds, verbose=2)
-        logger.info(f"metrics pf test dataset: {dict(zip(best_model.metrics_names, np.round(results, 3)))}")
 
         
         if update == True:
@@ -3066,7 +3034,6 @@ class Deep_network(PreFeatures):
             predictions = np.concatenate([predictions, best_model.predict(x).squeeze()])
             labels = np.concatenate([labels, y.numpy().squeeze()])
 
-
         self.plot_cm(labels, predictions, p=TH)
         path = os.path.join(os.getcwd(), "results", "e2e", model.name, str(subject), "cm.png")
         plt.savefig(path)
@@ -3074,27 +3041,8 @@ class Deep_network(PreFeatures):
 
         return best_model
 
-    def test_e2e(self, data: tuple, image_feature_name: list, CNN_name: str, subject: int, U_data: tuple = None ):
-        pre_image, labels = data
-
-        X_train, X_test, y_train, y_test = model_selection.train_test_split( pre_image, labels, test_size=0.2, random_state=self._random_state, stratify=labels )
-        X_train, X_val, y_train, y_val = model_selection.train_test_split( X_train, y_train, test_size=0.2, random_state=self._random_state, stratify=y_train)  # todo
-
-        AUTOTUNE = tf.data.AUTOTUNE
-
-        # train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(1000)
-        # train_ds = train_ds.batch(self._CNN_batch_size)
-        # train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-        # val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)).shuffle(1000)
-        # val_ds = val_ds.batch(self._CNN_batch_size)
-        # val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-        test_ds = tf.data.Dataset.from_tensor_slices((X_test, y_test))
-        test_ds = test_ds.batch(self._CNN_batch_size)
-        test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-
+    def test_e2e(self, train_ds:tf.data.Dataset, val_ds:tf.data.Dataset, test_ds:tf.data.Dataset, CNN_name: str, subject: int, U_data:tf.data.Dataset=None ):
+        
         path = os.path.join(os.getcwd(), "results", "e2e", CNN_name, str(subject), "best.h5")
         best_model = load_model(path, custom_objects={"BalancedAccuracy": BalancedAccuracy()})
         results = best_model.evaluate(test_ds, verbose=2)
@@ -3115,26 +3063,17 @@ class Deep_network(PreFeatures):
             "CM_ud_FP": results['fp'],
             "CM_ud_FN": results['fn'],
             "CM_ud_TP": results['tp'],
-            "training_samples": y_train.shape[0],
-            "pos_training_samples": y_train.sum(),
-            "validation_samples": y_val.shape[0],
-            "pos_validation_samples": y_val.sum(),
-            "testing_samples": y_test.shape[0],
-            "pos_testing_samples": y_test.sum()
         }
 
         if U_data != None:
-            U_ds = tf.data.Dataset.from_tensor_slices((U_data[0], U_data[1]))
-            U_ds = U_ds.batch(self._CNN_batch_size)
-            U_ds = U_ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-            U_results = best_model.evaluate(U_ds, verbose=2)
-            logger.info(f"metrics pf test dataset: {dict(zip(best_model.metrics_names, np.round(U_results, 3)))}")
+            
+            U_results = best_model.evaluate(U_data, verbose=2)
+            logger.info(f"metrics pf U dataset: {dict(zip(best_model.metrics_names, np.round(U_results, 3)))}")
 
             U_results = dict(zip(best_model.metrics_names, np.round(U_results, 3)))
             results_dict["AUS_All"] = U_results['accuracy']
             results_dict["FAU_All"] = U_results['fp']
-            results_dict["unknown samples"] = U_data[0].shape[0]
+            
 
         results_dict["num_pc"] = '-'
 
@@ -3142,9 +3081,9 @@ class Deep_network(PreFeatures):
             "test_id": self._test_id,
             "subject": subject,
             "combination": self._combination,
-            "classifier_name": self._classifier_name,
-            "normilizing": self._normilizing,
-            "persentage": self._persentage,
+            "classifier_name": 'e2e',
+            "normilizing": '-',
+            "persentage": '-',
             "KFold": "-",
             "known_imposter": self._known_imposter,
             "unknown_imposter": self._unknown_imposter,
@@ -3152,67 +3091,7 @@ class Deep_network(PreFeatures):
         })     
         return results_dict
 
-        
 
-        
-
-        # results = [EER, TH, ACC_bd, BACC_bd, FAR_bd, FRR_bd, ACC_ud, BACC_ud, FAR_ud, FRR_ud, AUS, FAU, x_test_U.shape[0], AUS_All, FAU_All]
-        results = [
-            "-",
-            "-",
-            "-",
-            "-",
-            "-",
-            "-",
-            ACC_ud,
-            BACC_ud,
-            FAR_ud,
-            FRR_ud,
-            "-",
-            "-",
-            X_test_U.shape[0],
-            AUS_All,
-            FAU_All,
-        ]
-
-        ss = results + ["-", "-", "-", "-"] + CM_ud.reshape(1, -1).tolist()[0] + ["-"]
-        result = list()
-
-        result.append(
-            [
-                self._test_id,
-                subject,
-                self._combination,
-                "e2e",
-                "-",
-                "-",
-                # configs["classifier"][CLS],
-            ]
-        )
-
-        result.append(ss)
-        # breakpoint()
-        result.append(
-            [
-                1,
-                y_train.sum(),
-                self._train_ratio,
-                self._ratio,
-                # pos_te_samples,
-                # neg_te_samples,
-                self._known_imposter,
-                self._unknown_imposter,
-                self._min_number_of_sample,
-                self._number_of_unknown_imposter_samples,
-                y_train.shape[0],
-                y_train.sum(),
-                y_val.shape[0],
-                y_val.sum(),
-                y_test.shape[0],
-                y_test.sum(),
-            ]
-        )
-        return [val for sublist in result for val in sublist]
 
     def second_training(self, model, subject, train_ds, val_ds, test_ds, class_weight, update):
 
@@ -3345,6 +3224,7 @@ class Deep_network(PreFeatures):
     def plot_metrics(self, history):
         metrics = ["loss", "bacc", "accuracy"]
         colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+        plt.figure(figsize=(10, 10))
 
         for n, metric in enumerate(metrics):
             name = metric.replace("_", " ").capitalize()
