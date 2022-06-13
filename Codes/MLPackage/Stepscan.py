@@ -1890,12 +1890,21 @@ class Classifier(Features):
             if number_of_negatives < self._train_ratio:
                 self._n_training_samples = int(number_of_negatives)
 
-        DF_positive_samples_train = DF[DF["ID"] == 1].sample(
-            n=self._p_training_samples, replace=False, random_state=self._random_state
-        )
-        DF_negative_samples_train = DF[DF["ID"] == 0].sample(
-            n=self._n_training_samples, replace=False, random_state=self._random_state
-        )
+        DF_positive_samples_train = DF[DF["ID"] == 1].sample(n=self._p_training_samples, replace=False, random_state=self._random_state)
+        DF_negative_samples_train = DF[DF["ID"] == 0].sample(n=self._n_training_samples, replace=False, random_state=self._random_state)
+
+        return pd.concat([DF_positive_samples_train, DF_negative_samples_train], axis=0)
+
+    def down_sampling_new(self, DF, sample):
+
+        number_of_negatives = DF[DF["ID"] == 0].shape[0]
+        number_of_positives = DF[DF["ID"] == 1].shape[0]
+
+        if (sample < min(number_of_negatives, number_of_positives)):  
+            sample = min(number_of_negatives, number_of_positives)     
+
+        DF_positive_samples_train = DF[DF["ID"] == 1].sample(n=sample, replace=False, random_state=self._random_state)
+        DF_negative_samples_train = DF[DF["ID"] == 0].sample(n=sample, replace=False, random_state=self._random_state)
 
         return pd.concat([DF_positive_samples_train, DF_negative_samples_train], axis=0)
 
@@ -2543,8 +2552,8 @@ class Classifier(Features):
             
             classifier = IsolationForest(random_state=self._random_state)
             best_model = classifier.fit(x_train.iloc[:, :-1].values)
-            EER = "-"
-            TH = "-"
+            EER = 0
+            TH = 0
 
             y_pred = best_model.predict(x_test.iloc[:, :-1].values)
 
@@ -2552,8 +2561,8 @@ class Classifier(Features):
             
             classifier = OneClassSVM(kernel='rbf',nu=0.1)
             best_model = classifier.fit(x_train.iloc[:, :-1].values)
-            EER = "-"
-            TH = "-"
+            EER = 0
+            TH = 0
 
             y_pred = best_model.predict(x_test.iloc[:, :-1].values)
 
@@ -2561,20 +2570,16 @@ class Classifier(Features):
             
             classifier = OneClassSVM(kernel='rbf',nu=0.1)
             best_model = classifier.fit(x_train.iloc[:, :-1].values)
-            EER = "-"
-            TH = "-"
+            EER = 0
+            TH = 0
 
             y_pred = best_model.predict(x_test.iloc[:, :-1].values)
 
         else:
-            raise Exception(
-                f"_classifier_name ({self._classifier_name}) is not valid!!"
-            )
+            raise Exception(f"_classifier_name ({self._classifier_name}) is not valid!!")
 
 
-        #mdl = EllipticEnvelope(contamination=0.1)
-        # # from sklearn.covariance import EllipticEnvelope
-        
+               
         if self._classifier_name in ["if", "ocsvm", "svdd"]:
             y_pred = 0.5-(y_pred/2)
         else:
@@ -3806,27 +3811,30 @@ class Pipeline(Classifier, Seamese):
 
         return [val for sublist in result for val in sublist]
 
-    def fold_calculating(
-        self, feature_set_names: list, subject: int, X, U, train_index, test_index, fold
-    ):
+    def fold_calculating(self, feature_set_names: list, subject: int, X, U, train_index, test_index, fold):
+
         logger.info(f"\tFold number: {fold} out of {self._KFold} ({os.getpid()})")
         df_train = X.iloc[train_index, :]
         df_test = X.iloc[test_index, :]
-        df_train = self.down_sampling(df_train)
-
+        df_train = self.down_sampling_new(df_train, 2)
+        
         df_train, df_test, df_test_U = self.scaler(df_train, df_test, U)
 
-        df_train, df_test, df_test_U, num_pc = self.projector(
-            df_train, df_test, df_test_U, feature_set_names
-        )
-        result, CM_bd, CM_ud = self.ML_classifier(df_train, df_test, df_test_U, subject)
+        df_train, df_test, df_test_U, num_pc = self.projector(feature_set_names, df_train, df_test, df_test_U, )
+        results = self.ML_classifier(subject, x_train=df_train, x_test=df_test, x_test_U=df_test_U)
 
-        return (
-            result
-            + CM_ud.reshape(1, -1).tolist()[0]
-            + CM_bd.reshape(1, -1).tolist()[0]
-            + [num_pc]
-        )
+        results["num_pc"] = num_pc
+        results.update({
+
+            "training_samples": df_train.shape[0],
+            "pos_training_samples": df_train['ID'].sum(),
+            "validation_samples": 0,
+            "pos_validation_samples": 0,
+            "testing_samples": df_test.shape[0],
+            "pos_testing_samples": df_test['ID'].sum(),
+        })
+
+        return results
 
     def collect_results(self, result: pd.DataFrame, pipeline_name: str) -> None:
         # result['pipeline'] = pipeline_name

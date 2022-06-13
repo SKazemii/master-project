@@ -1645,16 +1645,47 @@ def PK_aim1(Users, classifier):
 
             # cv_results.append(A.fold_calculating(feature_set_names, subject, X, U, train_index, test_index, fold)) #todo: comment this line to run all folds
             # break #todo: comment this line to run all folds
-        breakpoint()
+        
         pool.close()
         pool.join()
-
-        result = A.compacting_results(cv_results, subject)
-        results.append(result)
+        for j in cv_results:
+            for i in j:
+                try:
+                    results_dict[i].append(j[i])
+                except UnboundLocalError:
+                    results_dict = {i: [] for i in j.keys()}
+                    results_dict[i].append(j[i])
+        
+        res = dict()
+        for i in results_dict: 
+            res[i] = np.mean(results_dict[i])
         # breakpoint()
-    return pd.DataFrame(results, columns=A._col)
-    result["pipeline"] = "pipeline 2: P100"
-    A.collect_results(result, nam)
+
+        
+        
+
+        res.update( {
+            "test_id": A._test_id,
+            "subject": subject,
+            "combination": A._combination,
+            "classifier_name": A._classifier_name,
+            "normilizing": A._normilizing,
+            "persentage": A._persentage,
+            "KFold": "-",
+            "known_imposter": A._known_imposter,
+            "unknown_imposter": A._unknown_imposter,
+            "min_number_of_sample": A._min_number_of_sample,
+          
+        })
+
+        for i in res:
+            try:
+                res_dict[i].append(res[i])
+            except UnboundLocalError:
+                res_dict = {i: [] for i in res.keys()}
+                res_dict[i].append(res[i])
+    
+    return pd.DataFrame.from_dict(res_dict)
 
 
 if __name__ == "__main__":
@@ -1680,8 +1711,22 @@ if __name__ == "__main__":
     # breakpoint()
 
     # train_e2e_CNN()
+    p0 = [5, 15, 25, 35, 45, 55]
+    p1 = ["ocsvm", "rf", "knn", "tm", "if", "nb", "lda", "svm"]
 
-    PK_aim1()
+    space = list(product(p0, p1))
+    space = space[1:]
+
+
+    results1 = PK_aim1(5, "ocsvm")
+
+    for idx, parameters in enumerate(space):
+      
+        logger.info(f"Starting [step {idx+1} out of {len(space)}], parameters: {parameters}")
+        results = PK_aim1(parameters[0], parameters[1])
+        results1 = pd.concat([results1, results], axis=0)
+
+
     breakpoint()
 
 
