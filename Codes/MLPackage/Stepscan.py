@@ -28,6 +28,14 @@ from sklearn import preprocessing as sk_preprocessing
 from sklearn.neighbors import KNeighborsClassifier as knn
 from sklearn import svm
 
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.naive_bayes import GaussianNB
+from sklearn.ensemble import RandomForestClassifier 
+from sklearn.svm import OneClassSVM
+# from sklearn.covariance import EllipticEnvelope
+from sklearn.ensemble import IsolationForest
+
+
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, roc_curve
 
 import matplotlib.pyplot as plt
@@ -2472,7 +2480,7 @@ class Classifier(Features):
 
             y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
 
-        elif self._classifier_name == "TM":
+        elif self._classifier_name == "tm":
             positives = x_train[x_train["ID"] == 1.0]
             negatives = x_train[x_train["ID"] == 0.0]
             similarity_matrix_positives, similarity_matrix_negatives = self.compute_score_matrix(positives, negatives)
@@ -2498,14 +2506,80 @@ class Classifier(Features):
 
             y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
 
+        elif self._classifier_name == "lda":
+            classifier = LinearDiscriminantAnalysis()
+            best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
+            y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
+
+            FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
+            EER, t_idx = self.compute_eer(FRR_t, FAR_t)
+            TH = self._THRESHOLDs[t_idx]
+
+            y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
+
+        elif self._classifier_name == "rf":
+            classifier = RandomForestClassifier(random_state=self._random_state)
+            best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
+            y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
+
+            FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
+            EER, t_idx = self.compute_eer(FRR_t, FAR_t)
+            TH = self._THRESHOLDs[t_idx]
+
+            y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
+
+        elif self._classifier_name == "nb":
+            classifier = GaussianNB()
+            best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
+            y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
+
+            FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
+            EER, t_idx = self.compute_eer(FRR_t, FAR_t)
+            TH = self._THRESHOLDs[t_idx]
+
+            y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
+
+        elif self._classifier_name == "if":
+            
+            classifier = IsolationForest(random_state=self._random_state)
+            best_model = classifier.fit(x_train.iloc[:, :-1].values)
+            EER = "-"
+            TH = "-"
+
+            y_pred = best_model.predict(x_test.iloc[:, :-1].values)
+
+        elif self._classifier_name == "ocsvm":
+            
+            classifier = OneClassSVM(kernel='rbf',nu=0.1)
+            best_model = classifier.fit(x_train.iloc[:, :-1].values)
+            EER = "-"
+            TH = "-"
+
+            y_pred = best_model.predict(x_test.iloc[:, :-1].values)
+
+        elif self._classifier_name == "svdd":
+            
+            classifier = OneClassSVM(kernel='rbf',nu=0.1)
+            best_model = classifier.fit(x_train.iloc[:, :-1].values)
+            EER = "-"
+            TH = "-"
+
+            y_pred = best_model.predict(x_test.iloc[:, :-1].values)
+
         else:
             raise Exception(
                 f"_classifier_name ({self._classifier_name}) is not valid!!"
             )
 
+
+        #mdl = EllipticEnvelope(contamination=0.1)
+        # # from sklearn.covariance import EllipticEnvelope
         
-        y_pred[y_pred >= TH] = 1
-        y_pred[y_pred < TH] = 0
+        if self._classifier_name in ["if", "ocsvm", "svdd"]:
+            y_pred = 0.5-(y_pred/2)
+        else:
+            y_pred[y_pred >= TH] = 1
+            y_pred[y_pred < TH] = 0
 
         ACC_ud = accuracy_score(x_test["ID"].values, y_pred) * 100
         CM_ud = confusion_matrix(x_test.iloc[:, -1].values, y_pred)
@@ -2519,55 +2593,43 @@ class Classifier(Features):
 
         if "x_test_U" in kwargs.keys():
 
-            if self._classifier_name == "TM":
+            if self._classifier_name == "tm":
                 positives = x_train[x_train["ID"] == 1.0]
-                (
-                    similarity_matrix_positives,
-                    similarity_matrix_negatives,
-                ) = self.compute_score_matrix(positives, x_test_U)
-                client_scores, imposter_scores = self.compute_scores(
-                    similarity_matrix_positives,
-                    similarity_matrix_negatives,
-                    criteria="min",
-                )
+                similarity_matrix_positives, similarity_matrix_negatives = self.compute_score_matrix(positives, x_test_U)
+                client_scores, imposter_scores = self.compute_scores(similarity_matrix_positives, similarity_matrix_negatives, criteria="min",)
                 y_pred_U = imposter_scores.data
+                y_pred_U[y_pred_U >= TH] = 1.0
+                y_pred_U[y_pred_U < TH] = 0.0
 
+            elif self._classifier_name in ["if", "ocsvm", "svdd"]:
+                y_pred_U = best_model.predict(x_test_U.iloc[:, :-1].values)
+                y_pred_U = 0.5-(y_pred_U/2)
             else:
                 y_pred_U = best_model.predict_proba(x_test_U.iloc[:, :-1].values)[:, 1]
+                y_pred_U[y_pred_U >= TH] = 1.0
+                y_pred_U[y_pred_U < TH] = 0.0
 
-            y_pred_U[y_pred_U >= TH] = 1.0
-            y_pred_U[y_pred_U < TH] = 0.0
+            
             AUS_All = accuracy_score(x_test_U["ID"].values, y_pred_U) * 100
             FAU_All = np.where(y_pred_U == 1)[0].shape[0]
 
-        results = [
-            EER,
-            TH,
-            ACC_ud,
-            BACC_ud,
-            FAR_ud,
-            FRR_ud,
-            x_test_U.shape[0],
-            AUS_All,
-            FAU_All,
-        ] + CM_ud.reshape(1, -1).tolist()[0]
-        results_name = [
-            "EER",
-            "TH",
-            "ACC_ud",
-            "BACC_ud",
-            "FAR_ud",
-            "FRR_ud",
-            "unknown samples",
-            "AUS_All",
-            "FAU_All",
-            "CM_ud_TN",
-            "CM_ud_FP",
-            "CM_ud_FN",
-            "CM_ud_TP",
-        ]
+        results_name = {
+            "EER": EER,
+            "TH": TH,
+            "ACC_ud": ACC_ud,
+            "BACC_ud": BACC_ud,
+            "FAR_ud": FAR_ud,
+            "FRR_ud": FRR_ud,
+            "unknown samples": x_test_U.shape[0],
+            "AUS_All": AUS_All,
+            "FAU_All": FAU_All,
+            "CM_ud_TN": CM_ud[0, 0],
+            "CM_ud_FP": CM_ud[0, 1],
+            "CM_ud_FN": CM_ud[1, 0],
+            "CM_ud_TP": CM_ud[1, 1],
+        }
 
-        return dict(zip(results_name, results))
+        return results_name
 
     @staticmethod
     def compute_score_matrix(positive_samples, negative_samples):
@@ -3090,8 +3152,6 @@ class Deep_network(PreFeatures):
             "min_number_of_sample": self._min_number_of_sample,
         })     
         return results_dict
-
-
 
     def second_training(self, model, subject, train_ds, val_ds, test_ds, class_weight, update):
 

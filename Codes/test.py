@@ -1,3 +1,4 @@
+from bdb import Breakpoint
 from MLPackage.Stepscan import * 
 
 def Participant_Count():
@@ -662,7 +663,7 @@ def train_e2e_CNN():
     A._unknown_imposter = 10
     A._classifier_name = "svm"
     nam = "All"
-    A._CNN_epochs = 2
+    A._CNN_epochs = 120
 
     image_feature_name = ["P100"]  # ["CD", "PTI", "Tmin", "Tmax", "P50", "P60", "P70", "P80", "P90", "P100"]
     dataset_name = "casia"
@@ -690,7 +691,7 @@ def train_e2e_CNN():
 
     results = list()
     for idx, subject in enumerate(known_imposter_list):
-        if idx <= 13:
+        if idx > 13:
             continue
         logger.info(f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})")
 
@@ -895,7 +896,7 @@ def Toon_p100():
     return pd.DataFrame(results, columns=A._col)
 
 
-def second_retrain():
+def second_retrain(classifier):
     setting = {
         "dataset_name": "casia",
         "_classifier_name": "knn",
@@ -933,6 +934,8 @@ def second_retrain():
     A._CNN_epochs = 400
     A._CNN_optimizer = tf.keras.optimizers.Adadelta()
     A._val_size = 0.2
+
+    A._classifier_name = classifier
 
     A._known_imposter = 23
     A._unknown_imposter = 10
@@ -994,8 +997,6 @@ def second_retrain():
         U_ds = U_ds.batch(A._CNN_batch_size)
         U_ds = U_ds.cache().prefetch(buffer_size=AUTOTUNE)
 
-        np.zeros((U_label["ID"].shape[0], 1))
-
         total = y_train.shape[0]
         pos = y_train.sum()
         neg = total - pos
@@ -1024,10 +1025,10 @@ def second_retrain():
 
         train_features, val_features, test_features, U_features, num_pc = A.projector(["deep_second_trained"], train_features,val_features, test_features, U_features,)
 
-        result = A.ML_classifier(subject, x_train=train_features, x_val=val_features, x_test=test_features, x_test_U=U_features)
-        result["num_pc"] = num_pc
+        results = A.ML_classifier(subject, x_train=train_features, x_val=val_features, x_test=test_features, x_test_U=U_features)
+        results["num_pc"] = num_pc
 
-        results = {
+        results.update({
             "test_id": A._test_id,
             "subject": subject,
             "combination": A._combination,
@@ -1044,8 +1045,7 @@ def second_retrain():
             "pos_validation_samples": y_val.sum(),
             "testing_samples": y_test.shape[0],
             "pos_testing_samples": y_test.sum(),
-        }
-        results.update(result)
+        })
 
         for i in results:
             try:
@@ -1055,8 +1055,8 @@ def second_retrain():
                 results_dict[i].append(results[i])
         # breakpoint()
 
-    results = pd.DataFrame.from_dict(results_dict)
-    return results
+    
+    return pd.DataFrame.from_dict(results_dict)
 
 
 def new_image():
@@ -1414,6 +1414,249 @@ def two_stage():
     A.collect_results(result, nam)
 
 
+def method_2(classifier):
+    setting = {
+        "dataset_name": "casia",
+        "_classifier_name": "TM",
+        "_combination": True,
+        "_CNN_weights": "imagenet",
+        "_verbose": False,
+        "_CNN_batch_size": 32,
+        "_CNN_base_model": "",
+        "_CNN_epochs": 500,
+        "_CNN_optimizer": "adam",
+        "_val_size": 0.2,
+        "_min_number_of_sample": 30,
+        "_known_imposter": 32,
+        "_unknown_imposter": 32,
+        "_number_of_unknown_imposter_samples": 1.0,  # Must be less than 1
+        "_waveletname": "coif1",
+        "_pywt_mode": "constant",
+        "_wavelet_level": 4,
+        "_p_training_samples": 11,
+        "_train_ratio": 34,
+        "_ratio": False,
+        "_KNN_n_neighbors": 5,
+        "_KNN_metric": "euclidean",
+        "_KNN_weights": "uniform",
+        "_SVM_kernel": "linear",
+        "_KFold": 10,
+        "_random_runs": 20,
+        "_persentage": 0.95,
+        "_normilizing": "z-score",
+    }
+
+    A = Pipeline(setting)
+
+    A._known_imposter = 23
+    A._unknown_imposter = 10
+    A._classifier_name = classifier
+    nam = "All"
+    A._CNN_epochs = 120
+
+    image_feature_name = ["P100"]  # ["CD", "PTI", "Tmin", "Tmax", "P50", "P60", "P70", "P80", "P90", "P100"]
+    dataset_name = "casia"
+    CNN_name = "lightweight_CNN"
+
+    GRFs, COPs, COAs, pre_images, labels = A.loading_pre_features(dataset_name)
+    pre_image1 = A.loading_image_features_from_list(pre_images, image_feature_name)
+
+    pre_image1 = A.normalizing_image_features(pre_image1)
+    pre_image1 = pre_image1/255
+
+    subjects, samples = np.unique(labels["ID"].values, return_counts=True)
+
+    ss = [a[0] for a in list(zip(subjects, samples)) if a[1] >= A._min_number_of_sample]
+
+    known_imposter_list = ss[32 : 32 + A._known_imposter]
+    unknown_imposter_list = ss[-A._unknown_imposter :]
+
+    label = labels[labels["ID"].isin(known_imposter_list)]
+    pre_image = pre_image1[label.index, :, :, :]
+
+    # DF_unknown_imposter =  DF_feature_all[DF_feature_all["ID"].isin(unknown_imposter_list)]
+    U_label = labels[labels["ID"].isin(unknown_imposter_list)]
+    U_pre_image = pre_image1[U_label.index, :, :, :]
+
+    results = list()
+    for idx, subject in enumerate(known_imposter_list):
+        # if idx > 13:
+        #     continue
+        logger.info(f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})")
+
+        label_binariezed = tf.keras.utils.to_categorical(A.label_encoding(label))
+
+        label_ = np.expand_dims(label_binariezed[:, idx], axis=1)
+
+
+        X_train, X_test, y_train, y_test = model_selection.train_test_split( pre_image, label_, test_size=0.2, random_state=A._random_state, stratify=label_, )
+        X_train, X_val, y_train, y_val = model_selection.train_test_split( X_train, y_train,  test_size=0.2, random_state=A._random_state, stratify=y_train, )  # todo
+
+        AUTOTUNE = tf.data.AUTOTUNE
+
+        train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(1000)
+        train_ds = train_ds.batch(A._CNN_batch_size)
+        train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)).shuffle(1000)
+        val_ds = val_ds.batch(A._CNN_batch_size)
+        val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        test_ds = tf.data.Dataset.from_tensor_slices((X_test, y_test))
+        test_ds = test_ds.batch(A._CNN_batch_size)
+        test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
+        
+        U_ds = tf.data.Dataset.from_tensor_slices((U_pre_image, np.zeros((U_label.shape[0], 1))))
+        U_ds = U_ds.batch(A._CNN_batch_size)
+        U_ds = U_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+        
+        path = os.path.join(os.getcwd(), "results", "e2e", CNN_name, str(subject), "best.h5")
+        binary_model = load_model(path, custom_objects={"BalancedAccuracy": BalancedAccuracy()})
+
+
+
+        x = binary_model.layers[-2].output
+        binary_model1 = Model(inputs=binary_model.input, outputs=x)
+        # breakpoint()
+
+        train_features = A.extract_deep_features(train_ds, binary_model1)
+        val_features = A.extract_deep_features(val_ds, binary_model1)
+        test_features = A.extract_deep_features(test_ds, binary_model1)
+        U_features = A.extract_deep_features(U_ds, binary_model1)
+
+        train_features, val_features, test_features, U_features = A.scaler( train_features, val_features, test_features, U_features)
+
+        train_features, val_features, test_features, U_features, num_pc = A.projector(["deep_second_trained"], train_features,val_features, test_features, U_features,)
+
+        results = A.ML_classifier(subject, x_train=train_features, x_val=val_features, x_test=test_features, x_test_U=U_features)
+        results["num_pc"] = num_pc
+
+        results.update( {
+            "test_id": A._test_id,
+            "subject": subject,
+            "combination": A._combination,
+            "classifier_name": A._classifier_name,
+            "normilizing": A._normilizing,
+            "persentage": A._persentage,
+            "KFold": "-",
+            "known_imposter": A._known_imposter,
+            "unknown_imposter": A._unknown_imposter,
+            "min_number_of_sample": A._min_number_of_sample,
+            "training_samples": y_train.shape[0],
+            "pos_training_samples": y_train.sum(),
+            "validation_samples": y_val.shape[0],
+            "pos_validation_samples": y_val.sum(),
+            "testing_samples": y_test.shape[0],
+            "pos_testing_samples": y_test.sum(),
+        })
+
+        for i in results:
+            try:
+                results_dict[i].append(results[i])
+            except UnboundLocalError:
+                results_dict = {i: [] for i in results.keys()}
+                results_dict[i].append(results[i])
+        # breakpoint()
+    
+    return pd.DataFrame.from_dict(results_dict)
+
+
+def PK_aim1(Users, classifier):
+    setting = {
+        "dataset_name": "casia",
+        "_classifier_name": "TM",
+        "_combination": True,
+        "_CNN_weights": "imagenet",
+        "_verbose": True,
+        "_CNN_batch_size": 32,
+        "_CNN_base_model": "",
+        "_CNN_epochs": 500,
+        "_CNN_optimizer": "adam",
+        "_val_size": 0.2,
+        "_min_number_of_sample": 30,
+        "_known_imposter": 32,
+        "_unknown_imposter": 32,
+        "_number_of_unknown_imposter_samples": 1.0,  # Must be less than 1
+        "_waveletname": "coif1",
+        "_pywt_mode": "constant",
+        "_wavelet_level": 4,
+        "_p_training_samples": 11,
+        "_train_ratio": 34,
+        "_ratio": False,
+        "_KNN_n_neighbors": 5,
+        "_KNN_metric": "euclidean",
+        "_KNN_weights": "uniform",
+        "_SVM_kernel": "linear",
+        "_KFold": 10,
+        "_random_runs": 20,
+        "_persentage": 0.95,
+        "_normilizing": "z-score",
+    }
+
+    A = Pipeline(setting)
+
+    A._known_imposter = Users
+    A._unknown_imposter = 10
+    A._classifier_name = classifier
+    nam = "All"
+
+    image_feature_name = ["P80", "P100" ]  
+    dataset_name = "casia"
+
+    GRFs, COPs, COAs, pre_images, labels = A.loading_pre_features(dataset_name)
+
+   
+
+    ####################################################################################################################
+    # pipeline 1: P100 and P80
+    image_from_list = A.loading_pre_image_from_list(pre_images, image_feature_name)
+    feature_set_names = ["P80", "P100"]
+    DF_feature_all = pd.concat([i for i in image_from_list] + [labels], axis=1)
+    
+    subjects, samples = np.unique(DF_feature_all["ID"].values, return_counts=True)
+
+    ss = [a[0] for a in list(zip(subjects, samples)) if a[1] >= A._min_number_of_sample]
+
+    known_imposter_list = ss[:A._known_imposter]
+    unknown_imposter_list = ss[-A._unknown_imposter :]
+
+    DF_unknown_imposter = DF_feature_all[ DF_feature_all["ID"].isin(unknown_imposter_list) ]
+    DF_known_imposter = DF_feature_all[DF_feature_all["ID"].isin(known_imposter_list)]
+
+    results = list()
+    for idx, subject in enumerate(DF_known_imposter["ID"].unique()):
+        # if idx not in [0, 1]: #todo: remove this block to run for all subjects.
+        #     break
+        logger.info(f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})")
+        X, U = A.binarize_labels(DF_known_imposter, DF_unknown_imposter, subject)
+
+        CV = model_selection.StratifiedKFold(n_splits=A._KFold, shuffle=False)  # random_state=self._random_state,
+
+        cv_results = list()
+
+        ncpus = int(os.environ.get("SLURM_CPUS_PER_TASK", default=multiprocessing.cpu_count()))
+        pool = multiprocessing.Pool(processes=ncpus)
+        # breakpoinqt()
+        for fold, (train_index, test_index) in enumerate(CV.split(X.iloc[:, :-1], X.iloc[:, -1])):
+            # breakpoint()
+            res = pool.apply_async(A.fold_calculating, args=(feature_set_names, subject, X, U,  train_index, test_index, fold,), callback=cv_results.append,)
+            # print(res.get())  # this will raise an exception if it happens within func
+
+            # cv_results.append(A.fold_calculating(feature_set_names, subject, X, U, train_index, test_index, fold)) #todo: comment this line to run all folds
+            # break #todo: comment this line to run all folds
+        breakpoint()
+        pool.close()
+        pool.join()
+
+        result = A.compacting_results(cv_results, subject)
+        results.append(result)
+        # breakpoint()
+    return pd.DataFrame(results, columns=A._col)
+    result["pipeline"] = "pipeline 2: P100"
+    A.collect_results(result, nam)
+
+
 if __name__ == "__main__":
     logger.info("Starting !!!")
     tic1 = timeit.default_timer()
@@ -1436,8 +1679,27 @@ if __name__ == "__main__":
     # aa.to_excel(path)
     # breakpoint()
 
-    train_e2e_CNN()
-    # breakpoint()
+    # train_e2e_CNN()
+
+    PK_aim1()
+    breakpoint()
+
+
+
+    results1 = second_retrain("svm")
+    for classifier in ["ocsvm", "rf", "knn", "tm", "if", "nb", "lda"]:
+        print(classifier)
+        # results = method_2(classifier)
+        results = second_retrain(classifier)
+        
+        results1 = pd.concat([results1, results], axis=0)
+
+        
+
+
+    path = os.path.join(os.getcwd(), "results", "results", "method_2", "result_2.xlsx")
+    results1.to_excel(path)
+    breakpoint()
 
     toc1 = timeit.default_timer()
     logger.info("Done ({:2.2f} process time)!!!\n\n\n".format(toc1 - tic1))
