@@ -2942,10 +2942,7 @@ class Deep_network(PreFeatures):
         if self._unknown_imposter == 0:
             self._unknown_imposter_list = []
 
-        unknown_imposter = (
-            pre_image[labels["ID"].isin(self._unknown_imposter_list)],
-            labels[labels["ID"].isin(self._unknown_imposter_list)],
-        )
+        unknown_imposter = (pre_image[labels["ID"].isin(self._unknown_imposter_list)], labels[labels["ID"].isin(self._unknown_imposter_list)],)
         known_imposter = (
             pre_image[labels["ID"].isin(self._known_imposter_list)],
             labels[labels["ID"].isin(self._known_imposter_list)],

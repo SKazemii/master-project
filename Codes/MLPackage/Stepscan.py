@@ -1,5 +1,4 @@
 import re
-from unicodedata import name
 import numpy as np
 import pandas as pd
 from scipy import ndimage
@@ -1542,7 +1541,7 @@ class Features(PreFeatures):
             exec(
                 f"df = pd.read_parquet(os.path.join(self._features_path, f'deep_{pre_image_name}_{CNN_name}_{self._combination}.parquet'))"
             )
-
+            pd.read_parquet
         except Exception as e:
             logger.error(e)
             logger.info(f"extraxting deep features from {pre_image_name}!!!")
@@ -3816,7 +3815,9 @@ class Pipeline(Classifier, Seamese):
         logger.info(f"\tFold number: {fold} out of {self._KFold} ({os.getpid()})")
         df_train = X.iloc[train_index, :]
         df_test = X.iloc[test_index, :]
-        df_train = self.down_sampling_new(df_train, 2)
+        # breakpoint()
+
+        # df_train = self.down_sampling_new(df_train, 2)
         
         df_train, df_test, df_test_U = self.scaler(df_train, df_test, U)
 

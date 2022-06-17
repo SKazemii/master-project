@@ -1562,7 +1562,7 @@ def method_2(classifier):
     return pd.DataFrame.from_dict(results_dict)
 
 
-def PK_aim1(Users, classifier):
+def PK_aim1(Users, no_samples, classifier):
     setting = {
         "dataset_name": "casia",
         "_classifier_name": "TM",
@@ -1629,7 +1629,14 @@ def PK_aim1(Users, classifier):
         # if idx not in [0, 1]: #todo: remove this block to run for all subjects.
         #     break
         logger.info(f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})")
-        X, U = A.binarize_labels(DF_known_imposter, DF_unknown_imposter, subject)
+        
+        non_targets = DF_known_imposter[DF_known_imposter["ID"]!=subject]
+        non_targets = non_targets.groupby("ID", group_keys=False).apply(lambda x: x.sample( n=no_samples, replace=False, random_state=A._random_state))
+        target = DF_known_imposter[DF_known_imposter["ID"]==subject]
+
+        DF = pd.concat([target, non_targets], axis=0)
+
+        X, U = A.binarize_labels(DF, DF_unknown_imposter, subject)
 
         CV = model_selection.StratifiedKFold(n_splits=A._KFold, shuffle=False)  # random_state=self._random_state,
 
@@ -1640,10 +1647,10 @@ def PK_aim1(Users, classifier):
         # breakpoinqt()
         for fold, (train_index, test_index) in enumerate(CV.split(X.iloc[:, :-1], X.iloc[:, -1])):
             # breakpoint()
-            res = pool.apply_async(A.fold_calculating, args=(feature_set_names, subject, X, U,  train_index, test_index, fold,), callback=cv_results.append,)
+            # res = pool.apply_async(A.fold_calculating, args=(feature_set_names, subject, X, U,  train_index, test_index, fold,), callback=cv_results.append,)
             # print(res.get())  # this will raise an exception if it happens within func
 
-            # cv_results.append(A.fold_calculating(feature_set_names, subject, X, U, train_index, test_index, fold)) #todo: comment this line to run all folds
+            cv_results.append(A.fold_calculating(feature_set_names, subject, X, U, train_index, test_index, fold)) #todo: comment this line to run all folds
             # break #todo: comment this line to run all folds
         
         pool.close()
@@ -1712,18 +1719,20 @@ if __name__ == "__main__":
 
     # train_e2e_CNN()
     p0 = [5, 15, 25, 35, 45, 55]
-    p1 = ["ocsvm", "rf", "knn", "tm", "if", "nb", "lda", "svm"]
+    p1 = [1, 2, 5, 10, 15, 20, 30]
+    p2 = ["ocsvm", "rf", "knn", "tm", "if", "nb", "lda", "svm"]
 
-    space = list(product(p0, p1))
+
+    space = list(product(p0, p1, p2))
     space = space[1:]
 
 
-    results1 = PK_aim1(5, "ocsvm")
+    results1 = PK_aim1(5, 1, "ocsvm")
 
     for idx, parameters in enumerate(space):
       
         logger.info(f"Starting [step {idx+1} out of {len(space)}], parameters: {parameters}")
-        results = PK_aim1(parameters[0], parameters[1])
+        results = PK_aim1(parameters[0], parameters[1], parameters[2])
         results1 = pd.concat([results1, results], axis=0)
 
 
