@@ -34,6 +34,8 @@ from sklearn.svm import OneClassSVM
 # from sklearn.covariance import EllipticEnvelope
 from sklearn.ensemble import IsolationForest
 
+import optunity
+import optunity.metrics
 
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, roc_curve
 
@@ -63,18 +65,8 @@ def create_logger(level):
 
     logger = logging.getLogger(loggerName)
     logger.setLevel(level)
-    t1 = (
-        blue
-        + "[%(asctime)s]-"
-        + yellow
-        + "[%(name)s @%(lineno)d]"
-        + reset
-        + blue
-        + "-[%(levelname)s]"
-        + reset
-        + bold_red
-    )
-    t2 = " %(message)s" + reset
+    t1 = ( blue + "[%(asctime)s]-" + yellow + "[%(name)s @%(lineno)d]" + reset + blue + "-[%(levelname)s]" + reset + bold_red )
+    t2 = "%(message)s" + reset
     # breakpoint()
     formatter_colored = logging.Formatter(t1 + t2, datefmt="%m/%d/%Y %I:%M:%S %p ")
     formatter = logging.Formatter(
@@ -129,9 +121,7 @@ class BalancedAccuracy(tf.keras.metrics.Metric):
 
 
 class Database(object):
-    def __init__(
-        self,
-    ):
+    def __init__(self,):
         super().__init__()
 
     def load_H5():
@@ -1447,9 +1437,7 @@ class Features(PreFeatures):
         images = tf.image.resize(images, (224, 224))
         return images, labels
 
-    def extraxting_deep_features(
-        self, data: tuple, pre_image_name: str, CNN_base_model: str
-    ) -> pd.DataFrame:
+    def extraxting_deep_features( self, data: tuple, pre_image_name: str, CNN_base_model: str ) -> pd.DataFrame:
         # self._CNN_base_model = CNN_base_model
 
         try:
@@ -2083,12 +2071,12 @@ class Classifier(Features):
     def FXR_calculater(self, x_train, y_pred):
         FRR = list()
         FAR = list()
-
+        # breakpoint()
         for tx in self._THRESHOLDs:
             E1 = np.zeros((y_pred.shape))
             E1[y_pred >= tx] = 1
 
-            e = pd.DataFrame([x_train.values, E1]).T
+            e = pd.DataFrame([x_train, E1]).T# todo x_train.values
             e.columns = ["y", "pred"]
             e["FAR"] = e.apply(lambda x: 1 if x["y"] < x["pred"] else 0, axis=1)
             e["FRR"] = e.apply(lambda x: 1 if x["y"] > x["pred"] else 0, axis=1)
@@ -2476,10 +2464,15 @@ class Classifier(Features):
             x_test = kwargs["x_test"]
         if "x_test_U" in kwargs.keys():
             x_test_U = kwargs["x_test_U"]
+        
 
         if self._classifier_name == "knn":
-            classifier = knn(n_neighbors=self._KNN_n_neighbors, metric=self._KNN_metric, weights=self._KNN_weights)
 
+            if "params" in kwargs.keys():
+                classifier = knn(n_neighbors=int(kwargs["params"]['n_neighbors']))
+            else:
+                classifier = knn(n_neighbors=self._KNN_n_neighbors, metric=self._KNN_metric, weights=self._KNN_weights)
+            
             best_model = classifier.fit( x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values )
             y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
             FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
@@ -2503,8 +2496,42 @@ class Classifier(Features):
             client_scores, imposter_scores = self.compute_scores( similarity_matrix_positives, similarity_matrix_negatives, criteria="min")
             y_pred = imposter_scores.data
 
-        elif self._classifier_name == "svm":
-            classifier = svm.SVC(kernel=self._SVM_kernel, probability=True, random_state=self._random_state )
+        elif self._classifier_name == "svm-linear":
+            if "params" in kwargs.keys():
+                classifier = svm.SVC(kernel='linear', probability=True, random_state=self._random_state, C=10 ** kwargs["params"]['logC'] )
+            else:
+                classifier = svm.SVC(kernel='linear', probability=True, random_state=self._random_state, )
+               
+            best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
+            y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
+
+            FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
+            EER, t_idx = self.compute_eer(FRR_t, FAR_t)
+            TH = self._THRESHOLDs[t_idx]
+
+            y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
+
+        elif self._classifier_name == "svm-rbf":
+            if "params" in kwargs.keys():
+                classifier = svm.SVC(kernel='rbf', probability=True, random_state=self._random_state, C=10 ** kwargs["params"]['logC'], gamma=10 ** kwargs["params"]['logGamma'] )
+            else:
+                classifier = svm.SVC(kernel='rbf', probability=True, random_state=self._random_state, )
+
+
+            best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
+            y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
+
+            FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
+            EER, t_idx = self.compute_eer(FRR_t, FAR_t)
+            TH = self._THRESHOLDs[t_idx]
+
+            y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
+
+        elif self._classifier_name == "svm-poly":
+            if "params" in kwargs.keys():
+                classifier = svm.SVC(kernel='poly', probability=True, random_state=self._random_state, C=10 ** kwargs["params"]['logC'], degree=kwargs["params"]['degree'], coef0=kwargs["params"]['coef0'] )
+            else:
+                classifier = svm.SVC(kernel='poly', probability=True, random_state=self._random_state, )
             best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
             y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
 
@@ -2558,7 +2585,7 @@ class Classifier(Features):
 
         elif self._classifier_name == "ocsvm":
             
-            classifier = OneClassSVM(kernel='rbf',nu=0.1)
+            classifier = OneClassSVM(kernel='linear',nu=0.1)
             best_model = classifier.fit(x_train.iloc[:, :-1].values)
             EER = 0
             TH = 0
@@ -2722,7 +2749,119 @@ class Classifier(Features):
         # plt.show()
         plt.legend()
 
+    def subject_optimizer(self, x_train, num_particles, num_generations, search):
+         
+        # CV = model_selection.StratifiedKFold( n_splits=self._KFold, shuffle=False)
+        # folds = [[list(test) for train, test in CV.split(x_train.iloc[:, :-1], x_train.iloc[:, -1])]]
 
+        # @optunity.cross_validated(x=x_train.iloc[:, :-1].values, y=x_train.iloc[:, -1].values, folds=folds, num_folds=self._KFold)
+        x_train, y_train, x_test, y_test = model_selection.train_test_split(x=x_train.iloc[:, :-1].values, y=x_train.iloc[:, -1].values, test_size=0.20, random_state=self._random_state)
+
+        def performance(x_train, y_train, x_test, y_test, 
+                        n_neighbors=None, metric=None, weights=None,
+                        logC=None, logGamma=None, degree=None, coef0=None,
+                        n_estimators=None, max_features=None,):
+
+            if   self._classifier_name == 'knn':
+                classifier = knn( n_neighbors=int(n_neighbors))#, metric=metric, weights=weights, )
+                best_model = classifier.fit(x_train, y_train)
+                y_pred_tr = best_model.predict_proba(x_train)[:, 1]
+
+                FRR_t, FAR_t = self.FXR_calculater(y_train, y_pred_tr)
+                EER, t_idx = self.compute_eer(FRR_t, FAR_t)
+                TH = self._THRESHOLDs[t_idx]
+
+                y_pred = best_model.predict_proba(x_test)[:, 1]
+                
+                y_pred[y_pred >= TH] = 1
+                y_pred[y_pred < TH] = 0
+            elif self._classifier_name == 'svm-linear':
+                classifier = svm.SVC(kernel='linear', probability=True, random_state=self._random_state, C=10 ** logC)
+                best_model = classifier.fit(x_train, y_train)
+                y_pred_tr = best_model.predict_proba(x_train)[:, 1]
+
+                FRR_t, FAR_t = self.FXR_calculater(y_train, y_pred_tr)
+                EER, t_idx = self.compute_eer(FRR_t, FAR_t)
+                TH = self._THRESHOLDs[t_idx]
+
+                y_pred = best_model.predict_proba(x_test)[:, 1]
+                
+                y_pred[y_pred >= TH] = 1
+                y_pred[y_pred < TH] = 0
+            elif self._classifier_name == 'svm-poly':
+                classifier = svm.SVC(kernel='poly', probability=True, random_state=self._random_state , C=10 ** logC, degree=degree, coef0=coef0)
+                best_model = classifier.fit(x_train, y_train)
+                y_pred_tr = best_model.predict_proba(x_train)[:, 1]
+
+                FRR_t, FAR_t = self.FXR_calculater(y_train, y_pred_tr)
+                EER, t_idx = self.compute_eer(FRR_t, FAR_t)
+                TH = self._THRESHOLDs[t_idx]
+
+                y_pred = best_model.predict_proba(x_test)[:, 1]
+                
+                y_pred[y_pred >= TH] = 1
+                y_pred[y_pred < TH] = 0
+            elif self._classifier_name == 'svm-rbf':
+                classifier = svm.SVC(kernel='rbf', probability=True, random_state=self._random_state, C=10 ** logC, gamma=10 ** logGamma)
+                best_model = classifier.fit(x_train, y_train)
+                y_pred_tr = best_model.predict_proba(x_train)[:, 1]
+
+                FRR_t, FAR_t = self.FXR_calculater(y_train, y_pred_tr)
+                EER, t_idx = self.compute_eer(FRR_t, FAR_t)
+                TH = self._THRESHOLDs[t_idx]
+
+                y_pred = best_model.predict_proba(x_test)[:, 1]
+                
+                y_pred[y_pred >= TH] = 1
+                y_pred[y_pred < TH] = 0
+            elif self._classifier_name == "rf":
+                classifier = RandomForestClassifier(n_estimators=int(n_estimators), max_features=int(max_features))
+                best_model = classifier.fit(x_train, y_train)
+                y_pred_tr = best_model.predict_proba(x_train)[:, 1]
+
+                FRR_t, FAR_t = self.FXR_calculater(y_train, y_pred_tr)
+                EER, t_idx = self.compute_eer(FRR_t, FAR_t)
+                TH = self._THRESHOLDs[t_idx]
+
+                y_pred = best_model.predict_proba(x_test)[:, 1]
+                
+                y_pred[y_pred >= TH] = 1
+                y_pred[y_pred < TH] = 0
+            elif self._classifier_name == "nb":
+                pass
+            elif self._classifier_name == "if":
+                classifier = IsolationForest(n_estimators=int(n_estimators), max_features=int(max_features), random_state=self._random_state)
+                best_model = classifier.fit(x_train)
+                EER = 0
+                TH = 0
+                y_pred = best_model.predict(x_test)
+
+            elif self._classifier_name == "ocsvm":
+                pass
+            elif self._classifier_name == "svdd":
+                pass
+            elif self._classifier_name == "lda":
+                pass
+            elif self._classifier_name == "tm":
+                pass
+            else:
+                raise(f'Unknown algorithm: {self._classifier_name}')
+
+            return optunity.metrics.bacc(y_test, y_pred, 1)
+            
+        pmap8 = optunity.parallel.create_pmap(8)
+        solver = optunity.solvers.ParticleSwarm(num_particles=num_particles, num_generations=num_generations, **search)
+        optimum, stats = optunity.optimize(solver, performance, maximize=True) # , pmap=pmap8
+        
+        # breakpoint()
+        # params.update(fixed_params)
+
+        # A = optunity.make_solver('particle swarm', num_particles=10, num_generations=10)
+        # param, info, solver = optunity.maximize(performance, solver_name='particle swarm', num_evals=num_evals, **search)
+
+        return optimum, stats
+
+ 
 class Deep_network(PreFeatures):
     def __init__(
         self,
@@ -3810,19 +3949,19 @@ class Pipeline(Classifier, Seamese):
 
         return [val for sublist in result for val in sublist]
 
-    def fold_calculating(self, feature_set_names: list, subject: int, X, U, train_index, test_index, fold):
+    def fold_calculating(self, feature_set_names: list, subject: int, x_train, x_test, U, train_index, val_index, fold):
 
         logger.info(f"\tFold number: {fold} out of {self._KFold} ({os.getpid()})")
-        df_train = X.iloc[train_index, :]
-        df_test = X.iloc[test_index, :]
+        df_train = x_train.iloc[train_index, :]
+        df_val = x_train.iloc[val_index, :]
         # breakpoint()
 
         # df_train = self.down_sampling_new(df_train, 2)
         
-        df_train, df_test, df_test_U = self.scaler(df_train, df_test, U)
+        df_train, df_val, df_test, df_test_U = self.scaler(df_train, df_val, x_test, U)
 
-        df_train, df_test, df_test_U, num_pc = self.projector(feature_set_names, df_train, df_test, df_test_U, )
-        results = self.ML_classifier(subject, x_train=df_train, x_test=df_test, x_test_U=df_test_U)
+        df_train, df_val, df_test, df_test_U, num_pc = self.projector(feature_set_names, df_train, df_val, df_test, df_test_U, )
+        results = self.ML_classifier(subject, x_train=df_train, x_val=df_val, x_test=df_test, x_test_U=df_test_U)
 
         results["num_pc"] = num_pc
         results.update({
@@ -3831,8 +3970,8 @@ class Pipeline(Classifier, Seamese):
             "pos_training_samples": df_train['ID'].sum(),
             "validation_samples": 0,
             "pos_validation_samples": 0,
-            "testing_samples": df_test.shape[0],
-            "pos_testing_samples": df_test['ID'].sum(),
+            "testing_samples": df_val.shape[0],
+            "pos_testing_samples": df_val['ID'].sum(),
         })
 
         return results

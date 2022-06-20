@@ -1695,6 +1695,143 @@ def PK_aim1(Users, no_samples, classifier):
     return pd.DataFrame.from_dict(res_dict)
 
 
+def optimizer(Users, no_samples, classifier):
+    setting = {
+        "dataset_name": "casia",
+        "_classifier_name": "knn",
+        "_combination": True,
+        "_CNN_weights": "imagenet",
+        "_verbose": True,
+        "_CNN_batch_size": 32,
+        "_CNN_base_model": "",
+        "_CNN_epochs": 500,
+        "_CNN_optimizer": "adam",
+        "_val_size": 0.2,
+        "_min_number_of_sample": 30,
+        "_known_imposter": 32,
+        "_unknown_imposter": 32,
+        "_number_of_unknown_imposter_samples": 1.0,  # Must be less than 1
+        "_waveletname": "coif1",
+        "_pywt_mode": "constant",
+        "_wavelet_level": 4,
+        "_p_training_samples": 11,
+        "_train_ratio": 34,
+        "_ratio": False,
+        "_KNN_n_neighbors": 5,
+        "_KNN_metric": "euclidean",
+        "_KNN_weights": "uniform",
+        "_SVM_kernel": "linear",
+        "_KFold": 10,
+        "_random_runs": 20,
+        "_persentage": 0.95,
+        "_normilizing": "z-score",
+    }
+
+    A = Pipeline(setting)
+
+    A._known_imposter = Users
+    A._unknown_imposter = 10
+    A._classifier_name = classifier
+
+    image_feature_name = ["P80", "P100" ]  
+    dataset_name = "casia"
+
+    GRFs, COPs, COAs, pre_images, labels = A.loading_pre_features(dataset_name)
+
+   
+
+    ####################################################################################################################
+    # pipeline 1: P100 and P80
+    image_from_list = A.loading_pre_image_from_list(pre_images, image_feature_name)
+    feature_set_names = ["P80", "P100"]
+    DF_feature_all = pd.concat([i for i in image_from_list] + [labels], axis=1)
+    
+    subjects, samples = np.unique(DF_feature_all["ID"].values, return_counts=True)
+
+    ss = [a[0] for a in list(zip(subjects, samples)) if a[1] >= A._min_number_of_sample]
+
+    known_imposter_list = ss[:A._known_imposter]
+    unknown_imposter_list = ss[-A._unknown_imposter :]
+
+    DF_unknown_imposter = DF_feature_all[ DF_feature_all["ID"].isin(unknown_imposter_list) ]
+    DF_known_imposter = DF_feature_all[DF_feature_all["ID"].isin(known_imposter_list)]
+
+    for idx, subject in enumerate(DF_known_imposter["ID"].unique()):
+        # if idx not in [0, 1]: #todo: remove this block to run for all subjects.
+        #     break
+        logger.info(f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})")
+        
+        # non_targets = DF_known_imposter[DF_known_imposter["ID"]!=subject]
+        # non_targets = non_targets.groupby("ID", group_keys=False).apply(lambda x: x.sample( n=no_samples, replace=False, random_state=A._random_state))
+        # target = DF_known_imposter[DF_known_imposter["ID"]==subject]
+
+        # DF = pd.concat([target, non_targets], axis=0)
+
+
+        X, U = A.binarize_labels(DF_known_imposter, DF_unknown_imposter, subject)
+        x_train, x_test = model_selection.train_test_split(X, test_size=0.20, random_state=A._random_state)
+
+        df_train, df_test, df_test_U = A.scaler(x_train, x_test, U)
+        df_train, df_test, df_test_U, num_pc = A.projector(feature_set_names, df_train, df_test, df_test_U, )
+
+        search = {
+                    'knn': {'n_neighbors': [1, 10]},
+                    'svm-linear': {'logC': [-4, 3]},
+                    'svm-rbf': {'logGamma': [-6, 0], 'logC': [-4, 3]},
+                    'svm-poly': {'logGamma': [2, 5], 'logC': [-4, 3], 'coef0': [0, 1]},
+                    'rf': {'n_estimators': [20, 120], 'max_features': [5, 25]},
+                    'if': {'n_estimators': [20, 120], 'max_features': [5, 25]},
+                    'ocsvm': {'logC': [-4, 3]},
+                    'svdd': {'logGamma': [-6, 0], 'logC': [-4, 3]},
+                    'tm': None,
+                    'lda': None,
+                
+        }
+        
+
+        param, info = A.subject_optimizer(df_train, 30, 30, search[A._classifier_name])
+
+
+        # df_train = self.down_sampling_new(df_train, 2)
+        results = A.ML_classifier(subject, x_train=df_train, x_test=df_test, x_test_U=df_test_U, params=param)
+
+        results["num_pc"] = num_pc
+        results.update({
+            "training_samples": df_train.shape[0],
+            "pos_training_samples": df_train['ID'].sum(),
+            "validation_samples": 0,
+            "pos_validation_samples": 0,
+            "testing_samples": '-',
+            "pos_testing_samples": '-',
+        })
+        
+ 
+        results.update( {
+            "test_id": A._test_id,
+            "subject": subject,
+            "combination": A._combination,
+            "classifier_name": A._classifier_name,
+            "normilizing": A._normilizing,
+            "persentage": A._persentage,
+            "KFold": "-",
+            "known_imposter": A._known_imposter,
+            "unknown_imposter": A._unknown_imposter,
+            "min_number_of_sample": A._min_number_of_sample,
+            "param": param,
+          
+        })
+
+        for i in results:
+            try:
+                res_dict[i].append(results[i])
+            except UnboundLocalError:
+                res_dict = {i: [] for i in results.keys()}
+                res_dict[i].append(results[i])
+    
+    return pd.DataFrame.from_dict(res_dict)
+
+
+
 if __name__ == "__main__":
     logger.info("Starting !!!")
     tic1 = timeit.default_timer()
@@ -1718,21 +1855,21 @@ if __name__ == "__main__":
     # breakpoint()
 
     # train_e2e_CNN()
-    p0 = [5, 15, 25, 35, 45, 55]
-    p1 = [1, 2, 5, 10, 15, 20, 30]
-    p2 = ["ocsvm", "rf", "knn", "tm", "if", "nb", "lda", "svm"]
+    p0 = [5]
+    p1 = [30]
+    p2 = ["knn", "svm-rbf", "svm-poly", "svm-linear"]
 
 
     space = list(product(p0, p1, p2))
     space = space[1:]
 
 
-    results1 = PK_aim1(5, 1, "ocsvm")
+    results1 = optimizer(5, 30, "knn")
 
     for idx, parameters in enumerate(space):
       
         logger.info(f"Starting [step {idx+1} out of {len(space)}], parameters: {parameters}")
-        results = PK_aim1(parameters[0], parameters[1], parameters[2])
+        results = optimizer(parameters[0], parameters[1], parameters[2])
         results1 = pd.concat([results1, results], axis=0)
 
 
