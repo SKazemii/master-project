@@ -2754,27 +2754,30 @@ class Classifier(Features):
         # CV = model_selection.StratifiedKFold( n_splits=self._KFold, shuffle=False)
         # folds = [[list(test) for train, test in CV.split(x_train.iloc[:, :-1], x_train.iloc[:, -1])]]
 
+        
+        # x_train, y_train, x_test, y_test = model_selection.train_test_split(x=x_train.iloc[:, :-1].values, y=x_train.iloc[:, -1].values, test_size=0.20, random_state=self._random_state)
         # @optunity.cross_validated(x=x_train.iloc[:, :-1].values, y=x_train.iloc[:, -1].values, folds=folds, num_folds=self._KFold)
-        x_train, y_train, x_test, y_test = model_selection.train_test_split(x=x_train.iloc[:, :-1].values, y=x_train.iloc[:, -1].values, test_size=0.20, random_state=self._random_state)
-
+        @optunity.hold_out_validated(x=x_train.iloc[:, :-1].values, y=x_train.iloc[:, -1].values, test_size=20)
         def performance(x_train, y_train, x_test, y_test, 
                         n_neighbors=None, metric=None, weights=None,
                         logC=None, logGamma=None, degree=None, coef0=None,
                         n_estimators=None, max_features=None,):
-
             if   self._classifier_name == 'knn':
-                classifier = knn( n_neighbors=int(n_neighbors))#, metric=metric, weights=weights, )
-                best_model = classifier.fit(x_train, y_train)
-                y_pred_tr = best_model.predict_proba(x_train)[:, 1]
+                if int(n_neighbors) < 1:
+                    return 0
+                else:
+                    classifier = knn( n_neighbors=int(n_neighbors))#, metric=metric, weights=weights, )
+                    best_model = classifier.fit(x_train, y_train)
+                    y_pred_tr = best_model.predict_proba(x_train)[:, 1]
 
-                FRR_t, FAR_t = self.FXR_calculater(y_train, y_pred_tr)
-                EER, t_idx = self.compute_eer(FRR_t, FAR_t)
-                TH = self._THRESHOLDs[t_idx]
+                    FRR_t, FAR_t = self.FXR_calculater(y_train, y_pred_tr)
+                    EER, t_idx = self.compute_eer(FRR_t, FAR_t)
+                    TH = self._THRESHOLDs[t_idx]
 
-                y_pred = best_model.predict_proba(x_test)[:, 1]
-                
-                y_pred[y_pred >= TH] = 1
-                y_pred[y_pred < TH] = 0
+                    y_pred = best_model.predict_proba(x_test)[:, 1]
+                    
+                    y_pred[y_pred >= TH] = 1
+                    y_pred[y_pred < TH] = 0
             elif self._classifier_name == 'svm-linear':
                 classifier = svm.SVC(kernel='linear', probability=True, random_state=self._random_state, C=10 ** logC)
                 best_model = classifier.fit(x_train, y_train)
@@ -2835,7 +2838,6 @@ class Classifier(Features):
                 EER = 0
                 TH = 0
                 y_pred = best_model.predict(x_test)
-
             elif self._classifier_name == "ocsvm":
                 pass
             elif self._classifier_name == "svdd":
@@ -3446,10 +3448,7 @@ class Deep_network(PreFeatures):
 
 
 class Seamese(Deep_network):
-    def __init__(
-        self,
-        dataset_name,
-    ):
+    def __init__(self, dataset_name):
         super().__init__(dataset_name)
 
     def make_pairs(self, images, labels):
