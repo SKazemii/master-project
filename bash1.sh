@@ -1,10 +1,10 @@
 #!/bin/bash
-#SBATCH --job-name=Mode_2D
+#SBATCH --job-name=P_1
 #SBATCH --account=def-escheme
 #SBATCH --mem=32G                                         # increase as needed
 #SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=4
-#SBATCH --time=5:09:20                                              # walltime in d-hh:mm or hh:mm:ss format
+#SBATCH --time=0:30:20                                              # walltime in d-hh:mm or hh:mm:ss format
 #SBATCH --output=%x-%J.out
 #SBATCH --mail-user=saeed.kazemi@unb.ca
 #SBATCH --mail-type=ALL
@@ -32,8 +32,8 @@ source ./env/bin/activate
 
 
 
-python ./Codes/computing_parallel1.py
-
+# python ./Codes/computing_parallel1.py
+python ./Codes/MLPackage/Project.py
 
 ## $ chmod 755 bash.sh
 ## $ seff {Job_ID}                                                                                       # list resources used by a completed job 
@@ -58,10 +58,10 @@ python ./Codes/computing_parallel1.py
 ## $ chmod u+x $VIRTUAL_ENV/bin/notebook.sh
 
 
-## salloc --account=def-escheme --cpus-per-task=1 --mem=100M --time=1:10:00 srun ./env/bin/notebook.sh   # intractive mode
+## salloc --account=def-escheme --ntasks=1 --cpus-per-task=16 --mem=32G --time=2:10:00 srun ./env/bin/notebook.sh   # intractive mode
 
 
-## on new terminal: ssh -L 8888:<<gra105.graham.sharcnet:8888>> saeed67@cedar.computecanada.ca
-## on browser: http://localhost:8888/?token=<token>
+## on new terminal: ssh -L 8888:cdr808.int.cedar.computecanada.ca:8889 saeed67@cedar.computecanada.ca
+## on browser: http://localhost:8888/?token=4bf329dece6b4b54bc01663d4fe7209fc02fa5a59f947a4b
 
 

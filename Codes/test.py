@@ -2039,7 +2039,12 @@ def optimizer_accross_subjects(Users, no_samples, classifier):
 
             for idx, subject in enumerate(DF_known_imposter["ID"].unique()):
 
-                X, U = A.binarize_labels(DF_known_imposter, DF_unknown_imposter, subject)
+                non_targets = DF_known_imposter[DF_known_imposter["ID"]!=subject]
+                non_targets = non_targets.groupby("ID", group_keys=False).apply(lambda x: x.sample( n=no_samples, replace=False, random_state=A._random_state))
+                target = DF_known_imposter[DF_known_imposter["ID"]==subject]
+                DF = pd.concat([target, non_targets], axis=0)
+
+                X, U = A.binarize_labels(DF, DF_unknown_imposter, subject)
                 x_train, x_test = model_selection.train_test_split(X, test_size=0.20, random_state=A._random_state, stratify=X.iloc[:, -1].values,)
                 x_train, x_val = model_selection.train_test_split(x_train, test_size=0.20, random_state=A._random_state, stratify=x_train.iloc[:, -1].values)
 
@@ -2165,6 +2170,20 @@ def optimizer_accross_subjects(Users, no_samples, classifier):
 
     objective_func = performance(DF_known_imposter, DF_unknown_imposter,)
     
+    param = {
+            'knn': {'n_neighbors': 5},
+            'svm-linear': {'logC': -2.96},
+            'svm-rbf': {'logGamma': -4.07, 'logC': -1.17},
+            'svm-poly': {'logGamma': [2, 5], 'logC': [-4, 3], 'coef0': [0, 1]},
+            'rf': {'n_estimators': [20, 120], 'max_features': [5, 25]},
+            'if': {'n_estimators': [20, 120], 'max_features': [5, 25]},
+            'ocsvm': { 'nu': 0.95},
+            'svdd': {'nu': 0.5, 'logGamma': -3},
+            'tm': None,
+            'lda': None,
+        }
+        
+      
     # pmap8 = optunity.parallel.create_pmap(8)
     if A._classifier_name in ['svdd', 'ocsvm', "knn", "svm-rbf", "svm-linear"]:
         solver = optunity.solvers.ParticleSwarm(num_particles=30, num_generations=10, **search[A._classifier_name])
@@ -2174,6 +2193,11 @@ def optimizer_accross_subjects(Users, no_samples, classifier):
     for idx, subject in enumerate(DF_known_imposter["ID"].unique()):
 
         logger.info(f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})")
+
+        # non_targets = DF_known_imposter[DF_known_imposter["ID"]!=subject]
+        # non_targets = non_targets.groupby("ID", group_keys=False).apply(lambda x: x.sample( n=no_samples, replace=False, random_state=A._random_state))
+        # target = DF_known_imposter[DF_known_imposter["ID"]==subject]
+        # DF = pd.concat([target, non_targets], axis=0)
 
 
         X, U = A.binarize_labels(DF_known_imposter, DF_unknown_imposter, subject)
@@ -2259,7 +2283,8 @@ if __name__ == "__main__":
     space = space[1:]
 
 
-    results1 = optimizer_accross_subjects(30, 30, "svdd")
+    results1 = optimizer_accross_subjects(2, 30, "knn")
+    breakpoint()
 
     for idx, parameters in enumerate(space):
       

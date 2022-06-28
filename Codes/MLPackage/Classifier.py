@@ -625,10 +625,7 @@ class Classifier(Features):
 
         if self._classifier_name == "knn":
 
-            if "params" in kwargs.keys():
-                classifier = knn(n_neighbors=int(kwargs["params"]['n_neighbors']))
-            else:
-                classifier = knn(n_neighbors=self._KNN_n_neighbors, metric=self._KNN_metric, weights=self._KNN_weights)
+            classifier = knn(n_neighbors=int(kwargs["params"]['n_neighbors']))
             
             best_model = classifier.fit( x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values )
             y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
@@ -654,11 +651,8 @@ class Classifier(Features):
             y_pred = imposter_scores.data
 
         elif self._classifier_name == "svm-linear":
-            if "params" in kwargs.keys():
-                classifier = svm.SVC(kernel='linear', probability=True, random_state=self._random_state, C=10 ** kwargs["params"]['logC'] )
-            else:
-                classifier = svm.SVC(kernel='linear', probability=True, random_state=self._random_state, )
-               
+            classifier = svm.SVC(kernel='linear', probability=True, random_state=self._random_state, C=10 ** kwargs["params"]['logC'] )
+              
             best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
             y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
 
@@ -669,11 +663,7 @@ class Classifier(Features):
             y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
 
         elif self._classifier_name == "svm-rbf":
-            if "params" in kwargs.keys():
-                classifier = svm.SVC(kernel='rbf', probability=True, random_state=self._random_state, C=10 ** kwargs["params"]['logC'], gamma=10 ** kwargs["params"]['logGamma'] )
-            else:
-                classifier = svm.SVC(kernel='rbf', probability=True, random_state=self._random_state, )
-
+            classifier = svm.SVC(kernel='rbf', probability=True, random_state=self._random_state, C=10 ** kwargs["params"]['logC'], gamma=10 ** kwargs["params"]['logGamma'] )
 
             best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
             y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
@@ -685,10 +675,8 @@ class Classifier(Features):
             y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
 
         elif self._classifier_name == "svm-poly":
-            if "params" in kwargs.keys():
-                classifier = svm.SVC(kernel='poly', probability=True, random_state=self._random_state, C=10 ** kwargs["params"]['logC'], degree=kwargs["params"]['degree'], coef0=kwargs["params"]['coef0'] )
-            else:
-                classifier = svm.SVC(kernel='poly', probability=True, random_state=self._random_state, )
+            classifier = svm.SVC(kernel='poly', probability=True, random_state=self._random_state, C=10 ** kwargs["params"]['logC'], degree=kwargs["params"]['degree'], coef0=kwargs["params"]['coef0'] )
+            
             best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
             y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
 
@@ -741,10 +729,7 @@ class Classifier(Features):
             y_pred = best_model.predict(x_test.iloc[:, :-1].values)
 
         elif self._classifier_name == "ocsvm":
-            if "params" in kwargs.keys():
-                classifier = OneClassSVM(kernel='linear',nu=kwargs["params"]['nu'])
-            else:
-                classifier = OneClassSVM(kernel='linear',nu=0.1)
+            classifier = OneClassSVM(kernel='linear',nu=kwargs["params"]['nu'])
             
             best_model = classifier.fit(x_train.iloc[:, :-1].values)
             EER = 0
@@ -753,10 +738,7 @@ class Classifier(Features):
             y_pred = best_model.predict(x_test.iloc[:, :-1].values)
 
         elif self._classifier_name == "svdd":
-            if "params" in kwargs.keys():
-                classifier = OneClassSVM(kernel='rbf',nu=kwargs["params"]['nu'])
-            else:
-                classifier = OneClassSVM(kernel='rbf',nu=0.1)
+            classifier = OneClassSVM(kernel='rbf',nu=kwargs["params"]['nu'])
             
             best_model = classifier.fit(x_train.iloc[:, :-1].values)
             EER = 0

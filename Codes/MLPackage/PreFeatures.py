@@ -42,7 +42,7 @@ from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, roc_curv
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-sys.path.append(os.path.join(os.getcwd(), "Codes", "MLPackage"))
+sys.path.append(os.path.join(os.getcwd(), "MLPackage"))
 import Butterworth
 import convertGS2BW
  
