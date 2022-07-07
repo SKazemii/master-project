@@ -1,4 +1,5 @@
 from .Features import *
+import pyod.models as od
 
 class Classifier(Features):
     def __init__(self, dataset_name, classifier_name):
@@ -224,11 +225,17 @@ class Classifier(Features):
             h.append(num_pc)
             return tuple(h)
 
-    def FXR_calculater(self, x_train, y_pred):
+    def FXR_calculater(self, x_train, y_pred, THRESHOLD=None):
         FRR = list()
         FAR = list()
         # breakpoint()
-        for tx in self._THRESHOLDs:
+        
+        x = self._THRESHOLDs
+        if THRESHOLD.any() != None:
+            x = THRESHOLD
+
+
+        for tx in x:
             E1 = np.zeros((y_pred.shape))
             E1[y_pred >= tx] = 1
 
@@ -257,15 +264,6 @@ class Classifier(Features):
         DF_balanced = pd.concat([pos_samples, neg_samples])
         return DF_balanced, pos_samples.shape[0]
 
-    @staticmethod
-    def compute_eer(FAR, FRR):
-        """Returns equal error rate (EER) and the corresponding threshold."""
-        abs_diffs = np.abs(np.subtract(FRR, FAR))
-        min_index = np.argmin(abs_diffs)
-        min_index = 99 - np.argmin(abs_diffs[::-1])
-        eer = np.mean((FAR[min_index], FRR[min_index]))
-
-        return eer, min_index
 
     def template_selection(self, DF, method, k_cluster, verbose=True):
         if DF.shape[0] < k_cluster:
@@ -315,301 +313,36 @@ class Classifier(Features):
             )
         return DF_clustered
 
-    def ML_classifier_archive(
-        self,
-        a,
-        x_train,
-        x_test,
-        x_test_U
-    ):
-        PP = f"./temp/shod1-dend/{self._classifier_name}/{str(a)}/{str(self._unknown_imposter)}/"
+    @staticmethod
+    def compute_EER(y, score, metric):
 
-        if self._classifier_name == "knn":
-            classifier = knn(
-                n_neighbors=self._KNN_n_neighbors,
-                metric=self._KNN_metric,
-                weights=self._KNN_weights,
-            )
+        fpr, tpr, threshold = roc_curve(y, score, pos_label=1)
+        fnr = 1 - tpr
+        abs_diffs = np.abs(fpr - fnr)
+        min_index = np.argmin(abs_diffs)
 
-            best_model = classifier.fit(
-                x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values
-            )
-            y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
-            FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
-            EER, t_idx = self.compute_eer(FRR_t, FAR_t)
-            TH = self._THRESHOLDs[t_idx]
+        if metric == 'eer':
+            EER = np.mean((fpr[min_index], fnr[min_index]))
+            TH = threshold[min_index]
 
-        elif self._classifier_name == "TM":
-            positives = x_train[x_train["ID"] == 1.0]
-            negatives = x_train[x_train["ID"] == 0.0]
-            (
-                similarity_matrix_positives,
-                similarity_matrix_negatives,
-            ) = self.compute_score_matrix(positives, negatives)
-            client_scores, imposter_scores = self.compute_scores(
-                similarity_matrix_positives, similarity_matrix_negatives, criteria="min"
-            )
-            y_pred_tr = np.append(client_scores.data, imposter_scores.data)
+        elif metric == 'gmeans':
+            gmeans = sqrt(tpr * (1-fpr))
+            ix = argmax(gmeans)
+            EER = gmeans[ix]
+            TH = threshold[ix]
 
-            FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
-            EER, t_idx = self.compute_eer(FRR_t, FAR_t)
-            TH = self._THRESHOLDs[t_idx]
+        elif metric == 'zero_fpr':
+            ix = np.max(np.where(fpr==0))
+            TH = threshold[ix]
+            EER = 0
 
-            # self.plot_eer(FRR_t, FAR_t)
-            # Pathlb(PP).mkdir(parents=True, exist_ok=True)
-            # plt.savefig(PP+f"EER_{str(self._known_imposter)}.png")
+        elif metric == 'zero_frr':
+            ix = np.min(np.where(tpr==1))
+            TH = threshold[ix]
+            EER = 0
+        
+        return EER, fpr, tpr, TH
 
-            # EER1 = list()
-            # TH1 = list()
-            # for _ in range(self._random_runs):
-            #     DF, _ = self.balancer(x_train, method="Random")
-
-            #     positives = DF[DF["ID"]== 1.0]
-            #     negatives = DF[DF["ID"]== 0.0]
-
-            #     similarity_matrix_positives, similarity_matrix_negatives = self.compute_score_matrix(positives, negatives)
-            #     client_scores, imposter_scores = self.compute_scores(similarity_matrix_positives, similarity_matrix_negatives, criteria="min")
-            #     y_pred = np.append(client_scores.data, imposter_scores.data)
-
-            #     FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred)
-            #     qq, t_idx = self.compute_eer(FRR_t, FAR_t)
-            #     EER1.append(qq)
-            #     TH1.append(self._THRESHOLDs[t_idx])
-            # EER1 = np.mean(EER1)
-            # TH1 = np.mean(TH1)
-
-        elif self._classifier_name == "svm":
-            classifier = svm.SVC(
-                kernel=self._SVM_kernel,
-                probability=True,
-                random_state=self._random_state,
-            )
-
-            best_model = classifier.fit(
-                x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values
-            )
-            y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
-            FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
-            EER, t_idx = self.compute_eer(FRR_t, FAR_t)
-            TH = self._THRESHOLDs[t_idx]
-        else:
-            raise Exception(
-                f"_classifier_name ({self._classifier_name}) is not valid!!"
-            )
-
-        acc = list()
-        CMM = list()
-        BACC = list()
-        for _ in range(self._random_runs):
-            DF_temp, pos_number = self.balancer(x_test, method="Random")
-
-            if self._classifier_name == "TM":
-                positives = x_train[x_train["ID"] == 1.0]
-                (
-                    similarity_matrix_positives,
-                    similarity_matrix_negatives,
-                ) = self.compute_score_matrix(positives, DF_temp)
-                client_scores, imposter_scores = self.compute_scores(
-                    similarity_matrix_positives,
-                    similarity_matrix_negatives,
-                    criteria="min",
-                )
-                y_pred = imposter_scores.data
-
-            else:
-                y_pred = best_model.predict_proba(DF_temp.iloc[:, :-1].values)[:, 1]
-
-            y_pred[y_pred >= TH] = 1.0
-            y_pred[y_pred < TH] = 0.0
-
-            acc.append(accuracy_score(DF_temp.iloc[:, -1].values, y_pred) * 100)
-            CM = confusion_matrix(DF_temp.iloc[:, -1].values, y_pred)
-            spec = (CM[0, 0] / (CM[0, 1] + CM[0, 0] + 1e-33)) * 100
-            sens = (CM[1, 1] / (CM[1, 0] + CM[1, 1] + 1e-33)) * 100
-            BACC.append((spec + sens) / 2)
-            CMM.append(CM)
-
-        ACC_bd = np.mean(acc)
-        CM_bd = np.array(CMM).sum(axis=0)
-        BACC_bd = np.mean(BACC)
-        FAR_bd = CM_bd[0, 1] / CM_bd[0, :].sum()
-        FRR_bd = CM_bd[1, 0] / CM_bd[1, :].sum()
-
-        if self._classifier_name == "TM":
-            positives = x_train[x_train["ID"] == 1.0]
-            (
-                similarity_matrix_positives,
-                similarity_matrix_negatives,
-            ) = self.compute_score_matrix(positives, x_test)
-            client_scores, imposter_scores = self.compute_scores(
-                similarity_matrix_positives, similarity_matrix_negatives, criteria="min"
-            )
-            y_pred = imposter_scores.data
-
-        else:
-            y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
-
-        y_pred1 = y_pred.copy()
-        y_pred[y_pred >= TH] = 1
-        y_pred[y_pred < TH] = 0
-
-        ACC_ud = accuracy_score(x_test["ID"].values, y_pred) * 100
-        CM_ud = confusion_matrix(x_test.iloc[:, -1].values, y_pred)
-        spec = (CM_ud[0, 0] / (CM_ud[0, 1] + CM_ud[0, 0] + 1e-33)) * 100
-        sens = (CM_ud[1, 1] / (CM_ud[1, 0] + CM_ud[1, 1] + 1e-33)) * 100
-        BACC_ud = (spec + sens) / 2
-        FAR_ud = CM_ud[0, 1] / CM_ud[0, :].sum()
-        FRR_ud = CM_ud[1, 0] / CM_ud[1, :].sum()
-
-        AUS, FAU = 100, 0
-        AUS_All, FAU_All = 100, 0
-
-        if x_test_U.shape[0] != 0:
-
-            AUS, FAU = [], []
-            for _ in range(self._random_runs):
-                numbers = x_test_U.shape[0] if x_test_U.shape[0] < 60 else 60
-                temp = x_test_U.sample(n=numbers)
-
-                if self._classifier_name == "TM":
-                    positives = x_train[x_train["ID"] == 1.0]
-                    (
-                        similarity_matrix_positives,
-                        similarity_matrix_negatives,
-                    ) = self.compute_score_matrix(positives, temp)
-                    client_scores, imposter_scores = self.compute_scores(
-                        similarity_matrix_positives,
-                        similarity_matrix_negatives,
-                        criteria="min",
-                    )
-                    y_pred = imposter_scores.data
-
-                else:
-                    y_pred = best_model.predict_proba(temp.iloc[:, :-1].values)[:, 1]
-
-                y_pred_U = y_pred
-                y_pred_U[y_pred_U >= TH] = 1.0
-                y_pred_U[y_pred_U < TH] = 0.0
-
-                AUS.append(accuracy_score(temp["ID"].values, y_pred_U) * 100)
-                FAU.append(np.where(y_pred_U == 1)[0].shape[0])
-            AUS = np.mean(AUS)
-            FAU = np.mean(FAU)
-
-            if self._classifier_name == "TM":
-                positives = x_train[x_train["ID"] == 1.0]
-                (
-                    similarity_matrix_positives,
-                    similarity_matrix_negatives,
-                ) = self.compute_score_matrix(positives, x_test_U)
-                client_scores, imposter_scores = self.compute_scores(
-                    similarity_matrix_positives,
-                    similarity_matrix_negatives,
-                    criteria="min",
-                )
-                y_pred_U = imposter_scores.data
-
-            else:
-                y_pred_U = best_model.predict_proba(x_test_U.iloc[:, :-1].values)[:, 1]
-
-            y_pred_U1 = y_pred_U.copy()
-
-            y_pred_U[y_pred_U >= TH] = 1.0
-            y_pred_U[y_pred_U < TH] = 0.0
-            AUS_All = accuracy_score(x_test_U["ID"].values, y_pred_U) * 100
-            FAU_All = np.where(y_pred_U == 1)[0].shape[0]
-
-        # #todo
-        # # PP = f"./C/{self._classifier_name}/{str(a)}/{str(self._unknown_imposter)}/1/"
-        # # PP1 = f"./C/{self._classifier_name}/{str(a)}/{str(self._unknown_imposter)}/2/"
-        # # PP2 = f"./C/{self._classifier_name}/{str(a)}/{str(self._unknown_imposter)}/3/"
-        # # PP3 = f"./C/{self._classifier_name}/{str(a)}/{str(self._unknown_imposter)}/4/"
-        # # Pathlb(PP).mkdir(parents=True, exist_ok=True)
-        # # Pathlb(PP1).mkdir(parents=True, exist_ok=True)
-        # # Pathlb(PP2).mkdir(parents=True, exist_ok=True)
-        # # Pathlb(PP3).mkdir(parents=True, exist_ok=True)
-        # # breakpoint()
-
-        # # plt.figure().suptitle(f"Number of known Imposters: {str(self._known_imposter)}", fontsize=20)
-        # figure, axs = plt.subplots(1,3,figsize=(15,5))
-        # figure.suptitle(f"Number of known Imposters: {str(self._known_imposter)}", fontsize=20)
-
-        # SS = pd.DataFrame(y_pred_tr, x_train['ID'].values).reset_index()
-        # SS.columns = ["Labels","train scores"]
-        # sns.histplot(data=SS, x="train scores", hue="Labels", bins=100 , ax=axs[0], kde=True)
-        # axs[0].plot([TH,TH],[0,13], 'r--', linewidth=2, label="unbalanced threshold")
-        # # axs[0].plot([TH1,TH1],[0,10], 'g:', linewidth=2, label="balanced threshold")
-        # axs[0].set_title(f"EER: {round(EER,2)}  Threshold: {round(TH,2)}  ")
-        # # plt.savefig(PP+f"{str(self._known_imposter)}.png")
-
-        # # plt.figure()
-        # SS = pd.DataFrame(y_pred1,x_test['ID'].values).reset_index()
-        # SS.columns = ["Labels","test scores"]
-        # sns.histplot(data=SS, x="test scores", hue="Labels", bins=100, ax=axs[1], kde=True)
-        # axs[1].plot([TH,TH],[0,13], 'r--', linewidth=2, label="unbalanced threshold")
-        # # axs[1].plot([TH1,TH1],[0,10], 'g:', linewidth=2, label="balanced threshold")
-        # axs[1].set_title(f"ACC: {round(ACC_ud,2)},    BACC: {round(BACC_ud,2)},  \n CM: {CM_ud}")
-        # # plt.savefig(PP1+f"{str(self._known_imposter)}.png")
-
-        # # plt.figure()
-        # sns.histplot(y_pred_U1, bins=100, ax=axs[2], kde=True)
-        # axs[2].plot([TH,TH],[0,13], 'r--', linewidth=2, label="unbalanced threshold")
-        # # axs[2].plot([TH1,TH1],[0,10], 'g:', linewidth=2, label="balanced threshold")
-        # axs[2].set_xlabel("unknown imposter scores")
-        # axs[2].set_title(f"AUS: {round(AUS_All,2)},       FAU: {round(FAU_All,2)}")
-        # # plt.savefig(PP2+f"{str(self._known_imposter)}.png")
-
-        # # plt.figure()
-        # # plt.scatter(x_train.iloc[:, 0].values, x_train.iloc[:, 1].values, c ="red", marker ="s", label="train", s = x_train.iloc[:, -1].values*22+1)
-        # # plt.scatter(x_test.iloc[:, 0].values, x_test.iloc[:, 1].values,  c ="blue", marker ="*", label="test", s = x_test.iloc[:, -1].values*22+1)
-        # # plt.scatter(x_test_U.iloc[:, 0].values, x_test_U.iloc[:, 1].values, c ="green", marker ="o", label="u", s = 5)
-        # # plt.title(f'# training positives: {x_train[x_train["ID"]== 1.0].shape[0]},       # training negatives: {x_train[x_train["ID"]== 0.0].shape[0]} \n # test positives: {x_test[x_test["ID"]== 1.0].shape[0]},       # test negatives: {x_test[x_test["ID"]== 0.0].shape[0]}               # test_U : {x_test_U.shape[0]}')
-
-        # # plt.xlabel("PC1")
-        # # plt.ylabel("PC2")
-        # # plt.legend()
-        # # plt.savefig(PP3+f"{str(self._known_imposter)}.png")
-        # plt.tight_layout()
-        # plt.savefig(PP+f"{str(self._known_imposter)}.png")
-
-        # plt.figure()
-        # SS = pd.DataFrame(y_pred_tr, x_train['ID'].values).reset_index()
-        # SS.columns = ["Labels","scores"]
-        # SS1 = pd.DataFrame(y_pred_U1).reset_index()
-        # SS1.columns = ["Labels","scores"]
-        # SS1["Labels"] = "unknown imposters"
-        # SS2 = pd.concat([SS1,SS], axis=0).reset_index()
-        # SS2["Labels"] = SS2["Labels"].map(lambda x: 'user' if x==1 else 'known imposters' if x==0 else 'unknown imposters')
-        # # sns.histplot(data=SS2, x="train scores", hue="Labels", bins=100 , kde=True)
-        # sns.kdeplot(data=SS2, x="scores", hue="Labels")#, bins=100 , kde=True)
-        # plt.plot([TH,TH],[0,13], 'r--', linewidth=2, label="unbalanced threshold")
-        # # plt.plot([TH1,TH1],[0,10], 'g:', linewidth=2, label="balanced threshold")
-        # plt.savefig(PP+f"kde_{str(self._known_imposter)}.png")
-
-        # plt.show()
-        # plt.close('all')
-
-        # # breakpoint()
-
-        results = [
-            EER,
-            TH,
-            ACC_bd,
-            BACC_bd,
-            FAR_bd,
-            FRR_bd,
-            ACC_ud,
-            BACC_ud,
-            FAR_ud,
-            FRR_ud,
-            AUS,
-            FAU,
-            x_test_U.shape[0],
-            AUS_All,
-            FAU_All,
-        ]
-
-        return results, CM_bd, CM_ud
 
     def ML_classifier(self, a, **kwargs):
 
@@ -628,10 +361,8 @@ class Classifier(Features):
             classifier = knn(n_neighbors=int(kwargs["params"]['n_neighbors']))
             
             best_model = classifier.fit( x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values )
-            y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
-            FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
-            EER, t_idx = self.compute_eer(FRR_t, FAR_t)
-            TH = self._THRESHOLDs[t_idx]
+            score = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
+            EER, _, _, TH = self.compute_EER(x_train.iloc[:, -1].values, score, metric='eer')
 
             y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
 
@@ -640,11 +371,9 @@ class Classifier(Features):
             negatives = x_train[x_train["ID"] == 0.0]
             similarity_matrix_positives, similarity_matrix_negatives = self.compute_score_matrix(positives, negatives)
             client_scores, imposter_scores = self.compute_scores(similarity_matrix_positives, similarity_matrix_negatives, criteria="min")
-            y_pred_tr = np.append(client_scores.data, imposter_scores.data)
+            score = np.append(client_scores.data, imposter_scores.data)
 
-            FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
-            EER, t_idx = self.compute_eer(FRR_t, FAR_t)
-            TH = self._THRESHOLDs[t_idx]
+            EER, _, _, TH = self.compute_EER(x_train.iloc[:, -1].values, score, metric='eer')
 
             similarity_matrix_positives, similarity_matrix_negatives = self.compute_score_matrix(positives, x_test)
             client_scores, imposter_scores = self.compute_scores( similarity_matrix_positives, similarity_matrix_negatives, criteria="min")
@@ -654,11 +383,9 @@ class Classifier(Features):
             classifier = svm.SVC(kernel='linear', probability=True, random_state=self._random_state, C=10 ** kwargs["params"]['logC'] )
               
             best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
-            y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
+            score = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
 
-            FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
-            EER, t_idx = self.compute_eer(FRR_t, FAR_t)
-            TH = self._THRESHOLDs[t_idx]
+            EER, _, _, TH = self.compute_EER(x_train.iloc[:, -1].values, score, metric='eer')
 
             y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
 
@@ -666,11 +393,9 @@ class Classifier(Features):
             classifier = svm.SVC(kernel='rbf', probability=True, random_state=self._random_state, C=10 ** kwargs["params"]['logC'], gamma=10 ** kwargs["params"]['logGamma'] )
 
             best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
-            y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
+            score = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
 
-            FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
-            EER, t_idx = self.compute_eer(FRR_t, FAR_t)
-            TH = self._THRESHOLDs[t_idx]
+            EER, _, _, TH = self.compute_EER(x_train.iloc[:, -1].values, score, metric='eer')
 
             y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
 
@@ -678,69 +403,144 @@ class Classifier(Features):
             classifier = svm.SVC(kernel='poly', probability=True, random_state=self._random_state, C=10 ** kwargs["params"]['logC'], degree=kwargs["params"]['degree'], coef0=kwargs["params"]['coef0'] )
             
             best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
-            y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
+            score = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
 
-            FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
-            EER, t_idx = self.compute_eer(FRR_t, FAR_t)
-            TH = self._THRESHOLDs[t_idx]
+            EER, _, _, TH = self.compute_EER(x_train.iloc[:, -1].values, score, metric='eer')
 
             y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
 
         elif self._classifier_name == "lda":
             classifier = LinearDiscriminantAnalysis()
             best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
-            y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
+            score = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
 
-            FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
-            EER, t_idx = self.compute_eer(FRR_t, FAR_t)
-            TH = self._THRESHOLDs[t_idx]
+            EER, _, _, TH = self.compute_EER(x_train.iloc[:, -1].values, score, metric='eer')
 
             y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
 
         elif self._classifier_name == "rf":
             classifier = RandomForestClassifier(random_state=self._random_state)
             best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
-            y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
+            score = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
 
-            FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
-            EER, t_idx = self.compute_eer(FRR_t, FAR_t)
-            TH = self._THRESHOLDs[t_idx]
+            EER, _, _, TH = self.compute_EER(x_train.iloc[:, -1].values, score, metric='eer')
 
             y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
 
         elif self._classifier_name == "nb":
             classifier = GaussianNB()
             best_model = classifier.fit(x_train.iloc[:, :-1].values, x_train.iloc[:, -1].values)
-            y_pred_tr = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
+            score = best_model.predict_proba(x_train.iloc[:, :-1].values)[:, 1]
 
-            FRR_t, FAR_t = self.FXR_calculater(x_train["ID"], y_pred_tr)
-            EER, t_idx = self.compute_eer(FRR_t, FAR_t)
-            TH = self._THRESHOLDs[t_idx]
+            EER, _, _, TH = self.compute_EER(x_train.iloc[:, -1].values, score, metric='eer')
 
             y_pred = best_model.predict_proba(x_test.iloc[:, :-1].values)[:, 1]
 
         elif self._classifier_name == "if":
             
-            classifier = IsolationForest(random_state=self._random_state)
+            # classifier = IsolationForest(random_state=self._random_state)
+            # best_model = classifier.fit(x_train.iloc[:, :-1].values)
+            # EER = 0
+            # TH = 0
+
+            # y_pred = best_model.predict(x_test.iloc[:, :-1].values)
+            from pyod.models.iforest import IForest
+            classifier = IForest(n_estimators=100, max_samples='auto', contamination=0.1, max_features=1.0, bootstrap=False, n_jobs=-1, behaviour='old', random_state=self._random_state, verbose=0)
             best_model = classifier.fit(x_train.iloc[:, :-1].values)
+
+            # EER, _, _, TH = self.compute_EER(x_train.iloc[:, -1].values, score, metric='eer')
             EER = 0
             TH = 0
 
             y_pred = best_model.predict(x_test.iloc[:, :-1].values)
-
-        elif self._classifier_name == "ocsvm":
-            classifier = OneClassSVM(kernel='linear',nu=kwargs["params"]['nu'])
             
+        elif self._classifier_name == "ocsvm":
+            # classifier = OneClassSVM(kernel='linear',nu=kwargs["params"]['nu'])
+            
+            # best_model = classifier.fit(x_train.iloc[:, :-1].values)
+            # EER = 0
+            # TH = 0
+
+            # y_pred = best_model.predict(x_test.iloc[:, :-1].values)
+
+            from pyod.models.ocsvm import OCSVM
+            classifier = OCSVM(kernel='linear', degree=3, gamma='auto', coef0=0.0, tol=0.001, nu=kwargs["params"]['nu'], shrinking=True, cache_size=200, verbose=False, max_iter=-1, contamination=0.1) 
             best_model = classifier.fit(x_train.iloc[:, :-1].values)
+
+
             EER = 0
             TH = 0
 
             y_pred = best_model.predict(x_test.iloc[:, :-1].values)
 
         elif self._classifier_name == "svdd":
-            classifier = OneClassSVM(kernel='rbf',nu=kwargs["params"]['nu'])
-            
+
+            from pyod.models.ocsvm import OCSVM
+            classifier = OCSVM(kernel='rbf', degree=3, gamma='auto', coef0=0.0, tol=0.001, nu=kwargs["params"]['nu'], shrinking=True, cache_size=200, verbose=False, max_iter=-1, contamination=0.1) 
             best_model = classifier.fit(x_train.iloc[:, :-1].values)
+
+
+            EER = 0
+            TH = 0
+
+            y_pred = best_model.predict(x_test.iloc[:, :-1].values)
+
+        elif self._classifier_name == "ocknn":
+
+            from pyod.models.knn import KNN as OCKNN
+            classifier = OCKNN(contamination=0.1, n_neighbors=5, method='largest', radius=1.0, algorithm='auto', leaf_size=30, metric='minkowski', p=2, metric_params=None, n_jobs=-1)
+            best_model = classifier.fit(x_train.iloc[:, :-1].values)
+
+
+            EER = 0
+            TH = 0
+
+            y_pred = best_model.predict(x_test.iloc[:, :-1].values)
+
+        elif self._classifier_name == "cblof":
+
+            from pyod.models.cblof import CBLOF
+            classifier = CBLOF(n_clusters=8, contamination=0.1, clustering_estimator=None, alpha=0.9, beta=5, use_weights=False, check_estimator=False, random_state=self._random_state, n_jobs=-1)
+            best_model = classifier.fit(x_train.iloc[:, :-1].values)
+
+
+            EER = 0
+            TH = 0
+
+            y_pred = best_model.predict(x_test.iloc[:, :-1].values)
+
+        elif self._classifier_name == "hbos":
+
+            from pyod.models.hbos import HBOS
+            classifier = HBOS(n_bins=10, alpha=0.1, tol=0.5, contamination=0.1)
+            best_model = classifier.fit(x_train.iloc[:, :-1].values)
+
+
+            EER = 0
+            TH = 0
+
+            y_pred = best_model.predict(x_test.iloc[:, :-1].values)
+
+        elif self._classifier_name == "anogan":
+
+            from pyod.models.anogan import AnoGAN
+            classifier = AnoGAN(activation_hidden='tanh', dropout_rate=0.2, latent_dim_G=2, G_layers=[20, 10, 3, 10, 20], verbose=0, D_layers=[20, 10, 5], index_D_layer_for_recon_error=1, epochs=500, preprocessing=False, learning_rate=0.001, learning_rate_query=0.01, epochs_query=20, batch_size=32, output_activation=None, contamination=0.1)
+            best_model = classifier.fit(x_train.iloc[:, :-1].values)
+
+
+            EER = 0
+            TH = 0
+
+            y_pred = best_model.predict(x_test.iloc[:, :-1].values)
+
+        elif self._classifier_name == "deep_svdd":
+
+            from pyod.models.deep_svdd import DeepSVDD
+
+            classifier = DeepSVDD(c=None, use_ae=False, hidden_neurons=None, hidden_activation='relu', output_activation='sigmoid', optimizer='adam', epochs=100, batch_size=32, dropout_rate=0.2, l2_regularizer=0.1, validation_size=0.1, preprocessing=True, verbose=1, random_state=None, contamination=0.1)
+            best_model = classifier.fit(x_train.iloc[:, :-1].values)
+
+
             EER = 0
             TH = 0
 
@@ -749,11 +549,10 @@ class Classifier(Features):
         else:
             raise Exception(f"_classifier_name ({self._classifier_name}) is not valid!!")
 
+        # "deep_svdd", "anogan", "hbos", "cblof", "ocknn", "if", "ocsvm", "svdd"
 
                
-        if self._classifier_name in ["if", "ocsvm", "svdd"]:
-            y_pred = 0.5-(y_pred/2)
-        else:
+        if self._classifier_name not in ["deep_svdd", "anogan", "hbos", "cblof", "ocknn", "if", "ocsvm", "svdd"]:
             y_pred[y_pred >= TH] = 1
             y_pred[y_pred < TH] = 0
 
@@ -785,7 +584,6 @@ class Classifier(Features):
                 y_pred_U[y_pred_U >= TH] = 1.0
                 y_pred_U[y_pred_U < TH] = 0.0
 
-            
             AUS_All = accuracy_score(x_test_U["ID"].values, y_pred_U) * 100
             FAU_All = np.where(y_pred_U == 1)[0].shape[0]
 

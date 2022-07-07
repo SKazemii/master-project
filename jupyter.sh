@@ -14,7 +14,7 @@ source  ./env/bin/activate
 
 
 # pip install --no-index PyWavelets
-# pip install --no-index opencv-python
+# pip install --no-index opencv-python openpyxl
 # pip install --no-index openpyxl
 
 # nano ./env/bin/notebook.sh

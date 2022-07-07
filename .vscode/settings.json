@@ -9,7 +9,7 @@
     "terminal.integrated.fontSize": 13,
     "terminal.integrated.fontWeight": "500",
     "window.zoomLevel": 1,
-    "python.defaultInterpreterPath": "c:/Users/skazemi1/AppData/Local/Programs/Python/Python310/python.exe",
+    "python.defaultInterpreterPath": "./env/bin/python3",
     "python.formatting.provider": "black",
     "editor.formatOnSave": false,
     "python.linting.enabled": false,

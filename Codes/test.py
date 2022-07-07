@@ -1,5 +1,8 @@
 from MLPackage.Deep_network import * 
 
+import MLPackage.PSO as pso
+
+
 class Pipeline(Classifier, Seamese):
     
     _col = [
@@ -1955,7 +1958,7 @@ def optimizer(Users, no_samples, classifier):
 def optimizer_accross_subjects(Users, no_samples, classifier):
     setting = {
         "dataset_name": "casia",
-        "_classifier_name": "knn",
+        "_classifier_name": "svm-rbf",
         "_combination": True,
         "_CNN_weights": "imagenet",
         "_verbose": True,
@@ -2055,21 +2058,306 @@ def optimizer_accross_subjects(Users, no_samples, classifier):
                 # param, info = A.subject_optimizer(df_train, 2, 30, search[A._classifier_name])
                 
                 if   A._classifier_name == 'knn':
-                    if int(n_neighbors) < 1:
-                        return 0
-                    else:
-                        classifier = knn( n_neighbors=int(n_neighbors))#, metric=metric, weights=weights, )
-                        best_model = classifier.fit(df_train.iloc[:, :-1].values, df_train.iloc[:, -1].values)
-                        y_pred_tr = best_model.predict_proba(df_train.iloc[:, :-1].values)[:, 1]
 
-                        FRR_t, FAR_t = A.FXR_calculater(df_train.iloc[:, -1].values, y_pred_tr)
-                        EER, t_idx = A.compute_eer(FRR_t, FAR_t)
-                        TH = A._THRESHOLDs[t_idx]
+                    classifier = knn( n_neighbors=int(n_neighbors))#, metric=metric, weights=weights, )
+                    best_model = classifier.fit(df_train.iloc[:, :-1].values, df_train.iloc[:, -1].values)
+                    score = best_model.predict_proba(df_train.iloc[:, :-1].values)[:, 1]
 
-                        y_pred = best_model.predict_proba(df_val.iloc[:, :-1].values)[:, 1]
-                        
-                        y_pred[y_pred >= TH] = 1
-                        y_pred[y_pred < TH] = 0
+                    EER, _, _, TH = A.compute_EER(x_train.iloc[:, -1].values, score, metric='eer')
+
+
+                    y_pred = best_model.predict_proba(df_val.iloc[:, :-1].values)[:, 1]
+                    
+                    y_pred[y_pred >= TH] = 1
+                    y_pred[y_pred < TH] = 0
+                elif A._classifier_name == 'svm-linear':
+                    classifier = svm.SVC(kernel='linear', probability=True, random_state=A._random_state, C=10 ** logC)
+                    best_model = classifier.fit(df_train.iloc[:, :-1].values, df_train.iloc[:, -1].values)
+                    score = best_model.predict_proba(df_train.iloc[:, :-1].values)[:, 1]
+
+                    EER, _, _, TH = A.compute_EER(x_train.iloc[:, -1].values, score, metric='eer')
+
+                    y_pred = best_model.predict_proba(df_val.iloc[:, :-1].values)[:, 1]
+                    
+                    y_pred[y_pred >= TH] = 1
+                    y_pred[y_pred < TH] = 0
+                elif A._classifier_name == 'svm-poly':
+                    classifier = svm.SVC(kernel='poly', probability=True, random_state=A._random_state , C=10 ** logC, degree=degree, coef0=coef0)
+                    best_model = classifier.fit(df_train.iloc[:, :-1].values, df_train.iloc[:, -1].values)
+                    score = best_model.predict_proba(df_train.iloc[:, :-1].values)[:, 1]
+
+                    EER, _, _, TH = A.compute_EER(x_train.iloc[:, -1].values, score, metric='eer')
+
+                    y_pred = best_model.predict_proba(df_val.iloc[:, :-1].values)[:, 1]
+                    
+                    y_pred[y_pred >= TH] = 1
+                    y_pred[y_pred < TH] = 0
+                elif A._classifier_name == 'svm-rbf':
+                    classifier = svm.SVC(kernel='rbf', probability=True, random_state=A._random_state, C=10 ** logC, gamma=10 ** logGamma)
+                    best_model = classifier.fit(df_train.iloc[:, :-1].values, df_train.iloc[:, -1].values)
+                    score = best_model.predict_proba(df_train.iloc[:, :-1].values)[:, 1]
+
+                    EER, _, _, TH = A.compute_EER(x_train.iloc[:, -1].values, score, metric='eer')
+
+                    y_pred = best_model.predict_proba(df_val.iloc[:, :-1].values)[:, 1]
+                    
+                    y_pred[y_pred >= TH] = 1
+                    y_pred[y_pred < TH] = 0
+                elif A._classifier_name == "rf":
+                    classifier = RandomForestClassifier(n_estimators=int(n_estimators), max_features=int(max_features))
+                    best_model = classifier.fit(df_train.iloc[:, :-1].values, df_train.iloc[:, -1].values)
+                    score = best_model.predict_proba(df_train.iloc[:, :-1].values)[:, 1]
+
+                    EER, _, _, TH = A.compute_EER(x_train.iloc[:, -1].values, score, metric='eer')
+
+                    y_pred = best_model.predict_proba(df_val.iloc[:, :-1].values)[:, 1]
+                    
+                    y_pred[y_pred >= TH] = 1
+                    y_pred[y_pred < TH] = 0
+                elif A._classifier_name == "nb":
+                    pass
+                elif A._classifier_name == "if":
+                    classifier = IsolationForest(n_estimators=int(n_estimators), max_features=int(max_features), random_state=A._random_state)
+                    best_model = classifier.fit(df_train.iloc[:, :-1].values)
+                    EER = 0
+                    TH = 0
+                    y_pred = best_model.predict(df_val.iloc[:, :-1].values)
+                elif A._classifier_name == "ocsvm":
+                    classifier = OneClassSVM(kernel='linear', nu=nu)
+                    best_model = classifier.fit(df_train.iloc[:, :-1].values)
+                    EER = 0
+                    TH = 0
+
+                    y_pred = best_model.predict(df_val.iloc[:, :-1].values)
+                    y_pred = 0.5-(y_pred/2)
+                elif A._classifier_name == "svdd":
+                    classifier = OneClassSVM(kernel='rbf', nu=nu, gamma=10 ** logGamma)
+                    best_model = classifier.fit(df_train.iloc[:, :-1].values)
+                    EER = 0
+                    TH = 0
+
+                    y_pred = best_model.predict(df_val.iloc[:, :-1].values)
+                    y_pred = 0.5-(y_pred/2)
+                elif A._classifier_name == "lda":
+                    pass
+                elif A._classifier_name == "tm":
+                    pass
+                else:
+                        raise(f'Unknown algorithm: {A._classifier_name}')
+
+                lst.append(pso.PSO.bacc(df_val.iloc[:, -1].values, y_pred, 1))
+            
+            
+            # logger.info(f"mean bacc: {np.mean(lst)}")
+            return np.mean(lst)
+
+        return objective_func
+
+    objective_func = performance(DF_known_imposter, DF_unknown_imposter,)
+
+    
+
+    param = {
+            'knn': {'n_neighbors': 5},
+            'svm-linear': {'logC': -2.96},
+            'svm-rbf': {'logGamma': -4.07, 'logC': -1.17},
+            'svm-poly': {'logGamma': [2, 5], 'logC': [-4, 3], 'coef0': [0, 1]},
+            'rf': {'n_estimators': [20, 120], 'max_features': [5, 25]},
+            'if': {'n_estimators': [20, 120], 'max_features': [5, 25]},
+            'ocsvm': { 'nu': 0.95},
+            'svdd': {'nu': 0.5, 'logGamma': -3},
+            'tm': None,
+            'lda': None,
+        }
+        
+    pmap8 = optunity.parallel.create_pmap(30)
+    
+    if A._classifier_name in ['svdd', 'ocsvm', "knn", "svm-rbf", "svm-linear"]:
+
+
+        Opt = pso.PSO(objective_func, search[A._classifier_name], MaxIter = 1, PopSize = 20, c1 = 1.5, c2 = 2, w = 1, wdamp = 0.995)
+        gbest, log = Opt()
+        # breakpoint()
+        param = gbest.iloc[-1,0]
+
+        
+
+
+        # solver = optunity.solvers.ParticleSwarm(num_particles=30, num_generations=10, **search[A._classifier_name])
+        # param, info = optunity.optimize(solver, objective_func, maximize=True, pmap=pmap8) # , pmap=pmap8
+        # print(optunity.call_log2dataframe(info.call_log))
+
+    for idx, subject in enumerate(DF_known_imposter["ID"].unique()):
+
+        logger.info(f"   Subject number: {idx} out of {len(known_imposter_list)} (subject ID is {subject})")
+
+        # non_targets = DF_known_imposter[DF_known_imposter["ID"]!=subject]
+        # non_targets = non_targets.groupby("ID", group_keys=False).apply(lambda x: x.sample( n=no_samples, replace=False, random_state=A._random_state))
+        # target = DF_known_imposter[DF_known_imposter["ID"]==subject]
+        # DF = pd.concat([target, non_targets], axis=0)
+
+
+        X, U = A.binarize_labels(DF_known_imposter, DF_unknown_imposter, subject)
+        x_train, x_test = model_selection.train_test_split(X, test_size=0.20, random_state=A._random_state, stratify=X.iloc[:, -1].values,)
+        _, x_val = model_selection.train_test_split(x_train, test_size=0.20, random_state=A._random_state, stratify=x_train.iloc[:, -1].values)
+
+        df_train, df_test, df_test_U = A.scaler(x_train, x_test, U)
+        df_train, df_test, df_test_U, num_pc = A.projector(feature_set_names, df_train, df_test, df_test_U, )
+
+        
+
+
+        # df_train = self.down_sampling_new(df_train, 2)
+        results = A.ML_classifier(subject, x_train=df_train, x_test=df_test, x_test_U=df_test_U, params=param)
+
+        results["num_pc"] = num_pc
+        results.update({
+            "training_samples": df_train.shape[0],
+            "pos_training_samples": df_train['ID'].sum(),
+            "validation_samples": x_val.shape[0],
+            "pos_validation_samples": x_val['ID'].sum(),
+            "testing_samples": df_test.shape[0],
+            "pos_testing_samples": df_test['ID'].sum(),
+        })
+        
+ 
+        results.update( {
+            "test_id": A._test_id,
+            "subject": subject,
+            "combination": A._combination,
+            "classifier_name": A._classifier_name,
+            "normilizing": A._normilizing,
+            "persentage": A._persentage,
+            "KFold": "-",
+            "known_imposter": A._known_imposter,
+            "unknown_imposter": A._unknown_imposter,
+            "min_number_of_sample": A._min_number_of_sample,
+            "param": param,
+          
+        })
+
+        for i in results:
+            try:
+                res_dict[i].append(results[i])
+            except UnboundLocalError:
+                res_dict = {i: [] for i in results.keys()}
+                res_dict[i].append(results[i])
+    
+    return pd.DataFrame.from_dict(res_dict)
+   
+
+def iris1():
+    setting = {
+        "dataset_name": "casia",
+        "_classifier_name": "ocknn", #"deep_svdd", "anogan", "hbos", "cblof", "ocknn", "if", "ocsvm", "svdd"
+        "_combination": True,
+        "_CNN_weights": "imagenet",
+        "_verbose": True,
+        "_CNN_batch_size": 32,
+        "_CNN_base_model": "",
+        "_CNN_epochs": 500,
+        "_CNN_optimizer": "adam",
+        "_val_size": 0.2,
+        "_min_number_of_sample": 30,
+        "_known_imposter": 32,
+        "_unknown_imposter": 32,
+        "_number_of_unknown_imposter_samples": 1.0,  # Must be less than 1
+        "_waveletname": "coif1",
+        "_pywt_mode": "constant",
+        "_wavelet_level": 4,
+        "_p_training_samples": 11,
+        "_train_ratio": 34,
+        "_ratio": False,
+        "_KNN_n_neighbors": 5,
+        "_KNN_metric": "euclidean",
+        "_KNN_weights": "uniform",
+        "_SVM_kernel": "linear",
+        "_KFold": 10,
+        "_random_runs": 20,
+        "_persentage": 0.95,
+        "_normilizing": "z-score",
+    }
+
+    from sklearn import datasets
+
+    iris = datasets.load_iris()
+    X = iris.data
+    y = iris.target
+
+    X = pd.DataFrame(X, columns=["sepal length", "sepal width", "petal length", "petal width"])
+    y = pd.DataFrame(y, columns=["ID"])
+
+    DF_feature_all = pd.concat([X,y], axis=1)
+    breakpoint()
+
+    A = Pipeline(setting)
+
+    
+    subjects, samples = np.unique(DF_feature_all["ID"].values, return_counts=True)
+
+    ss = [a[0] for a in list(zip(subjects, samples)) if a[1] >= A._min_number_of_sample]
+
+    known_imposter_list = ss[:A._known_imposter]
+    unknown_imposter_list = ss[-A._unknown_imposter :]
+
+    DF_unknown_imposter = DF_feature_all[ DF_feature_all["ID"].isin(unknown_imposter_list) ]
+    DF_known_imposter = DF_feature_all[DF_feature_all["ID"].isin(known_imposter_list)]
+
+    search = {
+            'knn': {'n_neighbors': [1, 20]},
+            'svm-linear': {'logC': [-4, 3]},
+            'svm-rbf': {'logGamma': [-6, 0], 'logC': [-4, 3]},
+            'svm-poly': {'logGamma': [2, 5], 'logC': [-4, 3], 'coef0': [0, 1]},
+            'rf': {'n_estimators': [20, 120], 'max_features': [5, 25]},
+            'if': {'n_estimators': [20, 120], 'max_features': [5, 25]},
+            'ocsvm': { 'nu': [0, 1]},
+            'svdd': {'nu': [0, 1], 'logGamma': [-6, 0]},
+            'tm': None,
+            'lda': None,
+        }
+        
+      
+
+    def performance(DF_known_imposter, DF_unknown_imposter,):
+        def objective_func(
+                    n_neighbors=None, metric=None, weights=None,
+                    logC=None, logGamma=None, degree=None, coef0=None,
+                    n_estimators=None, max_features=None,
+                    nu=None):
+
+            lst = []
+
+            for idx, subject in enumerate(DF_known_imposter["ID"].unique()):
+
+                non_targets = DF_known_imposter[DF_known_imposter["ID"]!=subject]
+                non_targets = non_targets.groupby("ID", group_keys=False).apply(lambda x: x.sample( n=no_samples, replace=False, random_state=A._random_state))
+                target = DF_known_imposter[DF_known_imposter["ID"]==subject]
+                DF = pd.concat([target, non_targets], axis=0)
+
+                X, U = A.binarize_labels(DF, DF_unknown_imposter, subject)
+                x_train, x_test = model_selection.train_test_split(X, test_size=0.20, random_state=A._random_state, stratify=X.iloc[:, -1].values,)
+                x_train, x_val = model_selection.train_test_split(x_train, test_size=0.20, random_state=A._random_state, stratify=x_train.iloc[:, -1].values)
+
+                df_train, df_val, df_test, df_test_U = A.scaler(x_train, x_val, x_test, U)
+                df_train, df_val, df_test, df_test_U, num_pc = A.projector(feature_set_names, df_train, df_val, df_test, df_test_U, )
+
+                
+                # param, info = A.subject_optimizer(df_train, 2, 30, search[A._classifier_name])
+                
+                if   A._classifier_name == 'knn':
+
+                    classifier = knn( n_neighbors=int(n_neighbors))#, metric=metric, weights=weights, )
+                    best_model = classifier.fit(df_train.iloc[:, :-1].values, df_train.iloc[:, -1].values)
+                    y_pred_tr = best_model.predict_proba(df_train.iloc[:, :-1].values)[:, 1]
+
+                    FRR_t, FAR_t = A.FXR_calculater(df_train.iloc[:, -1].values, y_pred_tr)
+                    EER, t_idx = A.compute_eer(FRR_t, FAR_t)
+                    TH = A._THRESHOLDs[t_idx]
+
+                    y_pred = best_model.predict_proba(df_val.iloc[:, :-1].values)[:, 1]
+                    
+                    y_pred[y_pred >= TH] = 1
+                    y_pred[y_pred < TH] = 0
                 elif A._classifier_name == 'svm-linear':
                     classifier = svm.SVC(kernel='linear', probability=True, random_state=A._random_state, C=10 ** logC)
                     best_model = classifier.fit(df_train.iloc[:, :-1].values, df_train.iloc[:, -1].values)
@@ -2159,17 +2447,18 @@ def optimizer_accross_subjects(Users, no_samples, classifier):
                 else:
                         raise(f'Unknown algorithm: {A._classifier_name}')
 
-                lst.append(optunity.metrics.bacc(df_val.iloc[:, -1].values, y_pred, 1))
+                lst.append(pso.PSO.bacc(df_val.iloc[:, -1].values, y_pred, 1))
             
             
-            logger.info(f"mean bacc: {np.mean(lst)}")
+            # logger.info(f"mean bacc: {np.mean(lst)}")
             return np.mean(lst)
-        
-        
+
         return objective_func
 
     objective_func = performance(DF_known_imposter, DF_unknown_imposter,)
+
     
+
     param = {
             'knn': {'n_neighbors': 5},
             'svm-linear': {'logC': -2.96},
@@ -2183,12 +2472,21 @@ def optimizer_accross_subjects(Users, no_samples, classifier):
             'lda': None,
         }
         
-      
-    # pmap8 = optunity.parallel.create_pmap(8)
+    pmap8 = optunity.parallel.create_pmap(30)
+    
     if A._classifier_name in ['svdd', 'ocsvm', "knn", "svm-rbf", "svm-linear"]:
-        solver = optunity.solvers.ParticleSwarm(num_particles=30, num_generations=10, **search[A._classifier_name])
-        param, info = optunity.optimize(solver, objective_func, maximize=True) # , pmap=pmap8
-        print(optunity.call_log2dataframe(info.call_log))
+
+
+        Opt = pso.PSO(objective_func, search[A._classifier_name], MaxIter = 1, PopSize = 24, c1 = 1.5, c2 = 2, w = 1, wdamp = 0.995)
+        gbest, log = Opt()
+        breakpoint()
+
+        
+
+
+        # solver = optunity.solvers.ParticleSwarm(num_particles=30, num_generations=10, **search[A._classifier_name])
+        # param, info = optunity.optimize(solver, objective_func, maximize=True, pmap=pmap8) # , pmap=pmap8
+        # print(optunity.call_log2dataframe(info.call_log))
 
     for idx, subject in enumerate(DF_known_imposter["ID"].unique()):
 
@@ -2247,13 +2545,12 @@ def optimizer_accross_subjects(Users, no_samples, classifier):
                 res_dict[i].append(results[i])
     
     return pd.DataFrame.from_dict(res_dict)
-   
-
 
 
 if __name__ == "__main__":
     logger.info("Starting !!!")
     tic1 = timeit.default_timer()
+    # iris1()
 
     # main()
     # Participant_Count()
@@ -2274,6 +2571,11 @@ if __name__ == "__main__":
     # breakpoint()
 
     # train_e2e_CNN()
+    results1 = optimizer_accross_subjects(5, 20, "knn")
+    path = os.path.join(os.getcwd(), "results", "accross_subj.xlsx")
+    results1.to_excel(path)
+    
+    sys.exit()
     p0 = [30]
     p1 = [30]
     p2 = ['svdd', 'ocsvm', "knn", "svm-rbf", "svm-linear", "lda"]
